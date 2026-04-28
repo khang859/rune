@@ -139,3 +139,23 @@ func TestParseSSE_ContextOverflow(t *testing.T) {
 	}
 	t.Fatal("missing Done{context_overflow}")
 }
+
+func TestParseSSE_ReasoningSummary(t *testing.T) {
+	b, _ := os.ReadFile("testdata/stream_reasoning.sse")
+	out := make(chan ai.Event, 32)
+	if err := parseSSE(context.Background(), strings.NewReader(string(b)), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+	evs := collect(t, out)
+
+	var thinking strings.Builder
+	for _, e := range evs {
+		if t, ok := e.(ai.Thinking); ok {
+			thinking.WriteString(t.Text)
+		}
+	}
+	if thinking.String() != "Considering the problem" {
+		t.Fatalf("thinking text = %q", thinking.String())
+	}
+}

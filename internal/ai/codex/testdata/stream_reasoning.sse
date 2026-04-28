@@ -1,0 +1,11 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"Considering"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":" the problem"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":5,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}

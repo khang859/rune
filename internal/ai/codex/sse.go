@@ -253,6 +253,13 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 		}
 		return nil
 
+	case "response.reasoning_summary_text.delta":
+		var d textDelta
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil
+		}
+		return send(ctx, out, ai.Thinking{Text: d.Delta})
+
 	case "response.completed":
 		var rc respCompleted
 		if err := json.Unmarshal([]byte(data), &rc); err != nil {
