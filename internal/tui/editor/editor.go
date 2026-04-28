@@ -24,6 +24,7 @@ const (
 )
 
 // maxEditorRows caps the auto-grown editor so the viewport always has room.
+// Beyond this the textarea's internal viewport scrolls.
 const maxEditorRows = 8
 
 // rowsFor returns the number of rows the textarea should occupy for the given value
