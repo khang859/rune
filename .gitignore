@@ -3,6 +3,7 @@ reference
 # rune
 /rune
 /rune.exe
+/dist/
 *.test
 *.out
 coverage.txt
