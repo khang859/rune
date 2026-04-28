@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/khang859/rune/internal/ai"
 )
@@ -47,7 +48,15 @@ func (r *Registry) Specs() []ai.ToolSpec {
 func (r *Registry) Run(ctx context.Context, call ai.ToolCall) (Result, error) {
 	t, ok := r.tools[call.Name]
 	if !ok {
-		return Result{}, fmt.Errorf("unknown tool: %q", call.Name)
+		names := make([]string, 0, len(r.tools))
+		for n := range r.tools {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		return Result{
+			Output:  fmt.Sprintf("unknown tool %q. Available tools: %s.", call.Name, strings.Join(names, ", ")),
+			IsError: true,
+		}, nil
 	}
 	return t.Run(ctx, call.Args)
 }

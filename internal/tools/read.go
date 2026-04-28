@@ -28,11 +28,11 @@ func (Read) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 		Path string `json:"path"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
-		return Result{Output: fmt.Sprintf("invalid args: %v", err), IsError: true}, nil
+		return Result{Output: fmt.Sprintf(`invalid args: %v. Expected JSON: {"path": string}.`, err), IsError: true}, nil
 	}
 	b, err := os.ReadFile(a.Path)
 	if err != nil {
-		return Result{Output: err.Error(), IsError: true}, nil
+		return Result{Output: fmt.Sprintf("couldn't read %s: %v. Verify the path is absolute and exists; try `bash` with `ls` to inspect the directory.", a.Path, err), IsError: true}, nil
 	}
 	return Result{Output: string(b)}, nil
 }

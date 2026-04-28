@@ -29,7 +29,7 @@ func (Bash) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 		Command string `json:"command"`
 	}
 	if err := json.Unmarshal(args, &a); err != nil {
-		return Result{Output: fmt.Sprintf("invalid args: %v", err), IsError: true}, nil
+		return Result{Output: fmt.Sprintf(`invalid args: %v. Expected JSON: {"command": string}.`, err), IsError: true}, nil
 	}
 	cmd := exec.CommandContext(ctx, "bash", "-lc", a.Command)
 	var buf bytes.Buffer

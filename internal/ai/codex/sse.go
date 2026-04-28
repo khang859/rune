@@ -19,6 +19,7 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 	var (
 		eventName string
 		dataBuf   strings.Builder
+		state     = newStreamState()
 	)
 
 	for scanner.Scan() {
@@ -30,7 +31,7 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 		line := scanner.Text()
 		if line == "" {
 			if dataBuf.Len() > 0 || eventName != "" {
-				if err := dispatchEvent(ctx, eventName, dataBuf.String(), out); err != nil {
+				if err := dispatchEvent(ctx, eventName, dataBuf.String(), out, state); err != nil {
 					return err
 				}
 			}
@@ -54,7 +55,7 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 		}
 	}
 	if dataBuf.Len() > 0 || eventName != "" {
-		if err := dispatchEvent(ctx, eventName, dataBuf.String(), out); err != nil {
+		if err := dispatchEvent(ctx, eventName, dataBuf.String(), out, state); err != nil {
 			return err
 		}
 	}
@@ -109,7 +110,102 @@ type itemAdded struct {
 	} `json:"item"`
 }
 
-func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event) error {
+type itemDone struct {
+	Type string `json:"type"`
+	Item struct {
+		Type      string `json:"type"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Arguments string `json:"arguments"`
+	} `json:"item"`
+}
+
+type fnArgsDelta struct {
+	Type   string `json:"type"`
+	ItemID string `json:"item_id"`
+	Delta  string `json:"delta"`
+}
+
+type fnArgsDone struct {
+	Type      string `json:"type"`
+	ItemID    string `json:"item_id"`
+	Arguments string `json:"arguments"`
+}
+
+// streamState accumulates streamed function-call arguments across SSE events.
+// The Responses API streams a tool call as: output_item.added (empty arguments)
+// → function_call_arguments.delta* → function_call_arguments.done. We buffer
+// until we have the full arguments JSON, then emit a single ai.ToolCall.
+type streamState struct {
+	pendingCalls map[string]*pendingCall
+	order        []string
+}
+
+type pendingCall struct {
+	id   string
+	name string
+	args strings.Builder
+}
+
+func newStreamState() *streamState {
+	return &streamState{pendingCalls: map[string]*pendingCall{}}
+}
+
+func (s *streamState) start(itemID, name, initialArgs string) {
+	if _, exists := s.pendingCalls[itemID]; exists {
+		return
+	}
+	pc := &pendingCall{id: itemID, name: name}
+	if initialArgs != "" {
+		pc.args.WriteString(initialArgs)
+	}
+	s.pendingCalls[itemID] = pc
+	s.order = append(s.order, itemID)
+}
+
+func (s *streamState) appendDelta(itemID, delta string) {
+	if pc, ok := s.pendingCalls[itemID]; ok {
+		pc.args.WriteString(delta)
+	}
+}
+
+func (s *streamState) emit(ctx context.Context, itemID, finalArgs string, out chan<- ai.Event) error {
+	pc, ok := s.pendingCalls[itemID]
+	if !ok {
+		return nil
+	}
+	delete(s.pendingCalls, itemID)
+	for i, id := range s.order {
+		if id == itemID {
+			s.order = append(s.order[:i], s.order[i+1:]...)
+			break
+		}
+	}
+	args := finalArgs
+	if args == "" {
+		args = pc.args.String()
+	}
+	if args == "" {
+		args = "{}"
+	}
+	return send(ctx, out, ai.ToolCall{
+		ID:   pc.id,
+		Name: pc.name,
+		Args: json.RawMessage(args),
+	})
+}
+
+func (s *streamState) flushAll(ctx context.Context, out chan<- ai.Event) error {
+	ids := append([]string(nil), s.order...)
+	for _, id := range ids {
+		if err := s.emit(ctx, id, "", out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, state *streamState) error {
 	data = strings.TrimSpace(data)
 	if data == "" {
 		return nil
@@ -128,11 +224,32 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event) 
 			return nil
 		}
 		if ia.Item.Type == "function_call" {
-			return send(ctx, out, ai.ToolCall{
-				ID:   ia.Item.ID,
-				Name: ia.Item.Name,
-				Args: json.RawMessage(ia.Item.Arguments),
-			})
+			state.start(ia.Item.ID, ia.Item.Name, ia.Item.Arguments)
+		}
+		return nil
+
+	case "response.function_call_arguments.delta":
+		var d fnArgsDelta
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil
+		}
+		state.appendDelta(d.ItemID, d.Delta)
+		return nil
+
+	case "response.function_call_arguments.done":
+		var d fnArgsDone
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil
+		}
+		return state.emit(ctx, d.ItemID, d.Arguments, out)
+
+	case "response.output_item.done":
+		var id itemDone
+		if err := json.Unmarshal([]byte(data), &id); err != nil {
+			return nil
+		}
+		if id.Item.Type == "function_call" {
+			return state.emit(ctx, id.Item.ID, id.Item.Arguments, out)
 		}
 		return nil
 
@@ -140,6 +257,9 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event) 
 		var rc respCompleted
 		if err := json.Unmarshal([]byte(data), &rc); err != nil {
 			return nil
+		}
+		if err := state.flushAll(ctx, out); err != nil {
+			return err
 		}
 		if err := send(ctx, out, ai.Usage{
 			Input:     rc.Response.Usage.InputTokens,

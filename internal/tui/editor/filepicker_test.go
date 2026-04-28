@@ -55,3 +55,17 @@ func TestFilePicker_Selection(t *testing.T) {
 		t.Fatal("expected selection")
 	}
 }
+
+func TestFilePicker_SetQuerySamePreservesSelection(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "a"), nil, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "b"), nil, 0o644)
+	fp := NewFilePicker(dir)
+	fp.SetQuery("")
+	fp.Down()
+	want := fp.Sel()
+	fp.SetQuery("")
+	if got := fp.Sel(); got != want {
+		t.Fatalf("re-applying same query reset selection: want %d, got %d", want, got)
+	}
+}

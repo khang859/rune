@@ -85,6 +85,45 @@ func TestParseSSE_ToolCall(t *testing.T) {
 	}
 }
 
+func TestParseSSE_ToolCall_Streamed(t *testing.T) {
+	b, _ := os.ReadFile("testdata/stream_tool_call_streamed.sse")
+	out := make(chan ai.Event, 32)
+	if err := parseSSE(context.Background(), strings.NewReader(string(b)), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+	evs := collect(t, out)
+	var calls []ai.ToolCall
+	doneIdx := -1
+	for i, e := range evs {
+		switch v := e.(type) {
+		case ai.ToolCall:
+			calls = append(calls, v)
+		case ai.Done:
+			doneIdx = i
+		}
+	}
+	if len(calls) != 1 {
+		t.Fatalf("got %d ToolCalls, want 1", len(calls))
+	}
+	if calls[0].Name != "bash" {
+		t.Fatalf("tool name = %q", calls[0].Name)
+	}
+	var args map[string]string
+	if err := json.Unmarshal(calls[0].Args, &args); err != nil {
+		t.Fatalf("args not valid JSON: %v (raw=%q)", err, string(calls[0].Args))
+	}
+	if args["command"] != "echo hi" {
+		t.Fatalf("command = %q", args["command"])
+	}
+	// ToolCall must be emitted before Done, so the agent loop sees it.
+	for i, e := range evs {
+		if _, ok := e.(ai.ToolCall); ok && i > doneIdx && doneIdx >= 0 {
+			t.Fatal("ToolCall emitted after Done")
+		}
+	}
+}
+
 func TestParseSSE_ContextOverflow(t *testing.T) {
 	b, _ := os.ReadFile("testdata/stream_overflow.sse")
 	out := make(chan ai.Event, 32)

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -35,6 +36,9 @@ func TestEdit_FailsOnAmbiguous(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("expected IsError=true on ambiguous match")
 	}
+	if !strings.Contains(res.Output, "disambiguate") {
+		t.Fatalf("output should guide on disambiguation: %q", res.Output)
+	}
 }
 
 func TestEdit_FailsWhenNotFound(t *testing.T) {
@@ -45,5 +49,8 @@ func TestEdit_FailsWhenNotFound(t *testing.T) {
 	res, _ := (Edit{}).Run(context.Background(), args)
 	if !res.IsError {
 		t.Fatal("expected IsError=true on no match")
+	}
+	if !strings.Contains(res.Output, "whitespace") {
+		t.Fatalf("output should guide on exact-match expectations: %q", res.Output)
 	}
 }

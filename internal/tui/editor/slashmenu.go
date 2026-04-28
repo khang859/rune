@@ -8,10 +8,11 @@ import (
 )
 
 type SlashMenu struct {
-	all   []string
-	query string
-	items []string
-	sel   int
+	all    []string
+	query  string
+	items  []string
+	sel    int
+	primed bool
 }
 
 func NewSlashMenu(cmds []string) *SlashMenu {
@@ -22,6 +23,10 @@ func NewSlashMenu(cmds []string) *SlashMenu {
 }
 
 func (s *SlashMenu) SetQuery(q string) {
+	if s.primed && s.query == q {
+		return
+	}
+	s.primed = true
 	s.query = q
 	s.sel = 0
 	if q == "" {
@@ -46,6 +51,7 @@ func (s *SlashMenu) SetQuery(q string) {
 }
 
 func (s *SlashMenu) Items() []string { return s.items }
+func (s *SlashMenu) Sel() int        { return s.sel }
 func (s *SlashMenu) Selected() string {
 	if s.sel < 0 || s.sel >= len(s.items) {
 		return ""

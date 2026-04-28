@@ -141,11 +141,12 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 			e.closeOverlay()
 			return Result{}, nil, true
 		case tea.KeyRunes, tea.KeyBackspace, tea.KeySpace:
-			// fall through to textarea so it edits, then re-derive query
+			// fall through to textarea so it edits, then re-derive mode/query —
+			// deleting the leading '@' must close the overlay.
 			var cmd tea.Cmd
 			e.ta, cmd = e.ta.Update(k)
+			e.maybeOpenOverlay()
 			e.updateHeight()
-			e.fp.SetQuery(e.currentRefQuery())
 			return Result{}, cmd, true
 		}
 	case ModeSlashMenu:
@@ -175,8 +176,8 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 		case tea.KeyRunes, tea.KeyBackspace, tea.KeySpace:
 			var cmd tea.Cmd
 			e.ta, cmd = e.ta.Update(k)
+			e.maybeOpenOverlay()
 			e.updateHeight()
-			e.slash.SetQuery(strings.TrimPrefix(e.currentLine(), "/"))
 			return Result{}, cmd, true
 		}
 	case ModeNormal:

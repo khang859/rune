@@ -23,3 +23,14 @@ func TestSlashMenu_ExactMatchFirst(t *testing.T) {
 		t.Fatalf("/model not first: %v", items)
 	}
 }
+
+func TestSlashMenu_SetQuerySamePreservesSelection(t *testing.T) {
+	m := NewSlashMenu([]string{"/a", "/b", "/c"})
+	m.SetQuery("")
+	m.Down()
+	want := m.Sel()
+	m.SetQuery("")
+	if got := m.Sel(); got != want {
+		t.Fatalf("re-applying same query reset selection: want %d, got %d", want, got)
+	}
+}

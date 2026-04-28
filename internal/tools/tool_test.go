@@ -33,9 +33,20 @@ func TestRegistry_RegisterAndRun(t *testing.T) {
 
 func TestRegistry_UnknownTool(t *testing.T) {
 	r := NewRegistry()
-	_, err := r.Run(context.Background(), ai.ToolCall{Name: "missing"})
-	if err == nil || !strings.Contains(err.Error(), "unknown tool") {
-		t.Fatalf("err = %v", err)
+	r.Register(stubTool{name: "alpha"})
+	r.Register(stubTool{name: "beta"})
+	res, err := r.Run(context.Background(), ai.ToolCall{Name: "missing"})
+	if err != nil {
+		t.Fatalf("unexpected go error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatalf("expected IsError=true, got %#v", res)
+	}
+	if !strings.Contains(res.Output, `unknown tool "missing"`) {
+		t.Fatalf("output should name the missing tool: %q", res.Output)
+	}
+	if !strings.Contains(res.Output, "alpha") || !strings.Contains(res.Output, "beta") {
+		t.Fatalf("output should list available tools: %q", res.Output)
 	}
 }
 

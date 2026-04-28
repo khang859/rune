@@ -103,6 +103,30 @@ func TestEditor_TabCompletesUniquePath(t *testing.T) {
 	}
 }
 
+func TestEditor_BackspacingPrefixClosesOverlay(t *testing.T) {
+	e := New(t.TempDir(), []string{"/quit", "/new"})
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	if e.Mode() != ModeSlashMenu {
+		t.Fatalf("expected ModeSlashMenu after '/', got %v", e.Mode())
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if e.Mode() != ModeNormal {
+		t.Fatalf("expected ModeNormal after backspacing '/', got %v", e.Mode())
+	}
+
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "foo.go"), nil, 0o644)
+	e2 := New(dir, nil)
+	e2.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}})
+	if e2.Mode() != ModeFilePicker {
+		t.Fatalf("expected ModeFilePicker after '@', got %v", e2.Mode())
+	}
+	e2.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	if e2.Mode() != ModeNormal {
+		t.Fatalf("expected ModeNormal after backspacing '@', got %v", e2.Mode())
+	}
+}
+
 func TestEditor_SlashNoMatchSubmitsAsText(t *testing.T) {
 	e := New(t.TempDir(), []string{"/quit", "/new"})
 	for _, r := range "/zzzzz" {

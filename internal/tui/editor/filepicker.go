@@ -11,11 +11,12 @@ import (
 const filePickerLimit = 50
 
 type FilePicker struct {
-	root  string
-	files []string // relative paths
-	query string
-	items []string
-	sel   int
+	root    string
+	files   []string // relative paths
+	query   string
+	items   []string
+	sel     int
+	primed  bool
 }
 
 func NewFilePicker(root string) *FilePicker {
@@ -56,6 +57,10 @@ func (f *FilePicker) scan() {
 }
 
 func (f *FilePicker) SetQuery(q string) {
+	if f.primed && f.query == q {
+		return
+	}
+	f.primed = true
 	f.query = q
 	f.sel = 0
 	if q == "" {
@@ -96,6 +101,7 @@ func filterFuzzy(corpus []string, q string, limit int) []string {
 }
 
 func (f *FilePicker) Items() []string { return f.items }
+func (f *FilePicker) Sel() int        { return f.sel }
 func (f *FilePicker) Selected() string {
 	if f.sel < 0 || f.sel >= len(f.items) {
 		return ""

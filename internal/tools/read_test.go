@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -36,6 +37,9 @@ func TestRead_Missing(t *testing.T) {
 	if !res.IsError {
 		t.Fatalf("expected IsError=true, got %#v", res)
 	}
+	if !strings.Contains(res.Output, "/does/not/exist") || !strings.Contains(res.Output, "ls") {
+		t.Fatalf("output should guide recovery: %q", res.Output)
+	}
 }
 
 func TestRead_BadArgs(t *testing.T) {
@@ -45,5 +49,8 @@ func TestRead_BadArgs(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("expected IsError=true")
+	}
+	if !strings.Contains(res.Output, `"path"`) {
+		t.Fatalf("output should echo expected schema: %q", res.Output)
 	}
 }

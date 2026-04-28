@@ -72,33 +72,39 @@ func buildPayload(req ai.Request) ([]byte, error) {
 func messageToInputItems(m ai.Message) ([]inputItem, error) {
 	switch m.Role {
 	case ai.RoleUser, ai.RoleAssistant:
-		item := inputItem{
+		msg := inputItem{
 			Type: "message",
 			Role: string(m.Role),
 		}
+		var items []inputItem
 		for _, c := range m.Content {
-			switch v := c.(type) {
-			case ai.TextBlock:
-				item.Content = append(item.Content, inputContent{Type: textTypeFor(m.Role), Text: v.Text})
-			case ai.ToolUseBlock:
-				args := string(v.Args)
-				if args == "" {
-					args = "{}"
-				}
-				items := []inputItem{}
-				if len(item.Content) > 0 {
-					items = append(items, item)
-				}
-				items = append(items, inputItem{
-					Type:      "function_call",
-					CallID:    v.ID,
-					Name:      v.Name,
-					Arguments: args,
-				})
-				return items, nil
+			if v, ok := c.(ai.TextBlock); ok {
+				msg.Content = append(msg.Content, inputContent{Type: textTypeFor(m.Role), Text: v.Text})
 			}
 		}
-		return []inputItem{item}, nil
+		if len(msg.Content) > 0 {
+			items = append(items, msg)
+		}
+		for _, c := range m.Content {
+			v, ok := c.(ai.ToolUseBlock)
+			if !ok {
+				continue
+			}
+			args := string(v.Args)
+			if args == "" {
+				args = "{}"
+			}
+			items = append(items, inputItem{
+				Type:      "function_call",
+				CallID:    v.ID,
+				Name:      v.Name,
+				Arguments: args,
+			})
+		}
+		if len(items) == 0 {
+			items = []inputItem{msg}
+		}
+		return items, nil
 
 	case ai.RoleToolResult:
 		for _, c := range m.Content {
