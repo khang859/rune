@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"golang.design/x/clipboard"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tui/editor"
+	"github.com/khang859/rune/internal/tui/modal"
 )
 
 type RootModel struct {
@@ -33,6 +38,12 @@ type RootModel struct {
 	cancel    context.CancelFunc
 
 	totalTokens int
+
+	modal           modal.Modal
+	settings        modal.Settings
+	pendingForkMode bool
+	clipboardReady  bool
+	clipboardErr    error
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -48,7 +59,11 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 			sessLabel = sessLabel[:8]
 		}
 	}
-	cmds := []string{"/quit", "/new", "/copy", "/hotkeys"}
+	cmds := []string{
+		"/quit", "/model", "/tree", "/resume", "/settings",
+		"/new", "/name", "/session", "/fork", "/clone", "/copy",
+		"/compact", "/reload", "/hotkeys",
+	}
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
@@ -65,6 +80,10 @@ func (m *RootModel) Init() tea.Cmd { return nil }
 
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
+	case compactDoneMsg:
+		m.rebuildMessagesFromSession()
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
 		m.layout()
@@ -91,6 +110,27 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseMsg:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
+
+	case modal.ResultMsg:
+		cur := m.modal
+		m.modal = nil
+		if v.Cancel {
+			m.layout()
+			return m, nil
+		}
+		cmd := m.applyModalResult(cur, v.Payload)
+		m.layout()
+		return m, cmd
+	}
+
+	if m.modal != nil {
+		// Quit shortcut still works while a modal is open.
+		if k, ok := msg.(tea.KeyMsg); ok && k.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
+		next, cmd := m.modal.Update(msg)
+		m.modal = next
 		return m, cmd
 	}
 
@@ -164,17 +204,49 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	switch cmd {
 	case "/quit":
 		return tea.Quit
-	case "/new":
-		m.msgs = NewMessages(m.width)
-		m.refreshViewport()
+	case "/model":
+		m.modal = modal.NewModelPicker([]string{"gpt-5", "gpt-5-codex", "gpt-5.1-codex-mini"}, m.sess.Model)
+	case "/tree":
+		m.modal = modal.NewTree(m.sess)
+	case "/resume":
+		items, _ := session.ListSessions(config.SessionsDir())
+		m.modal = modal.NewResume(items)
+	case "/settings":
+		m.modal = modal.NewSettings(m.settings)
 	case "/hotkeys":
-		m.msgs.OnTurnError(fmt.Errorf("(hotkeys list lands in Plan 05)"))
-		m.refreshViewport()
+		m.modal = modal.NewHotkeys()
+	case "/new":
+		m.startNewSession()
+	case "/name":
+		m.msgs.OnTurnError(fmt.Errorf("(use /settings or future inline prompt)"))
+	case "/session":
+		m.msgs.OnTurnError(fmt.Errorf("session id=%s name=%q model=%s", m.sess.ID, m.sess.Name, m.sess.Model))
+	case "/fork":
+		m.modal = modal.NewTree(m.sess)
+		m.pendingForkMode = true
+	case "/clone":
+		nc := m.sess.Clone()
+		nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
+		_ = nc.Save()
+		m.swapSession(nc)
+	case "/copy":
+		last := lastAssistantText(m.sess)
+		if last != "" {
+			m.copyToClipboard(last)
+		}
+	case "/compact":
+		return m.startCompact()
+	case "/reload":
+		m.refreshSystemPrompt()
 	}
+	m.layout()
 	return nil
 }
 
 func (m *RootModel) View() string {
+	if m.modal != nil {
+		return m.modal.View(m.width, m.height)
+	}
 	msgArea := m.viewport.View()
 	edArea := m.styles.EditorBox.Render(m.editor.View(m.width))
 	overlay := ""
@@ -270,4 +342,141 @@ func ctxPct(tokens int) int {
 		return 100
 	}
 	return p
+}
+
+func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
+	switch cur.(type) {
+	case *modal.ModelPicker:
+		if id, ok := payload.(string); ok {
+			m.sess.Model = id
+			m.footer.Model = id
+		}
+	case *modal.SettingsModal:
+		if s, ok := payload.(modal.Settings); ok {
+			m.settings = s
+		}
+	case *modal.Resume:
+		if sum, ok := payload.(session.Summary); ok {
+			ns, err := session.Load(sum.Path)
+			if err == nil {
+				m.swapSession(ns)
+			}
+		}
+	case *modal.Tree:
+		if id, ok := payload.(string); ok {
+			target := findNode(m.sess.Root, id)
+			if target != nil {
+				if m.pendingForkMode {
+					m.sess.Fork(target)
+					m.pendingForkMode = false
+				} else {
+					m.sess.Active = target
+				}
+				m.rebuildMessagesFromSession()
+			}
+		}
+	}
+	return nil
+}
+
+func findNode(n *session.Node, id string) *session.Node {
+	if n == nil {
+		return nil
+	}
+	if n.ID == id {
+		return n
+	}
+	for _, c := range n.Children {
+		if r := findNode(c, id); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
+func lastAssistantText(s *session.Session) string {
+	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
+		if n.Message.Role == ai.RoleAssistant {
+			for _, c := range n.Message.Content {
+				if t, ok := c.(ai.TextBlock); ok {
+					return t.Text
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func (m *RootModel) startNewSession() {
+	nc := session.New(m.sess.Model)
+	nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
+	m.swapSession(nc)
+}
+
+func (m *RootModel) swapSession(s *session.Session) {
+	m.sess = s
+	m.footer.Session = s.Name
+	m.footer.Model = s.Model
+	m.rebuildMessagesFromSession()
+	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), s, m.agent.System())
+}
+
+func (m *RootModel) rebuildMessagesFromSession() {
+	m.msgs = NewMessages(m.width)
+	for _, msg := range m.sess.PathToActive() {
+		switch msg.Role {
+		case ai.RoleUser:
+			for _, c := range msg.Content {
+				if t, ok := c.(ai.TextBlock); ok {
+					m.msgs.AppendUser(t.Text)
+				}
+			}
+		case ai.RoleAssistant:
+			for _, c := range msg.Content {
+				if t, ok := c.(ai.TextBlock); ok {
+					m.msgs.OnAssistantDelta(t.Text)
+				}
+			}
+			m.msgs.OnTurnDone("stop")
+		}
+	}
+	m.refreshViewport()
+}
+
+func (m *RootModel) startCompact() tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		_ = m.agent.Compact(ctx, "")
+		return compactDoneMsg{}
+	}
+}
+
+type compactDoneMsg struct{}
+
+func (m *RootModel) copyToClipboard(text string) {
+	if !m.clipboardReady && m.clipboardErr == nil {
+		if err := clipboard.Init(); err != nil {
+			m.clipboardErr = err
+			m.msgs.OnTurnError(fmt.Errorf("clipboard unavailable: %v", err))
+			return
+		}
+		m.clipboardReady = true
+	}
+	if m.clipboardErr != nil {
+		m.msgs.OnTurnError(fmt.Errorf("clipboard unavailable: %v", m.clipboardErr))
+		return
+	}
+	clipboard.Write(clipboard.FmtText, []byte(text))
+}
+
+func (m *RootModel) refreshSystemPrompt() {
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	sys := defaultSystemPromptForRoot() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), m.sess, sys)
+}
+
+func defaultSystemPromptForRoot() string {
+	return "You are rune, a coding agent. Use the available tools."
 }
