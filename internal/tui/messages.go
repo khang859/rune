@@ -24,12 +24,14 @@ const (
 	bkToolResult
 	bkError
 	bkInfo
+	bkSummary
 )
 
 type block struct {
-	kind blockKind
-	text string
-	meta string
+	kind  blockKind
+	text  string
+	meta  string
+	count int
 }
 
 func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
@@ -95,6 +97,11 @@ func (m *Messages) OnInfo(text string) {
 	m.blocks = append(m.blocks, block{kind: bkInfo, text: text})
 }
 
+func (m *Messages) AppendSummary(text string, count int) {
+	m.streamingAsstIdx = -1
+	m.blocks = append(m.blocks, block{kind: bkSummary, text: text, count: count})
+}
+
 func (m *Messages) Render(s Styles) string {
 	var sb strings.Builder
 	for i, b := range m.blocks {
@@ -116,6 +123,11 @@ func (m *Messages) Render(s Styles) string {
 			sb.WriteString(s.ToolError.Render("error: " + b.text))
 		case bkInfo:
 			sb.WriteString(s.Info.Render(b.text))
+		case bkSummary:
+			header := fmt.Sprintf("── compacted summary (%d messages) ──", b.count)
+			sb.WriteString(s.SummaryHeader.Render(header))
+			sb.WriteString("\n")
+			sb.WriteString(s.Assistant.Render(b.text))
 		}
 	}
 	return sb.String()

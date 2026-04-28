@@ -100,6 +100,38 @@ func TestCompact_KeepsSiblingForks(t *testing.T) {
 	}
 }
 
+func TestCompact_MarksSummaryNodeWithCount(t *testing.T) {
+	s := New("gpt-5")
+	s.Append(userMsg("u1"))
+	s.Append(asstMsg("a1"))
+	s.Append(userMsg("u2"))
+	s.Append(asstMsg("a2"))
+	s.Append(userMsg("u3"))
+
+	summarizer := func(ctx context.Context, _ []ai.Message, _ string) (string, error) {
+		return "S", nil
+	}
+	if err := s.Compact(context.Background(), "", summarizer); err != nil {
+		t.Fatal(err)
+	}
+
+	// Summary should have replaced 4 messages (everything before u3).
+	nodes := s.PathToActiveNodes()
+	if len(nodes) == 0 {
+		t.Fatal("no active nodes after compact")
+	}
+	sum := nodes[0]
+	if sum.CompactedCount != 4 {
+		t.Fatalf("CompactedCount = %d, want 4", sum.CompactedCount)
+	}
+	// Subsequent nodes (u3) must not be marked as summaries.
+	for _, n := range nodes[1:] {
+		if n.CompactedCount != 0 {
+			t.Fatalf("non-summary node has CompactedCount=%d", n.CompactedCount)
+		}
+	}
+}
+
 func TestCompact_NoCutPoint_ReturnsNoOp(t *testing.T) {
 	s := New("gpt-5")
 	summarizer := func(ctx context.Context, msgs []ai.Message, _ string) (string, error) { return "x", nil }

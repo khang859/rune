@@ -43,10 +43,11 @@ func (s *Session) Compact(ctx context.Context, instructions string, summarize Su
 
 	// Build a new branch off root: [summary, path[cut:]...]
 	s.Active = s.Root
-	s.Append(ai.Message{
+	sumNode := s.Append(ai.Message{
 		Role:    ai.RoleAssistant,
 		Content: []ai.ContentBlock{ai.TextBlock{Text: summary}},
 	})
+	sumNode.CompactedCount = cut
 	for _, m := range path[cut:] {
 		n := s.Append(m)
 		n.Created = time.Now()

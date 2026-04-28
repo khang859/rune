@@ -63,6 +63,33 @@ func TestMessages_TurnError(t *testing.T) {
 	}
 }
 
+func TestMessages_AppendSummaryRendersHeader(t *testing.T) {
+	m := NewMessages(80)
+	m.AppendSummary("the gist", 5)
+	out := m.Render(DefaultStyles())
+	if !strings.Contains(out, "compacted summary") {
+		t.Fatalf("missing header: %q", out)
+	}
+	if !strings.Contains(out, "5 messages") {
+		t.Fatalf("missing count: %q", out)
+	}
+	if !strings.Contains(out, "the gist") {
+		t.Fatalf("missing body: %q", out)
+	}
+}
+
+func TestMessages_AppendSummaryEndsAssistantStream(t *testing.T) {
+	m := NewMessages(80)
+	m.OnAssistantDelta("partial")
+	m.AppendSummary("S", 1)
+	m.OnAssistantDelta("after")
+	out := m.Render(DefaultStyles())
+	// "after" should be its own assistant block, not concatenated onto "partial".
+	if strings.Contains(out, "partialafter") {
+		t.Fatalf("AppendSummary did not break the assistant stream: %q", out)
+	}
+}
+
 func TestMessages_OnInfoDoesNotEndAssistantStream(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hel")

@@ -20,13 +20,14 @@ type wireSession struct {
 }
 
 type wireNode struct {
-	ID         string     `json:"id"`
-	ParentID   string     `json:"parent_id,omitempty"`
-	ChildIDs   []string   `json:"children,omitempty"`
-	Message    ai.Message `json:"message,omitempty"`
-	HasMessage bool       `json:"has_message"`
-	Usage      ai.Usage   `json:"usage,omitempty"`
-	Created    string     `json:"created"`
+	ID             string     `json:"id"`
+	ParentID       string     `json:"parent_id,omitempty"`
+	ChildIDs       []string   `json:"children,omitempty"`
+	Message        ai.Message `json:"message,omitempty"`
+	HasMessage     bool       `json:"has_message"`
+	Usage          ai.Usage   `json:"usage,omitempty"`
+	Created        string     `json:"created"`
+	CompactedCount int        `json:"compacted_count,omitempty"`
 }
 
 func (s *Session) Save() error {
@@ -46,9 +47,10 @@ func (s *Session) Save() error {
 	}
 	walk(s.Root, func(n *Node) {
 		wn := wireNode{
-			ID:      n.ID,
-			Usage:   n.Usage,
-			Created: n.Created.Format("2006-01-02T15:04:05Z07:00"),
+			ID:             n.ID,
+			Usage:          n.Usage,
+			Created:        n.Created.Format("2006-01-02T15:04:05Z07:00"),
+			CompactedCount: n.CompactedCount,
 		}
 		if n.Parent != nil {
 			wn.ParentID = n.Parent.ID
@@ -99,7 +101,7 @@ func Load(path string) (*Session, error) {
 	}
 	nodes := map[string]*Node{}
 	for _, wn := range w.Nodes {
-		n := &Node{ID: wn.ID, Usage: wn.Usage}
+		n := &Node{ID: wn.ID, Usage: wn.Usage, CompactedCount: wn.CompactedCount}
 		if wn.HasMessage {
 			n.Message = wn.Message
 		}

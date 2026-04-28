@@ -141,6 +141,102 @@ func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 	}
 }
 
+func TestRoot_SlashCommandInfoFlushesToViewportImmediately(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// /copy with no assistant message must surface the notice in the viewport,
+	// not buffer it until the next user prompt.
+	m.handleSlashCommand("/copy")
+
+	if got := m.viewport.View(); !strings.Contains(got, "no assistant message to copy") {
+		t.Fatalf("expected /copy notice flushed to viewport, got:\n%s", got)
+	}
+}
+
+func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
+	s := session.New("gpt-5")
+	// Build a session with a pre-existing summary node so rebuild has work to do.
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u1"}}})
+	sum := s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "the summary"}}})
+	sum.CompactedCount = 4
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u2"}}})
+
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.compacting = true
+
+	_, _ = m.Update(compactDoneMsg{sess: s, count: 4})
+	out := m.msgs.Render(m.styles)
+	if !strings.Contains(out, "compacted summary (4 messages)") {
+		t.Fatalf("missing summary header: %q", out)
+	}
+	if !strings.Contains(out, "the summary") {
+		t.Fatalf("missing summary body: %q", out)
+	}
+	if !strings.Contains(out, "(compacted 4 messages)") {
+		t.Fatalf("missing post-compact info: %q", out)
+	}
+	if m.compacting {
+		t.Fatal("compacting flag should be cleared after compactDoneMsg")
+	}
+}
+
+func TestRoot_CompactDoneSurfacesError(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.compacting = true
+
+	_, _ = m.Update(compactDoneMsg{sess: s, err: fmt.Errorf("boom")})
+	out := m.msgs.Render(m.styles)
+	if !strings.Contains(out, "compact failed") || !strings.Contains(out, "boom") {
+		t.Fatalf("error not surfaced: %q", out)
+	}
+	if m.compacting {
+		t.Fatal("compacting flag should be cleared even on error")
+	}
+}
+
+func TestRoot_CompactDoneFromSwappedSessionIsDropped(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.compacting = true
+
+	stale := session.New("gpt-5")
+	_, _ = m.Update(compactDoneMsg{sess: stale, count: 9})
+
+	if !m.compacting {
+		t.Fatal("stale compactDoneMsg must not clear compacting flag on the active session")
+	}
+	if strings.Contains(m.msgs.Render(m.styles), "compacted 9 messages") {
+		t.Fatal("stale compactDoneMsg leaked into messages")
+	}
+}
+
+func TestRoot_CompactQueuesUserInputAndDrainsOnDone(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.compacting = true
+	m.queue.Push(QueueItem{Text: "queued during compact"})
+
+	_, cmd := m.Update(compactDoneMsg{sess: s, count: 1})
+	if cmd == nil {
+		t.Fatal("expected drain cmd after compactDoneMsg with queued item")
+	}
+	if !strings.Contains(m.msgs.Render(m.styles), "queued during compact") {
+		t.Fatal("queued message did not appear in chat after compact done")
+	}
+}
+
 func TestRoot_RefusesCompactWhileStreaming(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

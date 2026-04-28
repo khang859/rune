@@ -25,6 +25,9 @@ type Node struct {
 	Message  ai.Message
 	Usage    ai.Usage
 	Created  time.Time
+	// CompactedCount > 0 marks this node as a compaction summary that
+	// replaced N prior messages along its branch.
+	CompactedCount int
 }
 
 func New(model string) *Session {
@@ -80,6 +83,17 @@ func (s *Session) PathToActive() []ai.Message {
 		msgs = append([]ai.Message{n.Message}, msgs...)
 	}
 	return msgs
+}
+
+// PathToActiveNodes returns the nodes from the first child of root down to
+// Active (excluding root). Use when callers need per-node metadata (e.g.
+// CompactedCount) that PathToActive's []ai.Message strips away.
+func (s *Session) PathToActiveNodes() []*Node {
+	var nodes []*Node
+	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
+		nodes = append([]*Node{n}, nodes...)
+	}
+	return nodes
 }
 
 func newID() string {

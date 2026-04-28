@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"golang.design/x/clipboard"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -34,9 +35,10 @@ type RootModel struct {
 	width  int
 	height int
 
-	streaming bool
-	eventCh   <-chan agent.Event
-	cancel    context.CancelFunc
+	streaming  bool
+	compacting bool
+	eventCh    <-chan agent.Event
+	cancel     context.CancelFunc
 
 	totalTokens int
 
@@ -97,7 +99,24 @@ func (m *RootModel) Init() tea.Cmd { return nil }
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch v := msg.(type) {
 	case compactDoneMsg:
+		// Drop late completions from a session that was swapped out mid-compact.
+		if v.sess != m.sess {
+			return m, nil
+		}
+		m.compacting = false
+		m.editor.Focus()
 		m.rebuildMessagesFromSession()
+		if v.err != nil {
+			m.msgs.OnTurnError(fmt.Errorf("compact failed: %v", v.err))
+		} else {
+			m.msgs.OnInfo(fmt.Sprintf("(compacted %d messages)", v.count))
+		}
+		m.refreshViewport()
+		if item, ok := m.queue.Pop(); ok {
+			m.msgs.AppendUser(item.Text)
+			m.refreshViewport()
+			return m, m.startTurn(item.Text, item.Images)
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -188,7 +207,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			text = m.pendingSkillBody + "\n\n" + text
 			m.pendingSkillBody = ""
 		}
-		if m.streaming {
+		if m.streaming || m.compacting {
 			m.queue.Push(QueueItem{Text: text, Images: res.Images})
 			m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
 			m.refreshViewport()
@@ -291,10 +310,14 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			m.copyToClipboard(last)
 		}
 	case "/compact":
-		if m.streaming {
+		if m.streaming || m.compacting {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
+		m.compacting = true
+		m.editor.Blur()
+		m.msgs.OnInfo("(compacting…)")
+		m.refreshViewport()
 		m.layout()
 		return m.startCompact()
 	case "/reload":
@@ -313,6 +336,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.refreshSystemPrompt()
 		m.refreshViewport()
 	}
+	m.refreshViewport()
 	m.layout()
 	return initCmd
 }
@@ -333,9 +357,11 @@ func (m *RootModel) View() string {
 	overlay := ""
 	switch m.editor.Mode() {
 	case editor.ModeFilePicker:
-		overlay = renderList("files", m.editor.FilePicker().Items())
+		fp := m.editor.FilePicker()
+		overlay = renderList("files", fp.Items(), fp.Sel())
 	case editor.ModeSlashMenu:
-		overlay = renderList("commands", m.editor.SlashMenu().Items())
+		sm := m.editor.SlashMenu()
+		overlay = renderList("commands", sm.Items(), sm.Sel())
 	}
 	foot := m.footer.Render(m.styles)
 	if overlay != "" {
@@ -344,20 +370,39 @@ func (m *RootModel) View() string {
 	return msgArea + "\n" + edArea + "\n" + foot
 }
 
-func renderList(title string, items []string) string {
+func renderList(title string, items []string, sel int) string {
 	if len(items) == 0 {
 		return "(no " + title + ")"
 	}
+	const window = 8
+	start := 0
+	if sel >= window {
+		start = sel - window + 1
+	}
+	end := start + window
+	if end > len(items) {
+		end = len(items)
+	}
 	out := title + ":"
-	for i, it := range items {
-		if i >= 8 {
-			out += "\n  …"
-			break
+	if start > 0 {
+		out += "\n  …"
+	}
+	for i := start; i < end; i++ {
+		marker := "  "
+		line := items[i]
+		if i == sel {
+			marker = "> "
+			line = selectedRowStyle.Render(line)
 		}
-		out += "\n  " + it
+		out += "\n" + marker + line
+	}
+	if end < len(items) {
+		out += "\n  …"
 	}
 	return out
 }
+
+var selectedRowStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12"))
 
 func (m *RootModel) layout() {
 	if m.width == 0 || m.height == 0 {
@@ -518,13 +563,15 @@ func (m *RootModel) stopActiveTurn() {
 	m.cancel = nil
 	m.eventCh = nil
 	m.streaming = false
+	m.compacting = false
 	m.queue = &Queue{}
 	m.editor.Focus()
 }
 
 func (m *RootModel) rebuildMessagesFromSession() {
 	m.msgs = NewMessages(m.width)
-	for _, msg := range m.sess.PathToActive() {
+	for _, n := range m.sess.PathToActiveNodes() {
+		msg := n.Message
 		switch msg.Role {
 		case ai.RoleUser:
 			for _, c := range msg.Content {
@@ -533,6 +580,16 @@ func (m *RootModel) rebuildMessagesFromSession() {
 				}
 			}
 		case ai.RoleAssistant:
+			if n.CompactedCount > 0 {
+				var text string
+				for _, c := range msg.Content {
+					if t, ok := c.(ai.TextBlock); ok {
+						text += t.Text
+					}
+				}
+				m.msgs.AppendSummary(text, n.CompactedCount)
+				continue
+			}
 			for _, c := range msg.Content {
 				if t, ok := c.(ai.TextBlock); ok {
 					m.msgs.OnAssistantDelta(t.Text)
@@ -545,15 +602,32 @@ func (m *RootModel) rebuildMessagesFromSession() {
 }
 
 func (m *RootModel) startCompact() tea.Cmd {
+	sess := m.sess
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
-		_ = m.agent.Compact(ctx, "")
-		return compactDoneMsg{}
+		// Capture pre-compact path length so we can report N. Compact
+		// replaces everything before the most recent user message; we'll
+		// recover the count from the new summary node below.
+		err := m.agent.Compact(ctx, "")
+		count := 0
+		if err == nil {
+			for _, n := range sess.PathToActiveNodes() {
+				if n.CompactedCount > 0 {
+					count = n.CompactedCount
+					break
+				}
+			}
+		}
+		return compactDoneMsg{sess: sess, err: err, count: count}
 	}
 }
 
-type compactDoneMsg struct{}
+type compactDoneMsg struct {
+	sess  *session.Session
+	err   error
+	count int
+}
 
 func (m *RootModel) copyToClipboard(text string) {
 	if !m.clipboardReady && m.clipboardErr == nil {
