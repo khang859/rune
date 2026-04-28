@@ -41,6 +41,20 @@ func TestMessages_ToolCallAndResult(t *testing.T) {
 	}
 }
 
+func TestMessages_AssistantDeltaSurvivesIntervening(t *testing.T) {
+	m := NewMessages(80)
+	m.OnAssistantDelta("hel")
+	// Append enough thinking to force a slice realloc on most growth schedules.
+	for range 8 {
+		m.OnThinkingDelta("x")
+	}
+	m.OnAssistantDelta("lo")
+	out := m.Render(DefaultStyles())
+	if !strings.Contains(out, "hello") {
+		t.Fatalf("assistant deltas split by thinking: want 'hello' in output, got:\n%s", out)
+	}
+}
+
 func TestMessages_TurnError(t *testing.T) {
 	m := NewMessages(80)
 	m.OnTurnError(errString("bad thing"))

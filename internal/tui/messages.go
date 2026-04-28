@@ -9,9 +9,9 @@ import (
 )
 
 type Messages struct {
-	width         int
-	blocks        []block
-	streamingAsst *block
+	width            int
+	blocks           []block
+	streamingAsstIdx int // -1 when no assistant block is currently streaming
 }
 
 type blockKind int
@@ -31,21 +31,21 @@ type block struct {
 	meta string
 }
 
-func NewMessages(width int) *Messages { return &Messages{width: width} }
+func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
 
 func (m *Messages) SetWidth(w int) { m.width = w }
 
 func (m *Messages) AppendUser(text string) {
 	m.blocks = append(m.blocks, block{kind: bkUser, text: text})
-	m.streamingAsst = nil
+	m.streamingAsstIdx = -1
 }
 
 func (m *Messages) OnAssistantDelta(delta string) {
-	if m.streamingAsst == nil {
+	if m.streamingAsstIdx == -1 {
 		m.blocks = append(m.blocks, block{kind: bkAssistant})
-		m.streamingAsst = &m.blocks[len(m.blocks)-1]
+		m.streamingAsstIdx = len(m.blocks) - 1
 	}
-	m.streamingAsst.text += delta
+	m.blocks[m.streamingAsstIdx].text += delta
 }
 
 func (m *Messages) OnThinkingDelta(delta string) {
@@ -58,7 +58,7 @@ func (m *Messages) OnThinkingDelta(delta string) {
 }
 
 func (m *Messages) OnToolStarted(call ai.ToolCall) {
-	m.streamingAsst = nil
+	m.streamingAsstIdx = -1
 	m.blocks = append(m.blocks, block{
 		kind: bkToolCall,
 		meta: call.Name,
@@ -79,14 +79,14 @@ func (m *Messages) OnToolFinished(f agent.ToolFinished) {
 }
 
 func (m *Messages) OnTurnDone(reason string) {
-	m.streamingAsst = nil
+	m.streamingAsstIdx = -1
 	if reason != "" && reason != "stop" {
 		m.blocks = append(m.blocks, block{kind: bkThinking, text: fmt.Sprintf("(turn ended: %s)", reason)})
 	}
 }
 
 func (m *Messages) OnTurnError(err error) {
-	m.streamingAsst = nil
+	m.streamingAsstIdx = -1
 	m.blocks = append(m.blocks, block{kind: bkError, text: err.Error()})
 }
 
