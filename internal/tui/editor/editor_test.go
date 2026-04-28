@@ -1,6 +1,7 @@
 package editor
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -27,5 +28,23 @@ func TestEditor_SlashMenuOpensAndCommitsCommand(t *testing.T) {
 	}
 	if res.SlashCommand != "/model" && res.SlashCommand != "/tree" {
 		t.Fatalf("slash = %q", res.SlashCommand)
+	}
+}
+
+func TestRowsFor(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int
+	}{
+		{"", 1},
+		{"hi", 1},
+		{"a\nb", 2},
+		{"a\nb\nc", 3},
+		{strings.Repeat("x\n", 50), maxEditorRows},
+	}
+	for _, c := range cases {
+		if got := rowsFor(c.in); got != c.want {
+			t.Errorf("rowsFor(%q) = %d, want %d", c.in, got, c.want)
+		}
 	}
 }

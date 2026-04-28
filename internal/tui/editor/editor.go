@@ -19,6 +19,23 @@ const (
 	ModeSlashMenu
 )
 
+// maxEditorRows caps the auto-grown editor so the viewport always has room.
+const maxEditorRows = 8
+
+// rowsFor returns the number of rows the textarea should occupy for the given value.
+// At least 1, at most maxEditorRows. Counts only newlines — wrapping is handled
+// by the textarea itself and not modeled here.
+func rowsFor(value string) int {
+	n := 1 + strings.Count(value, "\n")
+	if n < 1 {
+		n = 1
+	}
+	if n > maxEditorRows {
+		n = maxEditorRows
+	}
+	return n
+}
+
 type Editor struct {
 	ta   textarea.Model
 	mode Mode
@@ -35,7 +52,7 @@ func New(cwd string, slashCmds []string) *Editor {
 	ta.Placeholder = "type a message…"
 	ta.Prompt = "› "
 	ta.SetWidth(80)
-	ta.SetHeight(3)
+	ta.SetHeight(1)
 	ta.ShowLineNumbers = false
 	ta.Focus()
 	return &Editor{
@@ -73,6 +90,7 @@ func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
 	var cmd tea.Cmd
 	e.ta, cmd = e.ta.Update(msg)
 	e.maybeOpenOverlay()
+	e.updateHeight()
 	return Result{}, cmd
 }
 
@@ -100,6 +118,7 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 			// fall through to textarea so it edits, then re-derive query
 			var cmd tea.Cmd
 			e.ta, cmd = e.ta.Update(k)
+			e.updateHeight()
 			e.fp.SetQuery(e.currentRefQuery())
 			return Result{}, cmd, true
 		}
@@ -118,10 +137,12 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 			sel := e.slash.Selected()
 			e.closeOverlay()
 			e.ta.Reset()
+			e.updateHeight()
 			return Result{SlashCommand: sel}, nil, true
 		case tea.KeyRunes, tea.KeyBackspace, tea.KeySpace:
 			var cmd tea.Cmd
 			e.ta, cmd = e.ta.Update(k)
+			e.updateHeight()
 			e.slash.SetQuery(strings.TrimPrefix(e.currentLine(), "/"))
 			return Result{}, cmd, true
 		}
@@ -145,6 +166,7 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 func (e *Editor) submit() Result {
 	text := strings.TrimRight(e.ta.Value(), "\n")
 	e.ta.Reset()
+	e.updateHeight()
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
 		out, _ := RunShell(context.Background(), cmd)
@@ -217,6 +239,10 @@ func (e *Editor) closeOverlay() {
 	e.slash = nil
 }
 
+func (e *Editor) updateHeight() {
+	e.ta.SetHeight(rowsFor(e.ta.Value()))
+}
+
 func (e *Editor) currentLine() string {
 	val := e.ta.Value()
 	if i := strings.LastIndex(val, "\n"); i >= 0 {
@@ -249,6 +275,7 @@ func (e *Editor) replaceCurrentRefWith(s string) {
 		return
 	}
 	e.ta.SetValue(val[:idx] + s)
+	e.updateHeight()
 }
 
 func (e *Editor) replaceCurrentWordWith(s string) {
