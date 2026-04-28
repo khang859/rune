@@ -45,7 +45,14 @@ func runPrompt(ctx context.Context, text string, w io.Writer) error {
 	reg.Register(tools.Edit{})
 	reg.Register(tools.Bash{})
 
-	a := agent.New(p, reg, sess, defaultSystemPrompt())
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	agentsMD := agent.LoadAgentsMD(cwd, home)
+	system := defaultSystemPrompt()
+	if agentsMD != "" {
+		system += "\n\nProject context:\n" + agentsMD
+	}
+	a := agent.New(p, reg, sess, system)
 	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: text}}}
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {
