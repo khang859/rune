@@ -35,7 +35,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		}
 		events, err := a.provider.Stream(ctx, req)
 		if err != nil {
-			out <- TurnError{Err: err}
+			if errors.Is(err, context.Canceled) {
+				out <- TurnAborted{}
+			} else {
+				out <- TurnError{Err: err}
+			}
 			return
 		}
 
@@ -58,7 +62,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 				usage = v
 				out <- TurnUsage{Usage: v}
 			case ai.StreamError:
-				out <- TurnError{Err: v.Err}
+				if errors.Is(v.Err, context.Canceled) {
+					out <- TurnAborted{}
+				} else {
+					out <- TurnError{Err: v.Err}
+				}
 				return
 			case ai.Done:
 				if v.Reason == "context_overflow" {
