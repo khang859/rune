@@ -81,8 +81,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventCh = nil
 		m.cancel = nil
 		m.editor.Focus()
-		if text, ok := m.queue.Pop(); ok {
-			return m, m.startTurn(text, nil)
+		if item, ok := m.queue.Pop(); ok {
+			m.msgs.AppendUser(item.Text)
+			m.refreshViewport()
+			return m, m.startTurn(item.Text, item.Images)
 		}
 		return m, nil
 
@@ -114,8 +116,8 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if res.Send {
 		text := res.Text
 		if m.streaming {
-			m.queue.Push(text)
-			m.msgs.OnTurnError(infoQueued(m.queue.Len()))
+			m.queue.Push(QueueItem{Text: text, Images: res.Images})
+			m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
 			m.refreshViewport()
 			return m, cmd
 		}
@@ -123,9 +125,13 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, m.startTurn(text, res.Images)
 	}
-	if res.InsertText != "" {
-		m.msgs.OnTurnDone("")
-		m.msgs.AppendUser("!" + res.InsertText)
+	if res.RanCommand != "" {
+		label := fmt.Sprintf("(ran: %s)", res.RanCommand)
+		body := res.InsertText
+		if body == "" {
+			body = "(no output)"
+		}
+		m.msgs.OnInfo(label + "\n" + body)
 		m.refreshViewport()
 	}
 	if res.SlashCommand != "" {
@@ -133,11 +139,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, c
 		}
 	}
+	if _, ok := msg.(tea.KeyMsg); ok {
+		m.layout()
+	}
 	return m, cmd
-}
-
-func infoQueued(n int) error {
-	return fmt.Errorf("queued (%d in queue)", n)
 }
 
 func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
@@ -206,15 +211,19 @@ func (m *RootModel) layout() {
 		return
 	}
 	footerH := 1
-	editorH := 5
-	msgH := m.height - footerH - editorH
+	editorRows := m.editor.Rows()
+	editorH := editorRows + 2 // border top + bottom
+	overlayRows := 0
+	if m.editor.Mode() != editor.ModeNormal {
+		overlayRows = 9
+	}
+	msgH := m.height - footerH - editorH - overlayRows
 	if msgH < 3 {
 		msgH = 3
 	}
 	m.viewport.Width = m.width
 	m.viewport.Height = msgH
 	m.editor.SetWidth(m.width - 2)
-	m.editor.SetHeight(editorH - 2)
 	m.footer.Width = m.width
 	m.msgs.SetWidth(m.width)
 }

@@ -80,6 +80,25 @@ func TestRoot_RefreshDoesNotJumpWhenScrolledUp(t *testing.T) {
 	}
 }
 
+func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.streaming = true
+	m.queue.Push(QueueItem{Text: "queued one"})
+
+	_, cmd := m.Update(AgentChannelDoneMsg{})
+	if cmd == nil {
+		t.Fatal("expected cmd from drain (startTurn)")
+	}
+	out := m.msgs.Render(m.styles)
+	if !strings.Contains(out, "queued one") {
+		t.Fatalf("expected queued message in chat log; got: %q", out)
+	}
+}
+
 var _ = ai.RoleUser
 var _ = json.Valid
 var _ = context.Background

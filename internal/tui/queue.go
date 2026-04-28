@@ -1,13 +1,20 @@
 package tui
 
-type Queue struct {
-	items []string
+import "github.com/khang859/rune/internal/ai"
+
+type QueueItem struct {
+	Text   string
+	Images []ai.ImageBlock
 }
 
-func (q *Queue) Push(s string) { q.items = append(q.items, s) }
-func (q *Queue) Pop() (string, bool) {
+type Queue struct {
+	items []QueueItem
+}
+
+func (q *Queue) Push(item QueueItem) { q.items = append(q.items, item) }
+func (q *Queue) Pop() (QueueItem, bool) {
 	if len(q.items) == 0 {
-		return "", false
+		return QueueItem{}, false
 	}
 	s := q.items[0]
 	q.items = q.items[1:]

@@ -23,6 +23,7 @@ const (
 	bkToolCall
 	bkToolResult
 	bkError
+	bkInfo
 )
 
 type block struct {
@@ -90,6 +91,10 @@ func (m *Messages) OnTurnError(err error) {
 	m.blocks = append(m.blocks, block{kind: bkError, text: err.Error()})
 }
 
+func (m *Messages) OnInfo(text string) {
+	m.blocks = append(m.blocks, block{kind: bkInfo, text: text})
+}
+
 func (m *Messages) Render(s Styles) string {
 	var sb strings.Builder
 	for i, b := range m.blocks {
@@ -109,6 +114,8 @@ func (m *Messages) Render(s Styles) string {
 			sb.WriteString(s.ToolResult.Render(fmt.Sprintf("← %s\n%s", b.meta, b.text)))
 		case bkError:
 			sb.WriteString(s.ToolError.Render("error: " + b.text))
+		case bkInfo:
+			sb.WriteString(s.Info.Render(b.text))
 		}
 	}
 	return sb.String()

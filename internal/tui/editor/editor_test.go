@@ -1,6 +1,8 @@
 package editor
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +30,65 @@ func TestEditor_SlashMenuOpensAndCommitsCommand(t *testing.T) {
 	}
 	if res.SlashCommand != "/model" && res.SlashCommand != "/tree" {
 		t.Fatalf("slash = %q", res.SlashCommand)
+	}
+}
+
+func TestEditor_BangCommandRunsAndSends(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	for _, r := range "!echo rune-test-marker" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !res.Send {
+		t.Fatalf("expected Send=true, got %#v", res)
+	}
+	if !strings.Contains(res.Text, "rune-test-marker") {
+		t.Fatalf("expected output to contain marker, got %q", res.Text)
+	}
+}
+
+func TestEditor_AtOverlayOpensAndEscCloses(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "foo.go"), nil, 0o644)
+	e := New(dir, nil)
+	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'@'}})
+	if e.Mode() != ModeFilePicker {
+		t.Fatalf("expected ModeFilePicker after @, got %v", e.Mode())
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if e.Mode() != ModeNormal {
+		t.Fatalf("expected ModeNormal after Esc, got %v", e.Mode())
+	}
+}
+
+func TestEditor_TabCompletesUniquePath(t *testing.T) {
+	dir := t.TempDir()
+	_ = os.WriteFile(filepath.Join(dir, "alpha.go"), nil, 0o644)
+	e := New(dir, nil)
+	for _, r := range "alp" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.Text != "alpha.go" {
+		t.Fatalf("expected textarea to expand 'alp' -> 'alpha.go'; submit text = %q", res.Text)
+	}
+}
+
+func TestEditor_SlashNoMatchSubmitsAsText(t *testing.T) {
+	e := New(t.TempDir(), []string{"/quit", "/new"})
+	for _, r := range "/zzzzz" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !res.Send {
+		t.Fatalf("expected Send=true (slash menu had no match, should fall through to submit), got %#v", res)
+	}
+	if res.Text != "/zzzzz" {
+		t.Fatalf("expected text /zzzzz, got %q", res.Text)
+	}
+	if res.SlashCommand != "" {
+		t.Fatalf("expected empty SlashCommand, got %q", res.SlashCommand)
 	}
 }
 

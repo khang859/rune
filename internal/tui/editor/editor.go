@@ -69,12 +69,14 @@ type Result struct {
 	Images       []ai.ImageBlock
 	SlashCommand string
 	InsertText   string
+	RanCommand   string
 }
 
 func (e *Editor) SetWidth(w int)  { e.ta.SetWidth(w) }
 func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
+func (e *Editor) Rows() int       { return rowsFor(e.ta.Value()) }
 
 func (e *Editor) Mode() Mode              { return e.mode }
 func (e *Editor) FilePicker() *FilePicker { return e.fp }
@@ -135,6 +137,13 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 			return Result{}, nil, true
 		case tea.KeyEnter, tea.KeyTab:
 			sel := e.slash.Selected()
+			if sel == "" {
+				e.closeOverlay()
+				if k.Type == tea.KeyEnter && !isShiftEnter(k) {
+					return e.submit(), nil, true
+				}
+				return Result{}, nil, true
+			}
 			e.closeOverlay()
 			e.ta.Reset()
 			e.updateHeight()
@@ -170,7 +179,7 @@ func (e *Editor) submit() Result {
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
 		out, _ := RunShell(context.Background(), cmd)
-		return Result{InsertText: out}
+		return Result{RanCommand: cmd, InsertText: out}
 	}
 	if strings.HasPrefix(text, "!") {
 		cmd := strings.TrimPrefix(text, "!")
