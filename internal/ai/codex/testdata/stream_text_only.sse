@@ -1,0 +1,11 @@
+event: response.created
+data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":"hello"}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","delta":" world"}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":10,"output_tokens":2,"input_tokens_details":{"cached_tokens":0}}}}

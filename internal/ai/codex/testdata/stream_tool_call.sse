@@ -1,0 +1,5 @@
+event: response.output_item.added
+data: {"type":"response.output_item.added","item":{"type":"function_call","id":"fc_1","name":"read","arguments":"{\"path\":\"/tmp/x\"}"}}
+
+event: response.completed
+data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":1,"output_tokens":1}}}
