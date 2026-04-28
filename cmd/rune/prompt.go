@@ -17,9 +17,7 @@ import (
 )
 
 // DefaultCodexModel is the default model id when --model and RUNE_CODEX_MODEL are unset.
-// Plain "gpt-5" is rejected for ChatGPT-account Codex callers; gpt-5.1-codex-max is the
-// closest stable Codex-capable model.
-const DefaultCodexModel = "gpt-5.1-codex-max"
+const DefaultCodexModel = "gpt-5.5"
 
 func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
