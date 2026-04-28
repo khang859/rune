@@ -1,11 +1,20 @@
 event: response.created
 data: {"type":"response.created","response":{"id":"r1","status":"in_progress"}}
 
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","item_id":"r1","summary_index":0,"part":{"type":"summary_text","text":""}}
+
 event: response.reasoning_summary_text.delta
 data: {"type":"response.reasoning_summary_text.delta","delta":"Considering"}
 
 event: response.reasoning_summary_text.delta
 data: {"type":"response.reasoning_summary_text.delta","delta":" the problem"}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","item_id":"r1","summary_index":1,"part":{"type":"summary_text","text":""}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","delta":"then deciding"}
 
 event: response.completed
 data: {"type":"response.completed","response":{"id":"r1","status":"completed","usage":{"input_tokens":5,"output_tokens":1,"input_tokens_details":{"cached_tokens":0}}}}

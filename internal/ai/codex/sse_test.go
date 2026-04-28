@@ -155,7 +155,7 @@ func TestParseSSE_ReasoningSummary(t *testing.T) {
 			thinking.WriteString(th.Text)
 		}
 	}
-	if thinking.String() != "Considering the problem" {
+	if thinking.String() != "Considering the problem\n\nthen deciding" {
 		t.Fatalf("thinking text = %q", thinking.String())
 	}
 }

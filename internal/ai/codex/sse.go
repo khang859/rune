@@ -136,9 +136,14 @@ type fnArgsDone struct {
 // The Responses API streams a tool call as: output_item.added (empty arguments)
 // → function_call_arguments.delta* → function_call_arguments.done. We buffer
 // until we have the full arguments JSON, then emit a single ai.ToolCall.
+//
+// It also tracks whether any reasoning_summary_text.delta has been seen since
+// the last summary part boundary, so we can emit a "\n\n" separator between
+// non-empty parts without producing a leading separator.
 type streamState struct {
-	pendingCalls map[string]*pendingCall
-	order        []string
+	pendingCalls    map[string]*pendingCall
+	order           []string
+	seenSummaryText bool
 }
 
 type pendingCall struct {
@@ -218,6 +223,20 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 		}
 		return send(ctx, out, ai.TextDelta{Text: d.Delta})
 
+	case "response.reasoning_summary_text.delta":
+		var d textDelta
+		if err := json.Unmarshal([]byte(data), &d); err != nil {
+			return nil
+		}
+		state.seenSummaryText = true
+		return send(ctx, out, ai.Thinking{Text: d.Delta})
+
+	case "response.reasoning_summary_part.added":
+		if state.seenSummaryText {
+			return send(ctx, out, ai.Thinking{Text: "\n\n"})
+		}
+		return nil
+
 	case "response.output_item.added":
 		var ia itemAdded
 		if err := json.Unmarshal([]byte(data), &ia); err != nil {
@@ -252,13 +271,6 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 			return state.emit(ctx, id.Item.ID, id.Item.Arguments, out)
 		}
 		return nil
-
-	case "response.reasoning_summary_text.delta":
-		var d textDelta
-		if err := json.Unmarshal([]byte(data), &d); err != nil {
-			return nil
-		}
-		return send(ctx, out, ai.Thinking{Text: d.Delta})
 
 	case "response.completed":
 		var rc respCompleted
