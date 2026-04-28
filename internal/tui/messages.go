@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 )
@@ -108,27 +109,30 @@ func (m *Messages) Render(s Styles) string {
 		if i > 0 {
 			sb.WriteString("\n\n")
 		}
+		var rendered string
 		switch b.kind {
 		case bkUser:
-			sb.WriteString(s.User.Render("user> ") + b.text)
+			rendered = s.User.Render("user> ") + b.text
 		case bkAssistant:
-			sb.WriteString(s.Assistant.Render(b.text))
+			rendered = s.Assistant.Render(b.text)
 		case bkThinking:
-			sb.WriteString(s.Thinking.Render(b.text))
+			rendered = s.Thinking.Render(b.text)
 		case bkToolCall:
-			sb.WriteString(s.ToolCall.Render(fmt.Sprintf("· %s(%s)", b.meta, b.text)))
+			rendered = s.ToolCall.Render(fmt.Sprintf("· %s(%s)", b.meta, b.text))
 		case bkToolResult:
-			sb.WriteString(s.ToolResult.Render(fmt.Sprintf("← %s\n%s", b.meta, b.text)))
+			rendered = s.ToolResult.Render(fmt.Sprintf("← %s\n%s", b.meta, b.text))
 		case bkError:
-			sb.WriteString(s.ToolError.Render("error: " + b.text))
+			rendered = s.ToolError.Render("error: " + b.text)
 		case bkInfo:
-			sb.WriteString(s.Info.Render(b.text))
+			rendered = s.Info.Render(b.text)
 		case bkSummary:
 			header := fmt.Sprintf("── compacted summary (%d messages) ──", b.count)
-			sb.WriteString(s.SummaryHeader.Render(header))
-			sb.WriteString("\n")
-			sb.WriteString(s.Assistant.Render(b.text))
+			rendered = s.SummaryHeader.Render(header) + "\n" + s.Assistant.Render(b.text)
 		}
+		if m.width > 0 {
+			rendered = ansi.Wrap(rendered, m.width, " \t")
+		}
+		sb.WriteString(rendered)
 	}
 	return sb.String()
 }

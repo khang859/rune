@@ -101,6 +101,50 @@ func TestMessages_OnInfoDoesNotEndAssistantStream(t *testing.T) {
 	}
 }
 
+func TestMessages_RenderWrapsToWidth(t *testing.T) {
+	m := NewMessages(20)
+	m.OnAssistantDelta(strings.Repeat("word ", 30))
+	m.OnTurnDone("stop")
+	out := m.Render(DefaultStyles())
+	for _, line := range strings.Split(out, "\n") {
+		if w := visibleWidth(line); w > 20 {
+			t.Fatalf("line exceeds width 20 (got %d): %q", w, line)
+		}
+	}
+}
+
+func TestMessages_RenderHardBreaksLongTokens(t *testing.T) {
+	m := NewMessages(10)
+	m.OnToolFinished(agent.ToolFinished{
+		Call:   ai.ToolCall{Name: "read"},
+		Result: tools.Result{Output: strings.Repeat("a", 50)},
+	})
+	out := m.Render(DefaultStyles())
+	for _, line := range strings.Split(out, "\n") {
+		if w := visibleWidth(line); w > 10 {
+			t.Fatalf("line exceeds width 10 (got %d): %q", w, line)
+		}
+	}
+}
+
+// visibleWidth strips ANSI escapes and returns rune count.
+func visibleWidth(s string) int {
+	var n, i int
+	for i < len(s) {
+		if s[i] == 0x1b {
+			// skip CSI / OSC sequence
+			for i < len(s) && s[i] != 'm' && s[i] != 0x07 {
+				i++
+			}
+			i++
+			continue
+		}
+		n++
+		i++
+	}
+	return n
+}
+
 type errString string
 
 func (e errString) Error() string { return string(e) }
