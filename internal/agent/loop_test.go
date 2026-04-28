@@ -216,3 +216,18 @@ func TestRun_AutoCompactOnOverflow(t *testing.T) {
 		t.Fatal("missing TurnDone after retry")
 	}
 }
+
+func TestAgent_DefaultEffortIsMedium(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-5"), "")
+	if got := a.ReasoningEffort(); got != "medium" {
+		t.Fatalf("default effort = %q, want %q", got, "medium")
+	}
+}
+
+func TestAgent_SetReasoningEffort(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-5"), "")
+	a.SetReasoningEffort("high")
+	if got := a.ReasoningEffort(); got != "high" {
+		t.Fatalf("after set, effort = %q, want %q", got, "high")
+	}
+}
