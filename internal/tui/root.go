@@ -223,7 +223,9 @@ func (m *RootModel) layout() {
 	}
 	m.viewport.Width = m.width
 	m.viewport.Height = msgH
-	m.editor.SetWidth(m.width - 2)
+	// EditorBox renders with rounded border (2 cols) + horizontal padding (2 cols);
+	// reserve those so the editor never overflows the terminal width.
+	m.editor.SetWidth(m.width - 4)
 	m.footer.Width = m.width
 	m.msgs.SetWidth(m.width)
 }

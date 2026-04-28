@@ -121,19 +121,25 @@ func TestEditor_SlashNoMatchSubmitsAsText(t *testing.T) {
 }
 
 func TestRowsFor(t *testing.T) {
+	const w = 12 // wrapWidth = 12 - promptWidth(2) = 10
 	cases := []struct {
-		in   string
-		want int
+		in    string
+		width int
+		want  int
 	}{
-		{"", 1},
-		{"hi", 1},
-		{"a\nb", 2},
-		{"a\nb\nc", 3},
-		{strings.Repeat("x\n", 50), maxEditorRows},
+		{"", w, 1},
+		{"hi", w, 1},
+		{"a\nb", w, 2},
+		{"a\nb\nc", w, 3},
+		{strings.Repeat("x\n", 50), w, maxEditorRows},
+		{strings.Repeat("x", 10), w, 1},  // exactly fits
+		{strings.Repeat("x", 11), w, 2},  // soft-wrap to 2
+		{strings.Repeat("x", 30), w, 3},  // 30 / 10 = 3
+		{strings.Repeat("x", 100), w, maxEditorRows}, // capped
 	}
 	for _, c := range cases {
-		if got := rowsFor(c.in); got != c.want {
-			t.Errorf("rowsFor(%q) = %d, want %d", c.in, got, c.want)
+		if got := rowsFor(c.in, c.width); got != c.want {
+			t.Errorf("rowsFor(%q, %d) = %d, want %d", c.in, c.width, got, c.want)
 		}
 	}
 }

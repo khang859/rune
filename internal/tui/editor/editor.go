@@ -7,9 +7,13 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/khang859/rune/internal/ai"
 )
+
+// promptWidth is the cell width of the textarea Prompt ("› ").
+const promptWidth = 2
 
 type Mode int
 
@@ -22,11 +26,23 @@ const (
 // maxEditorRows caps the auto-grown editor so the viewport always has room.
 const maxEditorRows = 8
 
-// rowsFor returns the number of rows the textarea should occupy for the given value.
-// At least 1, at most maxEditorRows. Counts only newlines — wrapping is handled
-// by the textarea itself and not modeled here.
-func rowsFor(value string) int {
-	n := 1 + strings.Count(value, "\n")
+// rowsFor returns the number of rows the textarea should occupy for the given value
+// at the given outer width. At least 1, at most maxEditorRows. Each \n-separated
+// line contributes ceil(visualWidth / wrapWidth) visual rows.
+func rowsFor(value string, width int) int {
+	wrapWidth := width - promptWidth
+	if wrapWidth < 1 {
+		wrapWidth = 1
+	}
+	n := 0
+	for _, line := range strings.Split(value, "\n") {
+		w := lipgloss.Width(line)
+		rows := 1 + (w-1)/wrapWidth
+		if rows < 1 {
+			rows = 1
+		}
+		n += rows
+	}
 	if n < 1 {
 		n = 1
 	}
@@ -37,9 +53,10 @@ func rowsFor(value string) int {
 }
 
 type Editor struct {
-	ta   textarea.Model
-	mode Mode
-	cwd  string
+	ta    textarea.Model
+	mode  Mode
+	cwd   string
+	width int
 
 	fp        *FilePicker
 	slash     *SlashMenu
@@ -58,6 +75,7 @@ func New(cwd string, slashCmds []string) *Editor {
 	return &Editor{
 		ta:        ta,
 		cwd:       cwd,
+		width:     80,
 		slashCmds: slashCmds,
 		atts:      NewAttachments(),
 	}
@@ -72,11 +90,15 @@ type Result struct {
 	RanCommand   string
 }
 
-func (e *Editor) SetWidth(w int)  { e.ta.SetWidth(w) }
+func (e *Editor) SetWidth(w int) {
+	e.width = w
+	e.ta.SetWidth(w)
+	e.updateHeight()
+}
 func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
-func (e *Editor) Rows() int       { return rowsFor(e.ta.Value()) }
+func (e *Editor) Rows() int       { return rowsFor(e.ta.Value(), e.width) }
 
 func (e *Editor) Mode() Mode              { return e.mode }
 func (e *Editor) FilePicker() *FilePicker { return e.fp }
@@ -252,7 +274,7 @@ func (e *Editor) closeOverlay() {
 }
 
 func (e *Editor) updateHeight() {
-	e.ta.SetHeight(rowsFor(e.ta.Value()))
+	e.ta.SetHeight(rowsFor(e.ta.Value(), e.width))
 }
 
 func (e *Editor) currentLine() string {
