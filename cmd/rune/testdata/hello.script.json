@@ -1,0 +1,10 @@
+{
+  "provider":"faux",
+  "session":"/tmp/rune-smoke.json",
+  "model":"gpt-5",
+  "user_message":"hi",
+  "faux":[
+    {"reply":"hello back"},
+    {"done":true}
+  ]
+}
