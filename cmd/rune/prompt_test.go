@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +17,14 @@ import (
 	"github.com/khang859/rune/internal/ai/oauth"
 )
 
+func fakeAccessToken(accountID string) string {
+	claim := map[string]any{
+		oauth.CodexJWTClaimPath: map[string]any{"chatgpt_account_id": accountID},
+	}
+	pb, _ := json.Marshal(claim)
+	return fmt.Sprintf("h.%s.s", base64.RawURLEncoding.EncodeToString(pb))
+}
+
 func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	sse := "event: response.output_text.delta\n" +
 		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"hello\"}\n\n" +
@@ -22,6 +32,9 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{}}}\n\n"
 
 	codex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_xyz" {
+			t.Errorf("chatgpt-account-id = %q", got)
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		_, _ = w.Write([]byte(sse))
 	}))
@@ -43,13 +56,13 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 
 	store := oauth.NewStore(filepath.Join(runeDir, "auth.json"))
 	_ = store.Set("openai-codex", oauth.Credentials{
-		AccessToken:  "AT",
+		AccessToken:  fakeAccessToken("acct_xyz"),
 		RefreshToken: "RT",
 		ExpiresAt:    time.Now().Add(time.Hour),
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "hello") {

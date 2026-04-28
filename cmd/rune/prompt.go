@@ -16,9 +16,20 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
-func runPrompt(ctx context.Context, text string, w io.Writer) error {
+// DefaultCodexModel is the default model id when --model and RUNE_CODEX_MODEL are unset.
+// Plain "gpt-5" is rejected for ChatGPT-account Codex callers; gpt-5.1-codex-max is the
+// closest stable Codex-capable model.
+const DefaultCodexModel = "gpt-5.1-codex-max"
+
+func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
+	}
+	if model == "" {
+		model = os.Getenv("RUNE_CODEX_MODEL")
+	}
+	if model == "" {
+		model = DefaultCodexModel
 	}
 	endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 	if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -36,7 +47,7 @@ func runPrompt(ctx context.Context, text string, w io.Writer) error {
 	}
 
 	p := codex.New(endpoint, src)
-	sess := session.New("gpt-5")
+	sess := session.New(model)
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
 	reg := tools.NewRegistry()

@@ -29,6 +29,16 @@ func (s *CodexSource) Token(ctx context.Context) (string, error) {
 	return s.refreshLocked(ctx, creds)
 }
 
+// AccountID returns the chatgpt_account_id claim from the current access
+// token. Codex requires it as the chatgpt-account-id header.
+func (s *CodexSource) AccountID(ctx context.Context) (string, error) {
+	tok, err := s.Token(ctx)
+	if err != nil {
+		return "", err
+	}
+	return AccountIDFromAccessToken(tok)
+}
+
 func (s *CodexSource) Refresh(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -2,7 +2,9 @@ package oauth
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -97,6 +99,29 @@ func TestRefreshToken_ParsesNewTokens(t *testing.T) {
 	}
 	if creds.AccessToken != "AT2" || creds.RefreshToken != "RTNEW" {
 		t.Fatalf("creds = %#v", creds)
+	}
+}
+
+func TestAccountIDFromAccessToken_ExtractsClaim(t *testing.T) {
+	payload := map[string]any{
+		CodexJWTClaimPath: map[string]any{"chatgpt_account_id": "acct_123"},
+	}
+	pb, _ := json.Marshal(payload)
+	tok := fmt.Sprintf("h.%s.s", base64.RawURLEncoding.EncodeToString(pb))
+	id, err := AccountIDFromAccessToken(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "acct_123" {
+		t.Fatalf("id = %q", id)
+	}
+}
+
+func TestAccountIDFromAccessToken_MissingClaim(t *testing.T) {
+	pb, _ := json.Marshal(map[string]any{"sub": "x"})
+	tok := fmt.Sprintf("h.%s.s", base64.RawURLEncoding.EncodeToString(pb))
+	if _, err := AccountIDFromAccessToken(tok); err == nil {
+		t.Fatal("expected error")
 	}
 }
 

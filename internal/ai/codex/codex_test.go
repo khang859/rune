@@ -14,10 +14,14 @@ import (
 	"github.com/khang859/rune/internal/ai/oauth"
 )
 
-type stubAuth struct{ tok oauth.Credentials }
+type stubAuth struct {
+	tok       oauth.Credentials
+	accountID string
+}
 
-func (s *stubAuth) Token(ctx context.Context) (string, error) { return s.tok.AccessToken, nil }
-func (s *stubAuth) Refresh(ctx context.Context) error         { return nil }
+func (s *stubAuth) Token(ctx context.Context) (string, error)     { return s.tok.AccessToken, nil }
+func (s *stubAuth) AccountID(ctx context.Context) (string, error) { return s.accountID, nil }
+func (s *stubAuth) Refresh(ctx context.Context) error             { return nil }
 
 func TestStream_TextResponse(t *testing.T) {
 	fixture, _ := os.ReadFile("testdata/stream_text_only.sse")
@@ -25,13 +29,22 @@ func TestStream_TextResponse(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer AT" {
 			t.Fatalf("auth = %q", got)
 		}
+		if got := r.Header.Get("OpenAI-Beta"); got != "responses=experimental" {
+			t.Fatalf("openai-beta = %q", got)
+		}
+		if got := r.Header.Get("chatgpt-account-id"); got != "acct_123" {
+			t.Fatalf("chatgpt-account-id = %q", got)
+		}
+		if got := r.Header.Get("originator"); got != "rune" {
+			t.Fatalf("originator = %q", got)
+		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.WriteHeader(200)
 		_, _ = io.Copy(w, strings.NewReader(string(fixture)))
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL+"/codex/responses", &stubAuth{tok: oauth.Credentials{AccessToken: "AT"}})
+	p := New(srv.URL+"/codex/responses", &stubAuth{tok: oauth.Credentials{AccessToken: "AT"}, accountID: "acct_123"})
 	ch, err := p.Stream(context.Background(), ai.Request{
 		Model:    "gpt-5",
 		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hi"}}}},
@@ -83,7 +96,7 @@ func TestStream_NonStreamingErrorIsRetryable(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := New(srv.URL+"/codex/responses", &stubAuth{tok: oauth.Credentials{AccessToken: "AT"}})
+	p := New(srv.URL+"/codex/responses", &stubAuth{tok: oauth.Credentials{AccessToken: "AT"}, accountID: "acct_123"})
 	p.retryBaseDelay = 1 * time.Millisecond
 
 	ch, err := p.Stream(context.Background(), ai.Request{Model: "gpt-5"})

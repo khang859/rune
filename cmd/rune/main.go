@@ -18,6 +18,7 @@ func main() {
 	}
 	script := flag.String("script", "", "run a JSON script (headless smoke runner)")
 	prompt := flag.String("prompt", "", "run a single turn against the configured provider and exit")
+	model := flag.String("model", "", "Codex model id (overrides RUNE_CODEX_MODEL; default gpt-5.1-codex-max)")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -38,7 +39,7 @@ func main() {
 		return
 	}
 	if *prompt != "" {
-		if err := runPrompt(ctx, *prompt, os.Stdout); err != nil {
+		if err := runPrompt(ctx, *prompt, *model, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
