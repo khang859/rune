@@ -30,7 +30,8 @@ internal/tui/editor/
 internal/tui/
 ├── queue.go               # message queue type
 ├── queue_test.go
-└── root.go                # extended for queue + new editor API
+├── root.go                # extended for queue + new editor API + viewport scrolling
+└── tui.go                 # NewProgram opts extended (mouse cell motion)
 ```
 
 The existing `internal/tui/editor.go` from Plan 03 is replaced — its callers must move to the new API.
@@ -1372,6 +1373,187 @@ git commit -m "feat(tui): wire new editor with overlays, queue, slash dispatch"
 
 ---
 
+## Task 10: Editor auto-grow
+
+**Files:**
+- Modify: `internal/tui/editor/editor.go`
+- Modify: `internal/tui/editor/editor_test.go`
+
+> Plan 03 used a fixed 3-row textarea, which wastes vertical space on a typical one-liner and is too small for a long pasted message. After this task the editor starts at one row and grows row-per-newline, capped so the message viewport always has room.
+
+- [ ] **Step 1: Add a pure helper + max constant**
+
+In `internal/tui/editor/editor.go`, near the top of the file:
+
+```go
+// maxEditorRows caps the auto-grown editor so the viewport always has room.
+const maxEditorRows = 8
+
+// rowsFor returns the number of rows the textarea should occupy for the given value.
+// At least 1, at most maxEditorRows. Counts only newlines — wrapping is handled
+// by the textarea itself and not modeled here.
+func rowsFor(value string) int {
+    n := 1 + strings.Count(value, "\n")
+    if n < 1 {
+        n = 1
+    }
+    if n > maxEditorRows {
+        n = maxEditorRows
+    }
+    return n
+}
+```
+
+In `New(...)`, change `ta.SetHeight(3)` to `ta.SetHeight(1)`.
+
+In `(e *Editor) Update(msg tea.Msg)`, after the textarea has consumed `msg` and before returning, recompute height:
+
+```go
+e.ta.SetHeight(rowsFor(e.ta.Value()))
+```
+
+(Apply the same recompute inside any `handleKey` branch that mutates the textarea — `KeyRunes`, `KeyBackspace`, `KeySpace`, the textarea-fallthrough cases.)
+
+- [ ] **Step 2: Write tests for `rowsFor`**
+
+In `internal/tui/editor/editor_test.go`:
+
+```go
+func TestRowsFor(t *testing.T) {
+    cases := []struct {
+        in   string
+        want int
+    }{
+        {"", 1},
+        {"hi", 1},
+        {"a\nb", 2},
+        {"a\nb\nc", 3},
+        {strings.Repeat("x\n", 50), maxEditorRows},
+    }
+    for _, c := range cases {
+        if got := rowsFor(c.in); got != c.want {
+            t.Errorf("rowsFor(%q) = %d, want %d", c.in, got, c.want)
+        }
+    }
+}
+```
+
+- [ ] **Step 3: Run tests**
+
+Run: `go test ./internal/tui/editor/ -v`
+Expected: PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/tui/editor/editor.go internal/tui/editor/editor_test.go
+git commit -m "feat(tui): editor auto-grows with newlines up to maxEditorRows"
+```
+
+---
+
+## Task 11: Viewport scrolling
+
+**Files:**
+- Modify: `internal/tui/tui.go`
+- Modify: `internal/tui/root.go`
+- Modify: `internal/tui/root_test.go`
+
+> Plan 03 mounted a viewport but never routed scroll events to it, and `refreshViewport` always snapped to the bottom — so even if the user could scroll, the next streamed event would yank them back. Wire mouse-wheel scrolling, route PgUp/PgDn/Home/End to the viewport, and only auto-scroll if the user is already at the bottom.
+
+- [ ] **Step 1: Enable mouse cell motion**
+
+In `internal/tui/tui.go`, change:
+
+```go
+p := tea.NewProgram(NewRootModel(a, s), tea.WithAltScreen())
+```
+
+to:
+
+```go
+p := tea.NewProgram(NewRootModel(a, s), tea.WithAltScreen(), tea.WithMouseCellMotion())
+```
+
+- [ ] **Step 2: Sticky-bottom in `refreshViewport`**
+
+In `internal/tui/root.go`, replace `refreshViewport`:
+
+```go
+func (m *RootModel) refreshViewport() {
+    atBottom := m.viewport.AtBottom()
+    m.viewport.SetContent(m.msgs.Render(m.styles))
+    if atBottom {
+        m.viewport.GotoBottom()
+    }
+}
+```
+
+- [ ] **Step 3: Forward mouse + scroll keys to viewport**
+
+In `(m *RootModel) Update`, add a `tea.MouseMsg` case alongside the existing `case tea.KeyMsg:` etc. — before the trailing fallback:
+
+```go
+case tea.MouseMsg:
+    var cmd tea.Cmd
+    m.viewport, cmd = m.viewport.Update(msg)
+    return m, cmd
+```
+
+Inside the non-streaming `tea.KeyMsg` branch, before delegating remaining keys to the editor, intercept scroll keys:
+
+```go
+switch v.Type {
+case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+    var cmd tea.Cmd
+    m.viewport, cmd = m.viewport.Update(msg)
+    return m, cmd
+}
+```
+
+(Order matters: this `switch` goes after the `case tea.KeyEnter:` arm and the editor-overlay handling but before the editor's general-input fallthrough, so PgUp/PgDn never reach the editor.)
+
+- [ ] **Step 4: Regression test — refresh during scrollback does not snap**
+
+In `internal/tui/root_test.go`:
+
+```go
+func TestRoot_RefreshDoesNotJumpWhenScrolledUp(t *testing.T) {
+    s := session.New("gpt-5")
+    a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+    m := NewRootModel(a, s)
+    m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+    for i := 0; i < 50; i++ {
+        m.msgs.AppendUser(fmt.Sprintf("line %d", i))
+    }
+    m.refreshViewport()
+    m.viewport.GotoTop()
+    if m.viewport.AtBottom() {
+        t.Fatal("expected viewport not at bottom after GotoTop")
+    }
+    m.msgs.AppendUser("incoming streamed line")
+    m.refreshViewport()
+    if m.viewport.AtBottom() {
+        t.Fatal("refresh snapped to bottom while user was scrolled up")
+    }
+}
+```
+
+- [ ] **Step 5: Run all tests**
+
+Run: `make all`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/tui/tui.go internal/tui/root.go internal/tui/root_test.go
+git commit -m "feat(tui): viewport scrolling — mouse wheel, PgUp/PgDn, sticky bottom"
+```
+
+---
+
 ## End state
 
 After Plan 04, rune editor matches pi:
@@ -1382,5 +1564,7 @@ After Plan 04, rune editor matches pi:
 - `!cmd` runs and sends output as a message; `!!cmd` runs without sending.
 - Image attachments via inline file path or `data:image/...` paste.
 - Message queue: pressing Enter mid-stream queues; queue drains on turn end.
+- Editor auto-grows from 1 row up to `maxEditorRows` as the user adds newlines.
+- Message viewport scrolls with the mouse wheel and PgUp/PgDn/Home/End; streamed events only auto-scroll when the user is already at the bottom (no jump-back during scrollback).
 
 Plan 05 lands `/model`, `/tree`, `/resume`, `/settings` modals plus auto-compact on context overflow.
