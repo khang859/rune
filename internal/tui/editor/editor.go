@@ -173,9 +173,12 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 }
 
 func (e *Editor) submit() Result {
-	text := strings.TrimRight(e.ta.Value(), "\n")
+	text := strings.TrimSpace(e.ta.Value())
 	e.ta.Reset()
 	e.updateHeight()
+	if text == "" && e.atts.Pending() == 0 {
+		return Result{}
+	}
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
 		out, _ := RunShell(context.Background(), cmd)

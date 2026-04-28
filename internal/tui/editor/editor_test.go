@@ -20,6 +20,34 @@ func TestEditor_EnterSendsText(t *testing.T) {
 	}
 }
 
+func TestEditor_EmptyEnterDoesNotSend(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.Send {
+		t.Fatalf("empty Enter must not send: %#v", res)
+	}
+	if res.Text != "" {
+		t.Fatalf("expected empty Text, got %q", res.Text)
+	}
+}
+
+func TestEditor_DoubleBangDoesNotSend(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	for _, r := range "!!echo rune-bang-test" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.Send {
+		t.Fatalf("!!cmd must not Send: %#v", res)
+	}
+	if res.RanCommand != "echo rune-bang-test" {
+		t.Fatalf("expected RanCommand=echo rune-bang-test, got %q", res.RanCommand)
+	}
+	if !strings.Contains(res.InsertText, "rune-bang-test") {
+		t.Fatalf("expected InsertText to contain marker, got %q", res.InsertText)
+	}
+}
+
 func TestEditor_SlashMenuOpensAndCommitsCommand(t *testing.T) {
 	e := New(t.TempDir(), []string{"/model", "/tree"})
 	e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
