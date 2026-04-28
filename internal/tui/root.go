@@ -591,6 +591,7 @@ func (m *RootModel) stopActiveTurn() {
 	m.eventCh = nil
 	m.streaming = false
 	m.compacting = false
+	m.pendingTickCmd = nil
 	m.queue = &Queue{}
 	m.editor.Focus()
 }
@@ -683,7 +684,9 @@ func (m *RootModel) refreshSystemPrompt() {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	sys := defaultSystemPromptForRoot() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	prev := m.agent.ReasoningEffort()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), m.sess, sys)
+	m.agent.SetReasoningEffort(prev)
 }
 
 func defaultSystemPromptForRoot() string {
