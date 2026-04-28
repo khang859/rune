@@ -155,3 +155,25 @@ func TestRun_AbortViaCtx(t *testing.T) {
 		}
 	}
 }
+
+func TestRun_ContextOverflow(t *testing.T) {
+	f := faux.New().Reply("partial").DoneOverflow()
+	s := session.New("gpt-5")
+	a := New(f, tools.NewRegistry(), s, "")
+	evs := collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	var sawOverflow, sawDoneOverflow bool
+	for _, e := range evs {
+		switch v := e.(type) {
+		case ContextOverflow:
+			sawOverflow = true
+		case TurnDone:
+			if v.Reason == "context_overflow" {
+				sawDoneOverflow = true
+			}
+		}
+	}
+	if !sawOverflow || !sawDoneOverflow {
+		t.Fatalf("overflow=%v doneOverflow=%v", sawOverflow, sawDoneOverflow)
+	}
+}
