@@ -23,6 +23,7 @@ func (Hotkeys) View(width, height int) string {
   Esc             cancel turn / close modal
   Ctrl+C ×2       quit
   Ctrl+L          /model
+  Ctrl+T          toggle thinking
   Tab             path completion
   @               file picker
   /               command menu
