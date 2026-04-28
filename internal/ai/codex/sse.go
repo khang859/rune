@@ -233,6 +233,7 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 
 	case "response.reasoning_summary_part.added":
 		if state.seenSummaryText {
+			state.seenSummaryText = false
 			return send(ctx, out, ai.Thinking{Text: "\n\n"})
 		}
 		return nil
