@@ -156,6 +156,36 @@ func TestRun_AbortViaCtx(t *testing.T) {
 	}
 }
 
+type streamErrProvider struct{ err error }
+
+func (p streamErrProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	out := make(chan ai.Event, 1)
+	out <- ai.StreamError{Err: p.err}
+	close(out)
+	return out, nil
+}
+
+func TestRun_StreamErrorContextCanceledBecomesAbort(t *testing.T) {
+	a := New(streamErrProvider{err: context.Canceled}, tools.NewRegistry(), session.New("gpt-5"), "")
+	evs := collect(t, a.Run(context.Background(), userMsg("anything")))
+
+	var sawAbort, sawError bool
+	for _, e := range evs {
+		switch e.(type) {
+		case TurnAborted:
+			sawAbort = true
+		case TurnError:
+			sawError = true
+		}
+	}
+	if !sawAbort {
+		t.Fatalf("expected TurnAborted, got events: %#v", evs)
+	}
+	if sawError {
+		t.Fatalf("context.Canceled leaked through as TurnError: %#v", evs)
+	}
+}
+
 func TestRun_ContextOverflow(t *testing.T) {
 	f := faux.New().Reply("partial").DoneOverflow()
 	s := session.New("gpt-5")
