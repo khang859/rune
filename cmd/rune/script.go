@@ -23,11 +23,11 @@ type scriptFile struct {
 }
 
 type fauxStep struct {
-	Reply    string          `json:"reply,omitempty"`
-	Thinking string          `json:"thinking,omitempty"`
-	Tool     *fauxToolCall   `json:"tool,omitempty"`
-	Done     bool            `json:"done,omitempty"`
-	Overflow bool            `json:"overflow,omitempty"`
+	Reply    string        `json:"reply,omitempty"`
+	Thinking string        `json:"thinking,omitempty"`
+	Tool     *fauxToolCall `json:"tool,omitempty"`
+	Done     bool          `json:"done,omitempty"`
+	Overflow bool          `json:"overflow,omitempty"`
 }
 
 type fauxToolCall struct {
