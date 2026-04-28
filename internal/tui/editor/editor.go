@@ -1,0 +1,267 @@
+package editor
+
+import (
+	"context"
+	"os"
+	"strings"
+
+	"github.com/charmbracelet/bubbles/textarea"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/khang859/rune/internal/ai"
+)
+
+type Mode int
+
+const (
+	ModeNormal Mode = iota
+	ModeFilePicker
+	ModeSlashMenu
+)
+
+type Editor struct {
+	ta      textarea.Model
+	mode    Mode
+	cwd     string
+
+	fp        *FilePicker
+	slash     *SlashMenu
+	slashCmds []string
+	atts      *Attachments
+}
+
+func New(cwd string, slashCmds []string) *Editor {
+	ta := textarea.New()
+	ta.Placeholder = "type a message…"
+	ta.Prompt = "› "
+	ta.SetWidth(80)
+	ta.SetHeight(3)
+	ta.ShowLineNumbers = false
+	ta.Focus()
+	return &Editor{
+		ta:        ta,
+		cwd:       cwd,
+		slashCmds: slashCmds,
+		atts:      NewAttachments(),
+	}
+}
+
+type Result struct {
+	Send         bool
+	Text         string
+	Images       []ai.ImageBlock
+	SlashCommand string
+	InsertText   string
+}
+
+func (e *Editor) SetWidth(w int)  { e.ta.SetWidth(w) }
+func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
+func (e *Editor) Focus()          { e.ta.Focus() }
+func (e *Editor) Blur()           { e.ta.Blur() }
+
+func (e *Editor) Mode() Mode          { return e.mode }
+func (e *Editor) FilePicker() *FilePicker { return e.fp }
+func (e *Editor) SlashMenu() *SlashMenu  { return e.slash }
+func (e *Editor) PendingImages() int      { return e.atts.Pending() }
+
+func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
+	if k, ok := msg.(tea.KeyMsg); ok {
+		if r, cmd, handled := e.handleKey(k); handled {
+			return r, cmd
+		}
+	}
+	var cmd tea.Cmd
+	e.ta, cmd = e.ta.Update(msg)
+	e.maybeOpenOverlay()
+	return Result{}, cmd
+}
+
+func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
+	switch e.mode {
+	case ModeFilePicker:
+		switch k.Type {
+		case tea.KeyEsc:
+			e.closeOverlay()
+			return Result{}, nil, true
+		case tea.KeyUp:
+			e.fp.Up()
+			return Result{}, nil, true
+		case tea.KeyDown:
+			e.fp.Down()
+			return Result{}, nil, true
+		case tea.KeyEnter, tea.KeyTab:
+			sel := e.fp.Selected()
+			if sel != "" {
+				e.replaceCurrentRefWith("@" + sel + " ")
+			}
+			e.closeOverlay()
+			return Result{}, nil, true
+		case tea.KeyRunes, tea.KeyBackspace, tea.KeySpace:
+			// fall through to textarea so it edits, then re-derive query
+			var cmd tea.Cmd
+			e.ta, cmd = e.ta.Update(k)
+			e.fp.SetQuery(e.currentRefQuery())
+			return Result{}, cmd, true
+		}
+	case ModeSlashMenu:
+		switch k.Type {
+		case tea.KeyEsc:
+			e.closeOverlay()
+			return Result{}, nil, true
+		case tea.KeyUp:
+			e.slash.Up()
+			return Result{}, nil, true
+		case tea.KeyDown:
+			e.slash.Down()
+			return Result{}, nil, true
+		case tea.KeyEnter, tea.KeyTab:
+			sel := e.slash.Selected()
+			e.closeOverlay()
+			e.ta.Reset()
+			return Result{SlashCommand: sel}, nil, true
+		case tea.KeyRunes, tea.KeyBackspace, tea.KeySpace:
+			var cmd tea.Cmd
+			e.ta, cmd = e.ta.Update(k)
+			e.slash.SetQuery(strings.TrimPrefix(e.currentLine(), "/"))
+			return Result{}, cmd, true
+		}
+	case ModeNormal:
+		if k.Type == tea.KeyTab {
+			cur := e.currentWord()
+			if cur != "" {
+				if exp, ok := CompletePath(cur, e.cwd); ok {
+					e.replaceCurrentWordWith(exp)
+					return Result{}, nil, true
+				}
+			}
+		}
+		if k.Type == tea.KeyEnter && !isShiftEnter(k) {
+			return e.submit(), nil, true
+		}
+	}
+	return Result{}, nil, false
+}
+
+func (e *Editor) submit() Result {
+	text := strings.TrimRight(e.ta.Value(), "\n")
+	e.ta.Reset()
+	if strings.HasPrefix(text, "!!") {
+		cmd := strings.TrimPrefix(text, "!!")
+		out, _ := RunShell(context.Background(), cmd)
+		return Result{InsertText: out}
+	}
+	if strings.HasPrefix(text, "!") {
+		cmd := strings.TrimPrefix(text, "!")
+		out, _ := RunShell(context.Background(), cmd)
+		text = "I ran `" + cmd + "` and it produced:\n```\n" + out + "\n```"
+	}
+	text = e.consumeImagePathsInline(text)
+	return Result{Send: true, Text: text, Images: e.atts.Drain()}
+}
+
+// consumeImagePathsInline removes lines that are bare image paths and adds them as attachments.
+func (e *Editor) consumeImagePathsInline(text string) string {
+	var keep []string
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if isImageFile(trimmed) {
+			if _, err := os.Stat(trimmed); err == nil {
+				if err := e.atts.AddFromPath(trimmed); err == nil {
+					continue
+				}
+			}
+		}
+		keep = append(keep, line)
+	}
+	return strings.Join(keep, "\n")
+}
+
+func isImageFile(s string) bool {
+	if s == "" || !strings.ContainsAny(s, "/\\") {
+		return false
+	}
+	return mimeFromExt(extOf(s)) != ""
+}
+
+func extOf(s string) string {
+	if i := strings.LastIndex(s, "."); i >= 0 {
+		return s[i:]
+	}
+	return ""
+}
+
+func (e *Editor) maybeOpenOverlay() {
+	line := e.currentLine()
+	word := e.currentWord()
+	switch {
+	case strings.HasPrefix(word, "@"):
+		if e.fp == nil {
+			e.fp = NewFilePicker(e.cwd)
+		}
+		e.fp.SetQuery(strings.TrimPrefix(word, "@"))
+		e.mode = ModeFilePicker
+	case strings.HasPrefix(line, "/"):
+		if e.slash == nil {
+			e.slash = NewSlashMenu(e.slashCmds)
+		}
+		e.slash.SetQuery(strings.TrimPrefix(line, "/"))
+		e.mode = ModeSlashMenu
+	default:
+		e.mode = ModeNormal
+	}
+}
+
+func (e *Editor) closeOverlay() {
+	e.mode = ModeNormal
+	e.fp = nil
+	e.slash = nil
+}
+
+func (e *Editor) currentLine() string {
+	val := e.ta.Value()
+	if i := strings.LastIndex(val, "\n"); i >= 0 {
+		return val[i+1:]
+	}
+	return val
+}
+
+func (e *Editor) currentWord() string {
+	line := e.currentLine()
+	if i := strings.LastIndex(line, " "); i >= 0 {
+		return line[i+1:]
+	}
+	return line
+}
+
+func (e *Editor) currentRefQuery() string {
+	w := e.currentWord()
+	return strings.TrimPrefix(w, "@")
+}
+
+func (e *Editor) replaceCurrentRefWith(s string) {
+	val := e.ta.Value()
+	cur := e.currentWord()
+	if cur == "" {
+		return
+	}
+	idx := strings.LastIndex(val, cur)
+	if idx < 0 {
+		return
+	}
+	e.ta.SetValue(val[:idx] + s)
+}
+
+func (e *Editor) replaceCurrentWordWith(s string) {
+	e.replaceCurrentRefWith(s)
+}
+
+func isShiftEnter(k tea.KeyMsg) bool {
+	return k.String() == "shift+enter" || k.String() == "alt+enter"
+}
+
+func (e *Editor) View(width int) string {
+	return e.ta.View()
+}
+
+func (e *Editor) AddAttachmentPath(p string) error    { return e.atts.AddFromPath(p) }
+func (e *Editor) AddAttachmentDataURI(s string) error { return e.atts.AddFromDataURI(s) }
