@@ -8,7 +8,7 @@ import (
 )
 
 func Run(a *agent.Agent, s *session.Session) error {
-	p := tea.NewProgram(NewRootModel(a, s), tea.WithAltScreen())
+	p := tea.NewProgram(NewRootModel(a, s), tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	return err
 }

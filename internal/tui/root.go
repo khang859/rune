@@ -85,6 +85,11 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.startTurn(text, nil)
 		}
 		return m, nil
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok {
@@ -94,6 +99,14 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.streaming && k.Type == tea.KeyEsc && m.cancel != nil {
 			m.cancel()
 			return m, nil
+		}
+		if !m.streaming {
+			switch k.Type {
+			case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			}
 		}
 	}
 
@@ -207,8 +220,11 @@ func (m *RootModel) layout() {
 }
 
 func (m *RootModel) refreshViewport() {
+	atBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(m.msgs.Render(m.styles))
-	m.viewport.GotoBottom()
+	if atBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m *RootModel) handleEvent(e agent.Event) {

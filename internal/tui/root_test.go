@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,27 @@ func TestRoot_CtrlCQuitsEvenWhileStreaming(t *testing.T) {
 func typeText(tm *teatest.TestModel, s string) {
 	for _, r := range s {
 		tm.Send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+}
+
+func TestRoot_RefreshDoesNotJumpWhenScrolledUp(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	for i := 0; i < 50; i++ {
+		m.msgs.AppendUser(fmt.Sprintf("line %d", i))
+	}
+	m.refreshViewport()
+	m.viewport.GotoTop()
+	if m.viewport.AtBottom() {
+		t.Fatal("expected viewport not at bottom after GotoTop")
+	}
+	m.msgs.AppendUser("incoming streamed line")
+	m.refreshViewport()
+	if m.viewport.AtBottom() {
+		t.Fatal("refresh snapped to bottom while user was scrolled up")
 	}
 }
 
