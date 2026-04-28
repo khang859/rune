@@ -430,7 +430,7 @@ func (m *RootModel) layout() {
 
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(m.msgs.Render(m.styles))
+	m.viewport.SetContent(m.msgs.Render(m.styles, false, time.Now()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}

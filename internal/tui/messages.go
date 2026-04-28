@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
@@ -29,10 +30,12 @@ const (
 )
 
 type block struct {
-	kind  blockKind
-	text  string
-	meta  string
-	count int
+	kind      blockKind
+	text      string
+	meta      string
+	count     int
+	startedAt time.Time
+	endedAt   time.Time
 }
 
 func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
@@ -52,13 +55,43 @@ func (m *Messages) OnAssistantDelta(delta string) {
 	m.blocks[m.streamingAsstIdx].text += delta
 }
 
+// OnThinkingDelta appends to (or starts) the active thinking block, using time.Now()
+// for the start timestamp. Tests should use OnThinkingDeltaAt for deterministic times.
 func (m *Messages) OnThinkingDelta(delta string) {
+	m.OnThinkingDeltaAt(delta, time.Now())
+}
+
+func (m *Messages) OnThinkingDeltaAt(delta string, now time.Time) {
 	last := len(m.blocks)
-	if last > 0 && m.blocks[last-1].kind == bkThinking {
+	if last > 0 && m.blocks[last-1].kind == bkThinking && m.blocks[last-1].endedAt.IsZero() {
 		m.blocks[last-1].text += delta
 		return
 	}
-	m.blocks = append(m.blocks, block{kind: bkThinking, text: delta})
+	m.blocks = append(m.blocks, block{kind: bkThinking, text: delta, startedAt: now})
+}
+
+// FinalizeStreamingThinking sets endedAt on the most recent in-progress thinking block, if any.
+func (m *Messages) FinalizeStreamingThinking(now time.Time) {
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		if m.blocks[i].kind != bkThinking {
+			continue
+		}
+		if m.blocks[i].endedAt.IsZero() {
+			m.blocks[i].endedAt = now
+		}
+		return
+	}
+}
+
+// HasInProgressThinking reports whether at least one thinking block has not yet been finalized.
+// Used by RootModel to decide whether to keep its 1-second tick alive.
+func (m *Messages) HasInProgressThinking() bool {
+	for _, b := range m.blocks {
+		if b.kind == bkThinking && b.endedAt.IsZero() {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Messages) OnToolStarted(call ai.ToolCall) {
@@ -85,7 +118,7 @@ func (m *Messages) OnToolFinished(f agent.ToolFinished) {
 func (m *Messages) OnTurnDone(reason string) {
 	m.streamingAsstIdx = -1
 	if reason != "" && reason != "stop" {
-		m.blocks = append(m.blocks, block{kind: bkThinking, text: fmt.Sprintf("(turn ended: %s)", reason)})
+		m.blocks = append(m.blocks, block{kind: bkInfo, text: fmt.Sprintf("(turn ended: %s)", reason)})
 	}
 }
 
@@ -103,7 +136,7 @@ func (m *Messages) AppendSummary(text string, count int) {
 	m.blocks = append(m.blocks, block{kind: bkSummary, text: text, count: count})
 }
 
-func (m *Messages) Render(s Styles) string {
+func (m *Messages) Render(s Styles, showThinking bool, now time.Time) string {
 	var sb strings.Builder
 	for i, b := range m.blocks {
 		if i > 0 {
@@ -116,7 +149,7 @@ func (m *Messages) Render(s Styles) string {
 		case bkAssistant:
 			rendered = s.Assistant.Render(b.text)
 		case bkThinking:
-			rendered = s.Thinking.Render(b.text)
+			rendered = renderThinking(s, b, showThinking, now)
 		case bkToolCall:
 			rendered = s.ToolCall.Render(fmt.Sprintf("· %s(%s)", b.meta, b.text))
 		case bkToolResult:
@@ -135,4 +168,30 @@ func (m *Messages) Render(s Styles) string {
 		sb.WriteString(rendered)
 	}
 	return sb.String()
+}
+
+func renderThinking(s Styles, b block, showThinking bool, now time.Time) string {
+	caret := "▸"
+	if showThinking {
+		caret = "▾"
+	}
+	var header string
+	if b.endedAt.IsZero() {
+		secs := int(now.Sub(b.startedAt).Seconds())
+		if secs < 0 {
+			secs = 0
+		}
+		header = fmt.Sprintf("%s thinking… (%ds)", caret, secs)
+	} else {
+		secs := int(b.endedAt.Sub(b.startedAt).Seconds())
+		if secs < 0 {
+			secs = 0
+		}
+		header = fmt.Sprintf("%s thought for %ds", caret, secs)
+	}
+	headerLine := s.ThinkingHeader.Render(header)
+	if !showThinking {
+		return headerLine
+	}
+	return headerLine + "\n" + s.Thinking.Render(b.text)
 }
