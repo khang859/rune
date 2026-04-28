@@ -8,11 +8,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/charmbracelet/bubbles/viewport"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/session"
-
-	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/khang859/rune/internal/tui/editor"
 )
 
 type RootModel struct {
@@ -21,8 +21,9 @@ type RootModel struct {
 	styles   Styles
 	msgs     *Messages
 	viewport viewport.Model
-	editor   Editor
+	editor   *editor.Editor
 	footer   Footer
+	queue    *Queue
 
 	width  int
 	height int
@@ -35,10 +36,10 @@ type RootModel struct {
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
-	cwd, _ := os.Getwd()
-	home, _ := os.UserHomeDir()
-	if strings.HasPrefix(cwd, home) {
-		cwd = "~" + strings.TrimPrefix(cwd, home)
+	realCwd, _ := os.Getwd()
+	displayCwd := realCwd
+	if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(realCwd, home) {
+		displayCwd = "~" + strings.TrimPrefix(realCwd, home)
 	}
 	sessLabel := sess.Name
 	if sessLabel == "" {
@@ -47,57 +48,28 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 			sessLabel = sessLabel[:8]
 		}
 	}
+	cmds := []string{"/quit", "/new", "/copy", "/hotkeys"}
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
 		styles:   DefaultStyles(),
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
-		editor:   NewEditor(),
-		footer:   Footer{Cwd: cwd, Session: sessLabel, Model: sess.Model},
+		editor:   editor.New(realCwd, cmds),
+		footer:   Footer{Cwd: displayCwd, Session: sessLabel, Model: sess.Model},
+		queue:    &Queue{},
 	}
 }
 
 func (m *RootModel) Init() tea.Cmd { return nil }
 
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	var cmds []tea.Cmd
-
 	switch v := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
 		m.layout()
 		m.refreshViewport()
 		return m, nil
-
-	case tea.KeyMsg:
-		// Ctrl+C must always quit, even mid-turn.
-		if v.Type == tea.KeyCtrlC {
-			return m, tea.Quit
-		}
-		if m.streaming {
-			if v.Type == tea.KeyEsc && m.cancel != nil {
-				m.cancel()
-			}
-			return m, nil
-		}
-		switch v.Type {
-		case tea.KeyEnter:
-			if !v.Alt && v.Type == tea.KeyEnter && !isShiftEnter(v) {
-				text := strings.TrimSpace(m.editor.Value())
-				if text == "" {
-					return m, nil
-				}
-				m.editor.Reset()
-				m.msgs.AppendUser(text)
-				m.refreshViewport()
-				return m, m.startTurn(text)
-			}
-		}
-		if cmd := m.editor.Update(msg); cmd != nil {
-			cmds = append(cmds, cmd)
-		}
-		return m, tea.Batch(cmds...)
 
 	case AgentEventMsg:
 		m.handleEvent(v.Event)
@@ -109,20 +81,129 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventCh = nil
 		m.cancel = nil
 		m.editor.Focus()
+		if item, ok := m.queue.Pop(); ok {
+			m.msgs.AppendUser(item.Text)
+			m.refreshViewport()
+			return m, m.startTurn(item.Text, item.Images)
+		}
 		return m, nil
+
+	case tea.MouseMsg:
+		var cmd tea.Cmd
+		m.viewport, cmd = m.viewport.Update(msg)
+		return m, cmd
 	}
 
-	if cmd := m.editor.Update(msg); cmd != nil {
-		cmds = append(cmds, cmd)
+	if k, ok := msg.(tea.KeyMsg); ok {
+		if k.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
+		if m.streaming && k.Type == tea.KeyEsc && m.cancel != nil {
+			m.cancel()
+			return m, nil
+		}
+		if !m.streaming {
+			switch k.Type {
+			case tea.KeyPgUp, tea.KeyPgDown, tea.KeyHome, tea.KeyEnd:
+				var cmd tea.Cmd
+				m.viewport, cmd = m.viewport.Update(msg)
+				return m, cmd
+			}
+		}
 	}
-	return m, tea.Batch(cmds...)
+
+	res, cmd := m.editor.Update(msg)
+	if res.Send {
+		text := res.Text
+		if m.streaming {
+			m.queue.Push(QueueItem{Text: text, Images: res.Images})
+			m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
+			m.refreshViewport()
+			return m, cmd
+		}
+		m.msgs.AppendUser(text)
+		m.refreshViewport()
+		return m, m.startTurn(text, res.Images)
+	}
+	if res.RanCommand != "" {
+		label := fmt.Sprintf("(ran: %s)", res.RanCommand)
+		body := res.InsertText
+		if body == "" {
+			body = "(no output)"
+		}
+		m.msgs.OnInfo(label + "\n" + body)
+		m.refreshViewport()
+	}
+	if res.SlashCommand != "" {
+		if c := m.handleSlashCommand(res.SlashCommand); c != nil {
+			return m, c
+		}
+	}
+	if _, ok := msg.(tea.KeyMsg); ok {
+		m.layout()
+	}
+	return m, cmd
+}
+
+func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
+	ctx, cancel := context.WithCancel(context.Background())
+	m.cancel = cancel
+	m.streaming = true
+	m.editor.Blur()
+	content := []ai.ContentBlock{ai.TextBlock{Text: text}}
+	for _, im := range images {
+		content = append(content, im)
+	}
+	msg := ai.Message{Role: ai.RoleUser, Content: content}
+	ch := m.agent.Run(ctx, msg)
+	m.eventCh = ch
+	return nextEventCmd(ch)
+}
+
+func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
+	switch cmd {
+	case "/quit":
+		return tea.Quit
+	case "/new":
+		m.msgs = NewMessages(m.width)
+		m.refreshViewport()
+	case "/hotkeys":
+		m.msgs.OnTurnError(fmt.Errorf("(hotkeys list lands in Plan 05)"))
+		m.refreshViewport()
+	}
+	return nil
 }
 
 func (m *RootModel) View() string {
 	msgArea := m.viewport.View()
-	edArea := m.editor.View(m.styles)
+	edArea := m.styles.EditorBox.Render(m.editor.View(m.width))
+	overlay := ""
+	switch m.editor.Mode() {
+	case editor.ModeFilePicker:
+		overlay = renderList("files", m.editor.FilePicker().Items())
+	case editor.ModeSlashMenu:
+		overlay = renderList("commands", m.editor.SlashMenu().Items())
+	}
 	foot := m.footer.Render(m.styles)
+	if overlay != "" {
+		return msgArea + "\n" + edArea + "\n" + overlay + "\n" + foot
+	}
 	return msgArea + "\n" + edArea + "\n" + foot
+}
+
+func renderList(title string, items []string) string {
+	if len(items) == 0 {
+		return "(no " + title + ")"
+	}
+	out := title + ":"
+	for i, it := range items {
+		if i >= 8 {
+			out += "\n  …"
+			break
+		}
+		out += "\n  " + it
+	}
+	return out
 }
 
 func (m *RootModel) layout() {
@@ -130,33 +211,31 @@ func (m *RootModel) layout() {
 		return
 	}
 	footerH := 1
-	editorH := 5
-	msgH := m.height - footerH - editorH
+	editorRows := m.editor.Rows()
+	editorH := editorRows + 2 // border top + bottom
+	overlayRows := 0
+	if m.editor.Mode() != editor.ModeNormal {
+		overlayRows = 9
+	}
+	msgH := m.height - footerH - editorH - overlayRows
 	if msgH < 3 {
 		msgH = 3
 	}
 	m.viewport.Width = m.width
 	m.viewport.Height = msgH
-	m.editor.SetWidth(m.width - 2)
-	m.editor.SetHeight(editorH - 2)
+	// EditorBox renders with rounded border (2 cols) + horizontal padding (2 cols);
+	// reserve those so the editor never overflows the terminal width.
+	m.editor.SetWidth(m.width - 4)
 	m.footer.Width = m.width
 	m.msgs.SetWidth(m.width)
 }
 
 func (m *RootModel) refreshViewport() {
+	atBottom := m.viewport.AtBottom()
 	m.viewport.SetContent(m.msgs.Render(m.styles))
-	m.viewport.GotoBottom()
-}
-
-func (m *RootModel) startTurn(text string) tea.Cmd {
-	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel = cancel
-	m.streaming = true
-	m.editor.Blur()
-	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: text}}}
-	ch := m.agent.Run(ctx, msg)
-	m.eventCh = ch
-	return nextEventCmd(ch)
+	if atBottom {
+		m.viewport.GotoBottom()
+	}
 }
 
 func (m *RootModel) handleEvent(e agent.Event) {
@@ -191,9 +270,4 @@ func ctxPct(tokens int) int {
 		return 100
 	}
 	return p
-}
-
-func isShiftEnter(k tea.KeyMsg) bool {
-	s := k.String()
-	return s == "shift+enter"
 }

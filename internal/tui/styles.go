@@ -9,6 +9,7 @@ type Styles struct {
 	ToolCall   lipgloss.Style
 	ToolResult lipgloss.Style
 	ToolError  lipgloss.Style
+	Info       lipgloss.Style
 	Footer     lipgloss.Style
 	EditorBox  lipgloss.Style
 }
@@ -21,6 +22,7 @@ func DefaultStyles() Styles {
 		ToolCall:   lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 		ToolResult: lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 		ToolError:  lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
+		Info:       lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color("8")),
 		Footer:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Reverse(true).Padding(0, 1),
 		EditorBox:  lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
 	}

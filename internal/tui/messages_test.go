@@ -63,6 +63,17 @@ func TestMessages_TurnError(t *testing.T) {
 	}
 }
 
+func TestMessages_OnInfoDoesNotEndAssistantStream(t *testing.T) {
+	m := NewMessages(80)
+	m.OnAssistantDelta("hel")
+	m.OnInfo("queued (1 in queue)")
+	m.OnAssistantDelta("lo")
+	rendered := m.Render(DefaultStyles())
+	if !strings.Contains(rendered, "hello") {
+		t.Fatalf("assistant deltas were fragmented by OnInfo: %q", rendered)
+	}
+}
+
 type errString string
 
 func (e errString) Error() string { return string(e) }

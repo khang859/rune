@@ -7,6 +7,7 @@ require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/exp/teatest v0.0.0-20260428131021-72ac42529b04
+	github.com/sahilm/fuzzy v0.1.1
 	golang.org/x/sys v0.43.0
 )
 
