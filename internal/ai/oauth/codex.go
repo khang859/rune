@@ -18,6 +18,7 @@ const (
 	CodexCallbackPort     = 1455
 	CodexRedirectURI      = "http://localhost:1455/auth/callback"
 	CodexScope            = "openid profile email offline_access"
+	CodexJWTClaimPath     = "https://api.openai.com/auth"
 	CodexResponsesBaseURL = "https://chatgpt.com/backend-api"
 	CodexResponsesPath    = "/codex/responses"
 )
@@ -122,4 +123,42 @@ func emailFromIDToken(t string) string {
 
 func base64Decode(s string) ([]byte, error) {
 	return jsonStdBase64Decode(s)
+}
+
+// AccountIDFromAccessToken extracts chatgpt_account_id from the access-token JWT.
+// Codex's backend requires this as the chatgpt-account-id header.
+func AccountIDFromAccessToken(token string) (string, error) {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("invalid jwt: %d segments", len(parts))
+	}
+	seg := parts[1]
+	pad := 4 - len(seg)%4
+	if pad != 4 {
+		seg += strings.Repeat("=", pad)
+	}
+	seg = strings.ReplaceAll(seg, "-", "+")
+	seg = strings.ReplaceAll(seg, "_", "/")
+	raw, err := base64Decode(seg)
+	if err != nil {
+		return "", fmt.Errorf("decode jwt payload: %w", err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return "", fmt.Errorf("parse jwt payload: %w", err)
+	}
+	claimRaw, ok := payload[CodexJWTClaimPath]
+	if !ok {
+		return "", fmt.Errorf("jwt missing %q claim", CodexJWTClaimPath)
+	}
+	var claim struct {
+		ChatGPTAccountID string `json:"chatgpt_account_id"`
+	}
+	if err := json.Unmarshal(claimRaw, &claim); err != nil {
+		return "", fmt.Errorf("parse claim: %w", err)
+	}
+	if claim.ChatGPTAccountID == "" {
+		return "", fmt.Errorf("chatgpt_account_id missing from token")
+	}
+	return claim.ChatGPTAccountID, nil
 }

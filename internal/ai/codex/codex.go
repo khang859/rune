@@ -13,6 +13,7 @@ import (
 
 type AuthSource interface {
 	Token(ctx context.Context) (string, error)
+	AccountID(ctx context.Context) (string, error)
 	Refresh(ctx context.Context) error
 }
 
@@ -95,10 +96,16 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	if err != nil {
 		return err
 	}
+	accountID, err := p.auth.AccountID(ctx)
+	if err != nil {
+		return err
+	}
 	httpReq.Header.Set("Authorization", "Bearer "+token)
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "text/event-stream")
-	httpReq.Header.Set("OpenAI-Beta", "responses=v1")
+	httpReq.Header.Set("OpenAI-Beta", "responses=experimental")
+	httpReq.Header.Set("chatgpt-account-id", accountID)
+	httpReq.Header.Set("originator", "rune")
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
