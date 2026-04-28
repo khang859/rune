@@ -15,9 +15,15 @@ import (
 	"github.com/khang859/rune/internal/tui"
 )
 
-func runInteractive(ctx context.Context) error {
+func runInteractive(ctx context.Context, model string) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
+	}
+	if model == "" {
+		model = os.Getenv("RUNE_CODEX_MODEL")
+	}
+	if model == "" {
+		model = DefaultCodexModel
 	}
 	endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 	if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -34,7 +40,7 @@ func runInteractive(ctx context.Context) error {
 	}
 	p := codex.New(endpoint, src)
 
-	sess := session.New("gpt-5")
+	sess := session.New(model)
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
 	reg := tools.NewRegistry()

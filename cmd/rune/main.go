@@ -44,7 +44,7 @@ func main() {
 		return
 	}
 	// default: interactive
-	if err := runInteractive(ctx); err != nil {
+	if err := runInteractive(ctx, *model); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
