@@ -151,8 +151,8 @@ func TestParseSSE_ReasoningSummary(t *testing.T) {
 
 	var thinking strings.Builder
 	for _, e := range evs {
-		if t, ok := e.(ai.Thinking); ok {
-			thinking.WriteString(t.Text)
+		if th, ok := e.(ai.Thinking); ok {
+			thinking.WriteString(th.Text)
 		}
 	}
 	if thinking.String() != "Considering the problem" {
