@@ -78,7 +78,15 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 					}
 					autoCompactRemaining--
 					if err := a.Compact(ctx, ""); err != nil {
-						out <- TurnError{Err: err}
+						if errors.Is(err, context.Canceled) {
+							out <- TurnAborted{}
+						} else {
+							out <- TurnError{Err: err}
+						}
+						return
+					}
+					if ctx.Err() != nil {
+						out <- TurnAborted{}
 						return
 					}
 					goto restart

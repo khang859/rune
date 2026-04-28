@@ -99,6 +99,64 @@ func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
 	}
 }
 
+func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	// Simulate an active stream owned by the previous session.
+	oldCh := make(chan agent.Event)
+	m.streaming = true
+	m.eventCh = oldCh
+	m.cancel = func() {}
+	m.queue.Push(QueueItem{Text: "queued before swap"})
+
+	// Swap to a fresh session (mirrors what /resume or /new does).
+	ns := session.New("gpt-5")
+	m.swapSession(ns)
+
+	if m.streaming {
+		t.Fatal("swapSession must clear streaming flag")
+	}
+	if m.eventCh != nil {
+		t.Fatal("swapSession must clear eventCh")
+	}
+	if m.queue.Len() != 0 {
+		t.Fatal("swapSession must drop queued items so they don't bleed into the new session")
+	}
+
+	// A stale event from the old channel must not reach handleEvent.
+	_, _ = m.Update(AgentEventMsg{Event: agent.AssistantText{Delta: "STALE"}, Ch: oldCh})
+	if got := m.msgs.Render(m.styles); strings.Contains(got, "STALE") {
+		t.Fatalf("stale event leaked into messages: %q", got)
+	}
+
+	// A stale done from the old channel must not pop the (now empty) queue
+	// or otherwise mutate state.
+	m.queue.Push(QueueItem{Text: "should-stay-queued"})
+	_, _ = m.Update(AgentChannelDoneMsg{Ch: oldCh})
+	if m.queue.Len() != 1 {
+		t.Fatal("stale AgentChannelDoneMsg must not drain the queue")
+	}
+}
+
+func TestRoot_RefusesCompactWhileStreaming(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.streaming = true
+
+	got := m.handleSlashCommand("/compact")
+	if got != nil {
+		t.Fatal("/compact must be a no-op while streaming")
+	}
+	if !strings.Contains(m.msgs.Render(m.styles), "busy") {
+		t.Fatal("expected busy notice after /compact while streaming")
+	}
+}
+
 var _ = ai.RoleUser
 var _ = json.Valid
 var _ = context.Background

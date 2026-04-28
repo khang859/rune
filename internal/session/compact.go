@@ -25,6 +25,22 @@ func (s *Session) Compact(ctx context.Context, instructions string, summarize Su
 	if err != nil {
 		return err
 	}
+	// Detach the active branch from Root before grafting the compacted one.
+	// Compact replaces history along the active line; sibling forks under Root
+	// are preserved, but the chain we just summarized is gone. Users who want
+	// to keep a pre-compact view should /fork before /compact.
+	oldBranchRoot := s.Active
+	for oldBranchRoot.Parent != nil && oldBranchRoot.Parent != s.Root {
+		oldBranchRoot = oldBranchRoot.Parent
+	}
+	filtered := make([]*Node, 0, len(s.Root.Children))
+	for _, c := range s.Root.Children {
+		if c != oldBranchRoot {
+			filtered = append(filtered, c)
+		}
+	}
+	s.Root.Children = filtered
+
 	// Build a new branch off root: [summary, path[cut:]...]
 	s.Active = s.Root
 	s.Append(ai.Message{

@@ -91,11 +91,20 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case AgentEventMsg:
+		if v.Ch != m.eventCh {
+			// Stale event from a swapped-out session; drop it.
+			return m, nil
+		}
 		m.handleEvent(v.Event)
 		m.refreshViewport()
 		return m, nextEventCmd(m.eventCh)
 
 	case AgentChannelDoneMsg:
+		if v.Ch != m.eventCh {
+			// Stale done from a swapped-out session; ignore so we don't
+			// pop the queue on the wrong session.
+			return m, nil
+		}
 		m.streaming = false
 		m.eventCh = nil
 		m.cancel = nil
@@ -116,6 +125,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cur := m.modal
 		m.modal = nil
 		if v.Cancel {
+			if _, isTree := cur.(*modal.Tree); isTree {
+				// Cancelling /fork's tree must not leak fork mode into the next /tree.
+				m.pendingForkMode = false
+			}
 			m.layout()
 			return m, nil
 		}
@@ -201,20 +214,25 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 }
 
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
+	var initCmd tea.Cmd
 	switch cmd {
 	case "/quit":
 		return tea.Quit
 	case "/model":
-		m.modal = modal.NewModelPicker([]string{"gpt-5", "gpt-5-codex", "gpt-5.1-codex-mini"}, m.sess.Model)
+		initCmd = m.openModal(modal.NewModelPicker([]string{"gpt-5", "gpt-5-codex", "gpt-5.1-codex-mini"}, m.sess.Model))
 	case "/tree":
-		m.modal = modal.NewTree(m.sess)
+		if m.streaming {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		initCmd = m.openModal(modal.NewTree(m.sess))
 	case "/resume":
 		items, _ := session.ListSessions(config.SessionsDir())
-		m.modal = modal.NewResume(items)
+		initCmd = m.openModal(modal.NewResume(items))
 	case "/settings":
-		m.modal = modal.NewSettings(m.settings)
+		initCmd = m.openModal(modal.NewSettings(m.settings))
 	case "/hotkeys":
-		m.modal = modal.NewHotkeys()
+		initCmd = m.openModal(modal.NewHotkeys())
 	case "/new":
 		m.startNewSession()
 	case "/name":
@@ -222,8 +240,12 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/session":
 		m.msgs.OnTurnError(fmt.Errorf("session id=%s name=%q model=%s", m.sess.ID, m.sess.Name, m.sess.Model))
 	case "/fork":
-		m.modal = modal.NewTree(m.sess)
+		if m.streaming {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
 		m.pendingForkMode = true
+		initCmd = m.openModal(modal.NewTree(m.sess))
 	case "/clone":
 		nc := m.sess.Clone()
 		nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
@@ -231,16 +253,34 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.swapSession(nc)
 	case "/copy":
 		last := lastAssistantText(m.sess)
-		if last != "" {
+		if last == "" {
+			m.msgs.OnInfo("(no assistant message to copy)")
+		} else {
 			m.copyToClipboard(last)
 		}
 	case "/compact":
+		if m.streaming {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		m.layout()
 		return m.startCompact()
 	case "/reload":
+		if m.streaming {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
 		m.refreshSystemPrompt()
 	}
 	m.layout()
-	return nil
+	return initCmd
+}
+
+// openModal sets the current modal and returns its Init cmd so async
+// loaders work. Always go through this rather than assigning m.modal directly.
+func (m *RootModel) openModal(md modal.Modal) tea.Cmd {
+	m.modal = md
+	return md.Init()
 }
 
 func (m *RootModel) View() string {
@@ -414,11 +454,31 @@ func (m *RootModel) startNewSession() {
 }
 
 func (m *RootModel) swapSession(s *session.Session) {
+	// Cancel any in-flight turn on the previous session before replacing
+	// pointers — otherwise the old goroutine's events could bleed into
+	// the new session's UI, and a queued message could pop into the
+	// wrong session after AgentChannelDoneMsg fires.
+	m.stopActiveTurn()
 	m.sess = s
 	m.footer.Session = s.Name
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), s, m.agent.System())
+}
+
+// stopActiveTurn cancels any in-flight agent turn, clears streaming state,
+// and drops queued items. Pending events from the old channel are ignored
+// downstream because nextEventCmd tags messages with their channel and the
+// AgentEventMsg handler drops mismatches.
+func (m *RootModel) stopActiveTurn() {
+	if m.cancel != nil {
+		m.cancel()
+	}
+	m.cancel = nil
+	m.eventCh = nil
+	m.streaming = false
+	m.queue = &Queue{}
+	m.editor.Focus()
 }
 
 func (m *RootModel) rebuildMessagesFromSession() {
@@ -468,6 +528,7 @@ func (m *RootModel) copyToClipboard(text string) {
 		return
 	}
 	clipboard.Write(clipboard.FmtText, []byte(text))
+	m.msgs.OnInfo("(copied)")
 }
 
 func (m *RootModel) refreshSystemPrompt() {

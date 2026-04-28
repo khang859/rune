@@ -48,6 +48,58 @@ func TestCompact_ReplacesPreCutWithSummary(t *testing.T) {
 	}
 }
 
+func TestCompact_PrunesOrphanedActiveBranch(t *testing.T) {
+	s := New("gpt-5")
+	s.Append(userMsg("u1"))
+	s.Append(asstMsg("a1"))
+	s.Append(userMsg("u2"))
+
+	summarizer := func(ctx context.Context, msgs []ai.Message, _ string) (string, error) {
+		return "S", nil
+	}
+	if err := s.Compact(context.Background(), "", summarizer); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := len(s.Root.Children); got != 1 {
+		t.Fatalf("Root.Children = %d, want 1 (orphaned pre-compact branch should be pruned)", got)
+	}
+	first := s.Root.Children[0]
+	if got := first.Message.Content[0].(ai.TextBlock).Text; got != "S" {
+		t.Fatalf("Root's only child should be the summary, got %q", got)
+	}
+}
+
+func TestCompact_KeepsSiblingForks(t *testing.T) {
+	s := New("gpt-5")
+	// Build a sibling branch off Root first.
+	s.Append(userMsg("sibling"))
+	siblingTop := s.Root.Children[0]
+
+	// Now reset to Root and build the active branch we'll compact.
+	s.Active = s.Root
+	s.Append(userMsg("u1"))
+	s.Append(asstMsg("a1"))
+	s.Append(userMsg("u2"))
+
+	summarizer := func(ctx context.Context, msgs []ai.Message, _ string) (string, error) {
+		return "S", nil
+	}
+	if err := s.Compact(context.Background(), "", summarizer); err != nil {
+		t.Fatal(err)
+	}
+
+	var sawSibling bool
+	for _, c := range s.Root.Children {
+		if c == siblingTop {
+			sawSibling = true
+		}
+	}
+	if !sawSibling {
+		t.Fatal("compact must preserve sibling forks rooted under Root")
+	}
+}
+
 func TestCompact_NoCutPoint_ReturnsNoOp(t *testing.T) {
 	s := New("gpt-5")
 	summarizer := func(ctx context.Context, msgs []ai.Message, _ string) (string, error) { return "x", nil }
