@@ -29,10 +29,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	autoCompactRemaining := 1
 	for {
 		req := ai.Request{
-			Model:    a.session.Model,
-			System:   a.system,
-			Messages: a.session.PathToActive(),
-			Tools:    a.tools.Specs(),
+			Model:     a.session.Model,
+			System:    a.system,
+			Messages:  a.session.PathToActive(),
+			Tools:     a.tools.Specs(),
+			Reasoning: ai.ReasoningConfig{Effort: a.effort},
 		}
 		events, err := a.provider.Stream(ctx, req)
 		if err != nil {

@@ -231,3 +231,26 @@ func TestAgent_SetReasoningEffort(t *testing.T) {
 		t.Fatalf("after set, effort = %q, want %q", got, "high")
 	}
 }
+
+type captureProvider struct {
+	gotReq ai.Request
+}
+
+func (c *captureProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	c.gotReq = req
+	out := make(chan ai.Event, 2)
+	out <- ai.Usage{Input: 1, Output: 1}
+	out <- ai.Done{Reason: "stop"}
+	close(out)
+	return out, nil
+}
+
+func TestRun_ThreadsReasoningEffortIntoRequest(t *testing.T) {
+	cp := &captureProvider{}
+	a := New(cp, tools.NewRegistry(), session.New("gpt-5"), "")
+	a.SetReasoningEffort("high")
+	_ = collect(t, a.Run(context.Background(), userMsg("hi")))
+	if cp.gotReq.Reasoning.Effort != "high" {
+		t.Fatalf("req.Reasoning.Effort = %q, want %q", cp.gotReq.Reasoning.Effort, "high")
+	}
+}
