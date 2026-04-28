@@ -9,8 +9,6 @@ import (
 	"github.com/khang859/rune/internal/ai/faux"
 )
 
-const version = "0.0.0-dev"
-
 func main() {
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: rune [--script <file>] [--prompt <text>] | rune login codex")
@@ -45,5 +43,9 @@ func main() {
 		}
 		return
 	}
-	fmt.Println("rune", version)
+	// default: interactive
+	if err := runInteractive(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
