@@ -1,0 +1,2 @@
+event: response.incomplete
+data: {"type":"response.incomplete","response":{"id":"r1","status":"incomplete","incomplete_details":{"reason":"context_length_exceeded"}}}
