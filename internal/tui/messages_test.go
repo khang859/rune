@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/agent"
+	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/tools"
 )
 
