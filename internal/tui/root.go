@@ -40,6 +40,13 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	if strings.HasPrefix(cwd, home) {
 		cwd = "~" + strings.TrimPrefix(cwd, home)
 	}
+	sessLabel := sess.Name
+	if sessLabel == "" {
+		sessLabel = sess.ID
+		if len(sessLabel) > 8 {
+			sessLabel = sessLabel[:8]
+		}
+	}
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
@@ -47,7 +54,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
 		editor:   NewEditor(),
-		footer:   Footer{Cwd: cwd, Session: sess.Name, Model: sess.Model},
+		footer:   Footer{Cwd: cwd, Session: sessLabel, Model: sess.Model},
 	}
 }
 
