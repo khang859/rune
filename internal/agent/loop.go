@@ -26,6 +26,7 @@ func (a *Agent) Run(ctx context.Context, userMsg ai.Message) <-chan Event {
 }
 
 func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
+	autoCompactRemaining := 1
 	for {
 		req := ai.Request{
 			Model:    a.session.Model,
@@ -71,9 +72,16 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			case ai.Done:
 				if v.Reason == "context_overflow" {
 					out <- ContextOverflow{}
-					// For now: end the turn. Auto-compact lands in Plan 05.
-					out <- TurnDone{Reason: "context_overflow"}
-					return
+					if autoCompactRemaining <= 0 {
+						out <- TurnDone{Reason: "context_overflow"}
+						return
+					}
+					autoCompactRemaining--
+					if err := a.Compact(ctx, ""); err != nil {
+						out <- TurnError{Err: err}
+						return
+					}
+					goto restart
 				}
 				a.persistAssistant(assistantText.String(), toolCalls, usage)
 				if len(toolCalls) == 0 {
@@ -88,13 +96,17 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 					out <- TurnError{Err: err}
 					return
 				}
-				// continue outer loop for next provider call
+				goto next
 			}
 		}
 		if ctx.Err() != nil {
 			out <- TurnAborted{}
 			return
 		}
+	next:
+		continue
+	restart:
+		continue
 	}
 }
 

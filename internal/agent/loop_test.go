@@ -186,24 +186,33 @@ func TestRun_StreamErrorContextCanceledBecomesAbort(t *testing.T) {
 	}
 }
 
-func TestRun_ContextOverflow(t *testing.T) {
-	f := faux.New().Reply("partial").DoneOverflow()
+func TestRun_AutoCompactOnOverflow(t *testing.T) {
+	f := faux.New().
+		DoneOverflow().                              // first call hits overflow
+		Reply("compacted summary text").Done().      // compact summarizer
+		Reply("post-compact reply").Done()           // retry of original turn
 	s := session.New("gpt-5")
+	s.Append(userMsg("u1"))
+	s.Append(asstMsg("a1"))
 	a := New(f, tools.NewRegistry(), s, "")
-	evs := collect(t, a.Run(context.Background(), userMsg("hi")))
 
-	var sawOverflow, sawDoneOverflow bool
+	evs := collect(t, a.Run(context.Background(), userMsg("u2")))
+
+	var sawOverflow, sawDone bool
 	for _, e := range evs {
 		switch v := e.(type) {
 		case ContextOverflow:
 			sawOverflow = true
 		case TurnDone:
-			if v.Reason == "context_overflow" {
-				sawDoneOverflow = true
+			if v.Reason == "stop" {
+				sawDone = true
 			}
 		}
 	}
-	if !sawOverflow || !sawDoneOverflow {
-		t.Fatalf("overflow=%v doneOverflow=%v", sawOverflow, sawDoneOverflow)
+	if !sawOverflow {
+		t.Fatal("missing ContextOverflow event")
+	}
+	if !sawDone {
+		t.Fatal("missing TurnDone after retry")
 	}
 }
