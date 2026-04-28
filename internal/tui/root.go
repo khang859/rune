@@ -48,6 +48,9 @@ type RootModel struct {
 	clipboardReady  bool
 	clipboardErr    error
 
+	showThinking   bool
+	pendingTickCmd tea.Cmd
+
 	skills           map[string]string
 	pendingSkillBody string
 }
@@ -125,6 +128,13 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshViewport()
 		return m, nil
 
+	case thinkingTickMsg:
+		m.refreshViewport()
+		if m.msgs.HasInProgressThinking() {
+			return m, thinkingTickCmd()
+		}
+		return m, nil
+
 	case AgentEventMsg:
 		if v.Ch != m.eventCh {
 			// Stale event from a swapped-out session; drop it.
@@ -132,7 +142,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.handleEvent(v.Event)
 		m.refreshViewport()
-		return m, nextEventCmd(m.eventCh)
+		cmds := []tea.Cmd{nextEventCmd(m.eventCh)}
+		if m.pendingTickCmd != nil {
+			cmds = append(cmds, m.pendingTickCmd)
+			m.pendingTickCmd = nil
+		}
+		return m, tea.Batch(cmds...)
 
 	case AgentChannelDoneMsg:
 		if v.Ch != m.eventCh {
@@ -188,6 +203,11 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.streaming && k.Type == tea.KeyEsc && m.cancel != nil {
 			m.cancel()
+			return m, nil
+		}
+		if k.Type == tea.KeyCtrlT {
+			m.showThinking = !m.showThinking
+			m.refreshViewport()
 			return m, nil
 		}
 		if !m.streaming {
@@ -430,7 +450,7 @@ func (m *RootModel) layout() {
 
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(m.msgs.Render(m.styles, false, time.Now()))
+	m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, time.Now()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
@@ -441,7 +461,11 @@ func (m *RootModel) handleEvent(e agent.Event) {
 	case agent.AssistantText:
 		m.msgs.OnAssistantDelta(v.Delta)
 	case agent.ThinkingText:
+		wasIdle := !m.msgs.HasInProgressThinking()
 		m.msgs.OnThinkingDelta(v.Delta)
+		if wasIdle {
+			m.pendingTickCmd = thinkingTickCmd()
+		}
 	case agent.ToolStarted:
 		m.msgs.OnToolStarted(v.Call)
 	case agent.ToolFinished:
@@ -480,6 +504,9 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.SettingsModal:
 		if s, ok := payload.(modal.Settings); ok {
 			m.settings = s
+			if s.Effort != "" {
+				m.agent.SetReasoningEffort(s.Effort)
+			}
 		}
 	case *modal.Resume:
 		if sum, ok := payload.(session.Summary); ok {
@@ -627,6 +654,12 @@ type compactDoneMsg struct {
 	sess  *session.Session
 	err   error
 	count int
+}
+
+type thinkingTickMsg struct{}
+
+func thinkingTickCmd() tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return thinkingTickMsg{} })
 }
 
 func (m *RootModel) copyToClipboard(text string) {
