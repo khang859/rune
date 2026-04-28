@@ -64,18 +64,17 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
+		// Ctrl+C must always quit, even mid-turn.
+		if v.Type == tea.KeyCtrlC {
+			return m, tea.Quit
+		}
 		if m.streaming {
-			switch v.Type {
-			case tea.KeyEsc:
-				if m.cancel != nil {
-					m.cancel()
-				}
+			if v.Type == tea.KeyEsc && m.cancel != nil {
+				m.cancel()
 			}
 			return m, nil
 		}
 		switch v.Type {
-		case tea.KeyCtrlC:
-			return m, tea.Quit
 		case tea.KeyEnter:
 			if !v.Alt && v.Type == tea.KeyEnter && !isShiftEnter(v) {
 				text := strings.TrimSpace(m.editor.Value())
