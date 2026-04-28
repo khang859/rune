@@ -26,7 +26,7 @@ func DefaultStyles() Styles {
 		ToolError:      lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		Info:           lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color("8")),
 		SummaryHeader:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
-		ThinkingHeader: lipgloss.NewStyle().Faint(true),
+		ThinkingHeader: lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
 		Footer:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Reverse(true).Padding(0, 1),
 		EditorBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
 	}
