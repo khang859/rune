@@ -188,9 +188,9 @@ func TestRun_StreamErrorContextCanceledBecomesAbort(t *testing.T) {
 
 func TestRun_AutoCompactOnOverflow(t *testing.T) {
 	f := faux.New().
-		DoneOverflow().                              // first call hits overflow
-		Reply("compacted summary text").Done().      // compact summarizer
-		Reply("post-compact reply").Done()           // retry of original turn
+		DoneOverflow().                         // first call hits overflow
+		Reply("compacted summary text").Done(). // compact summarizer
+		Reply("post-compact reply").Done()      // retry of original turn
 	s := session.New("gpt-5")
 	s.Append(userMsg("u1"))
 	s.Append(asstMsg("a1"))

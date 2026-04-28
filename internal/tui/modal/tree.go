@@ -12,9 +12,9 @@ import (
 )
 
 type Tree struct {
-	sess   *session.Session
-	flat   []treeRow
-	sel    int
+	sess *session.Session
+	flat []treeRow
+	sel  int
 }
 
 type treeRow struct {

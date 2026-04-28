@@ -12,7 +12,7 @@ import (
 
 func TestResume_PicksHighlighted(t *testing.T) {
 	items := []session.Summary{
-		{ID: "a", Name: "old",   Created: time.Now().Add(-time.Hour)},
+		{ID: "a", Name: "old", Created: time.Now().Add(-time.Hour)},
 		{ID: "b", Name: "newer", Created: time.Now()},
 	}
 	r := NewResume(items)
