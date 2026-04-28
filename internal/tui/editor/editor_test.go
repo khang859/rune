@@ -132,9 +132,9 @@ func TestRowsFor(t *testing.T) {
 		{"a\nb", w, 2},
 		{"a\nb\nc", w, 3},
 		{strings.Repeat("x\n", 50), w, maxEditorRows},
-		{strings.Repeat("x", 10), w, 1},  // exactly fits
-		{strings.Repeat("x", 11), w, 2},  // soft-wrap to 2
-		{strings.Repeat("x", 30), w, 3},  // 30 / 10 = 3
+		{strings.Repeat("x", 10), w, 1},              // exactly fits
+		{strings.Repeat("x", 11), w, 2},              // soft-wrap to 2
+		{strings.Repeat("x", 30), w, 3},              // 30 / 10 = 3
 		{strings.Repeat("x", 100), w, maxEditorRows}, // capped
 	}
 	for _, c := range cases {

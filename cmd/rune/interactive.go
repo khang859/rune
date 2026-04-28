@@ -10,7 +10,9 @@ import (
 	"github.com/khang859/rune/internal/ai/codex"
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
+	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tools"
 	"github.com/khang859/rune/internal/tui"
 )
@@ -49,10 +51,23 @@ func runInteractive(ctx context.Context, model string) error {
 	reg.Register(tools.Edit{})
 	reg.Register(tools.Bash{})
 
+	mgr := mcp.NewManager(config.MCPConfig())
+	if err := mgr.Start(ctx, reg); err != nil {
+		fmt.Fprintln(os.Stderr, "[mcp] start failed:", err)
+	}
+	defer mgr.Shutdown()
+
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
+	skills, _ := (&skill.Loader{
+		Roots: []string{
+			filepath.Join(home, ".rune", "skills"),
+			filepath.Join(cwd, ".rune", "skills"),
+		},
+	}).Load()
+
 	system := defaultSystemPrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	a := agent.New(p, reg, sess, system)
 
-	return tui.Run(a, sess)
+	return tui.Run(a, sess, skills)
 }

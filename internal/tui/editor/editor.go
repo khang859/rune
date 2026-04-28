@@ -101,10 +101,11 @@ func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
 func (e *Editor) Rows() int       { return rowsFor(e.ta.Value(), e.width) }
 
-func (e *Editor) Mode() Mode              { return e.mode }
-func (e *Editor) FilePicker() *FilePicker { return e.fp }
-func (e *Editor) SlashMenu() *SlashMenu   { return e.slash }
-func (e *Editor) PendingImages() int      { return e.atts.Pending() }
+func (e *Editor) Mode() Mode                 { return e.mode }
+func (e *Editor) FilePicker() *FilePicker    { return e.fp }
+func (e *Editor) SlashMenu() *SlashMenu      { return e.slash }
+func (e *Editor) PendingImages() int         { return e.atts.Pending() }
+func (e *Editor) SetSlashCmds(cmds []string) { e.slashCmds = cmds }
 
 func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {

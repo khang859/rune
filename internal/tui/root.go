@@ -16,6 +16,7 @@ import (
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
+	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tui/editor"
 	"github.com/khang859/rune/internal/tui/modal"
 )
@@ -44,6 +45,15 @@ type RootModel struct {
 	pendingForkMode bool
 	clipboardReady  bool
 	clipboardErr    error
+
+	skills           map[string]string
+	pendingSkillBody string
+}
+
+var baseSlashCmds = []string{
+	"/quit", "/model", "/tree", "/resume", "/settings",
+	"/new", "/name", "/session", "/fork", "/clone", "/copy",
+	"/compact", "/reload", "/hotkeys",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -59,11 +69,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 			sessLabel = sessLabel[:8]
 		}
 	}
-	cmds := []string{
-		"/quit", "/model", "/tree", "/resume", "/settings",
-		"/new", "/name", "/session", "/fork", "/clone", "/copy",
-		"/compact", "/reload", "/hotkeys",
-	}
+	cmds := append([]string{}, baseSlashCmds...)
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
@@ -74,6 +80,16 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		footer:   Footer{Cwd: displayCwd, Session: sessLabel, Model: sess.Model},
 		queue:    &Queue{},
 	}
+}
+
+func (m *RootModel) SetSkills(skills []skill.Skill) {
+	m.skills = make(map[string]string, len(skills))
+	cmds := append([]string{}, baseSlashCmds...)
+	for _, s := range skills {
+		m.skills[s.Slug] = s.Body
+		cmds = append(cmds, "/skill:"+s.Slug)
+	}
+	m.editor.SetSlashCmds(cmds)
 }
 
 func (m *RootModel) Init() tea.Cmd { return nil }
@@ -168,6 +184,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	res, cmd := m.editor.Update(msg)
 	if res.Send {
 		text := res.Text
+		if m.pendingSkillBody != "" {
+			text = m.pendingSkillBody + "\n\n" + text
+			m.pendingSkillBody = ""
+		}
 		if m.streaming {
 			m.queue.Push(QueueItem{Text: text, Images: res.Images})
 			m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
@@ -214,6 +234,18 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 }
 
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
+	if strings.HasPrefix(cmd, "/skill:") {
+		slug := strings.TrimPrefix(cmd, "/skill:")
+		if body, ok := m.skills[slug]; ok {
+			m.pendingSkillBody = body
+			m.msgs.OnInfo(fmt.Sprintf("(skill %q armed; will be prepended to your next message)", slug))
+		} else {
+			m.msgs.OnTurnError(fmt.Errorf("unknown skill: %s", slug))
+		}
+		m.refreshViewport()
+		m.layout()
+		return nil
+	}
 	var initCmd tea.Cmd
 	switch cmd {
 	case "/quit":
@@ -270,7 +302,16 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
+		home, _ := os.UserHomeDir()
+		cwd, _ := os.Getwd()
+		sks, _ := (&skill.Loader{Roots: []string{
+			filepath.Join(home, ".rune", "skills"),
+			filepath.Join(cwd, ".rune", "skills"),
+		}}).Load()
+		m.SetSkills(sks)
+		m.msgs.OnInfo(fmt.Sprintf("(reloaded %d skills)", len(sks)))
 		m.refreshSystemPrompt()
+		m.refreshViewport()
 	}
 	m.layout()
 	return initCmd
