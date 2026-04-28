@@ -48,6 +48,7 @@ func (m *Messages) AppendUser(text string) {
 }
 
 func (m *Messages) OnAssistantDelta(delta string) {
+	m.FinalizeStreamingThinking(time.Now())
 	if m.streamingAsstIdx == -1 {
 		m.blocks = append(m.blocks, block{kind: bkAssistant})
 		m.streamingAsstIdx = len(m.blocks) - 1
@@ -95,6 +96,7 @@ func (m *Messages) HasInProgressThinking() bool {
 }
 
 func (m *Messages) OnToolStarted(call ai.ToolCall) {
+	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
 	m.blocks = append(m.blocks, block{
 		kind: bkToolCall,
@@ -116,6 +118,7 @@ func (m *Messages) OnToolFinished(f agent.ToolFinished) {
 }
 
 func (m *Messages) OnTurnDone(reason string) {
+	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
 	if reason != "" && reason != "stop" {
 		m.blocks = append(m.blocks, block{kind: bkInfo, text: fmt.Sprintf("(turn ended: %s)", reason)})
@@ -123,6 +126,7 @@ func (m *Messages) OnTurnDone(reason string) {
 }
 
 func (m *Messages) OnTurnError(err error) {
+	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
 	m.blocks = append(m.blocks, block{kind: bkError, text: err.Error()})
 }

@@ -188,3 +188,62 @@ func TestMessages_ThinkingExpandedShowsBody(t *testing.T) {
 		t.Fatalf("body should be visible when expanded, got:\n%s", out)
 	}
 }
+
+func TestMessages_AssistantDeltaFinalizesPriorThinking(t *testing.T) {
+	m := NewMessages(80)
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	m.OnThinkingDeltaAt("planning", start)
+	if !m.HasInProgressThinking() {
+		t.Fatal("thinking should be in progress before assistant delta")
+	}
+	m.OnAssistantDelta("answer")
+	if m.HasInProgressThinking() {
+		t.Fatal("assistant delta should have finalized the thinking block")
+	}
+}
+
+func TestMessages_ToolStartedFinalizesPriorThinking(t *testing.T) {
+	m := NewMessages(80)
+	m.OnThinkingDeltaAt("planning", time.Now())
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{}`)})
+	if m.HasInProgressThinking() {
+		t.Fatal("tool started should have finalized the thinking block")
+	}
+}
+
+func TestMessages_TurnDoneFinalizesPriorThinking(t *testing.T) {
+	m := NewMessages(80)
+	m.OnThinkingDeltaAt("planning", time.Now())
+	m.OnTurnDone("stop")
+	if m.HasInProgressThinking() {
+		t.Fatal("turn done should have finalized the thinking block")
+	}
+}
+
+func TestMessages_TurnErrorFinalizesPriorThinking(t *testing.T) {
+	m := NewMessages(80)
+	m.OnThinkingDeltaAt("planning", time.Now())
+	m.OnTurnError(errString("boom"))
+	if m.HasInProgressThinking() {
+		t.Fatal("turn error should have finalized the thinking block")
+	}
+}
+
+func TestMessages_TurnDoneStopDoesNotProduceThinkingBlock(t *testing.T) {
+	m := NewMessages(80)
+	m.OnTurnDone("stop")
+	out := m.Render(DefaultStyles(), false, time.Time{})
+	// stop is the normal case — no info/thinking line should be rendered.
+	if out != "" {
+		t.Fatalf("turn done with stop should produce no rendered block, got:\n%s", out)
+	}
+}
+
+func TestMessages_TurnDoneAbnormalIsInfo(t *testing.T) {
+	m := NewMessages(80)
+	m.OnTurnDone("max_tokens")
+	out := m.Render(DefaultStyles(), false, time.Time{})
+	if !strings.Contains(out, "(turn ended: max_tokens)") {
+		t.Fatalf("expected info notice, got:\n%s", out)
+	}
+}
