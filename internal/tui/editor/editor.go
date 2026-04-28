@@ -20,9 +20,9 @@ const (
 )
 
 type Editor struct {
-	ta      textarea.Model
-	mode    Mode
-	cwd     string
+	ta   textarea.Model
+	mode Mode
+	cwd  string
 
 	fp        *FilePicker
 	slash     *SlashMenu
@@ -59,9 +59,9 @@ func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
 
-func (e *Editor) Mode() Mode          { return e.mode }
+func (e *Editor) Mode() Mode              { return e.mode }
 func (e *Editor) FilePicker() *FilePicker { return e.fp }
-func (e *Editor) SlashMenu() *SlashMenu  { return e.slash }
+func (e *Editor) SlashMenu() *SlashMenu   { return e.slash }
 func (e *Editor) PendingImages() int      { return e.atts.Pending() }
 
 func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
