@@ -500,14 +500,19 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/name":
 		m.msgs.OnTurnError(fmt.Errorf("(use /settings or future inline prompt)"))
 	case "/session":
-		m.msgs.OnTurnError(fmt.Errorf("session id=%s name=%q model=%s", m.sess.ID, m.sess.Name, m.sess.Model))
+		m.msgs.OnInfo(fmt.Sprintf("session id=%s name=%q model=%s", m.sess.ID, m.sess.Name, m.sess.Model))
 	case "/fork":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
+		if len(m.sess.Root.Children) == 0 {
+			m.msgs.OnInfo("(nothing to fork yet)")
+			m.refreshViewport()
+			break
+		}
 		m.pendingForkMode = true
-		initCmd = m.openModal(modal.NewTree(m.sess))
+		initCmd = m.openModal(modal.NewForkTree(m.sess))
 	case "/clone":
 		nc := m.sess.Clone()
 		nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))

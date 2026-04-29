@@ -438,6 +438,25 @@ func TestRoot_SlashCommandInfoFlushesToViewportImmediately(t *testing.T) {
 	}
 }
 
+func TestRoot_SessionSlashCommandIsInfoNotError(t *testing.T) {
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/session")
+
+	if len(m.msgs.blocks) == 0 {
+		t.Fatal("expected /session to add a message")
+	}
+	last := m.msgs.blocks[len(m.msgs.blocks)-1]
+	if last.kind != bkInfo {
+		t.Fatalf("/session should render as info, got kind %v", last.kind)
+	}
+	if !strings.Contains(last.text, "session id=") || !strings.Contains(last.text, "model=gpt-5.5") {
+		t.Fatalf("unexpected /session text: %q", last.text)
+	}
+}
+
 func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
 	s := session.New("gpt-5")
 	// Build a session with a pre-existing summary node so rebuild has work to do.
@@ -652,6 +671,24 @@ func TestRoot_RendersSimpleActivityLineWhenConfigured(t *testing.T) {
 	out := m.View()
 	if !strings.Contains(out, "running") {
 		t.Fatalf("missing simple activity line while compacting:\n%s", out)
+	}
+}
+
+func TestRoot_ForkEmptySessionDoesNotOpenModal(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	cmd := m.handleSlashCommand("/fork")
+	if cmd != nil {
+		t.Fatal("/fork on empty session returned a command")
+	}
+	if m.modal != nil {
+		t.Fatal("/fork on empty session opened a modal")
+	}
+	if got := m.viewport.View(); !strings.Contains(got, "nothing to fork yet") {
+		t.Fatalf("expected empty fork notice, got:\n%s", got)
 	}
 }
 

@@ -69,6 +69,8 @@ func renderChoiceModal(width, height int, title, section, help string, rows []ch
 	styles := settingsStyles()
 	contentWidth := modalContentWidth(width)
 
+	start, end, clippedTop, clippedBottom := visibleChoiceWindow(height, len(rows), selected)
+
 	var sb strings.Builder
 	sb.WriteString(styles.Title.Render(title))
 	sb.WriteByte('\n')
@@ -78,7 +80,12 @@ func renderChoiceModal(width, height int, title, section, help string, rows []ch
 		sb.WriteString(styles.Section.Render("✧ " + section))
 		sb.WriteByte('\n')
 	}
-	for i, row := range rows {
+	if clippedTop {
+		sb.WriteString(styles.Gutter.Render("  …"))
+		sb.WriteByte('\n')
+	}
+	for i := start; i < end; i++ {
+		row := rows[i]
 		selectedRow := i == selected
 		selector := styles.Gutter.Render("  ")
 		labelStyle := styles.Label
@@ -94,10 +101,42 @@ func renderChoiceModal(width, height int, title, section, help string, rows []ch
 		}
 		fmt.Fprintf(&sb, "%s%s\n", selector, labelStyle.Render(row.Label))
 	}
+	if clippedBottom {
+		sb.WriteString(styles.Gutter.Render("  …"))
+		sb.WriteByte('\n')
+	}
 	if help != "" {
 		sb.WriteByte('\n')
 		sb.WriteString(styles.Help.Render(help))
 	}
 
 	return centeredModal(width, height, contentWidth, sb.String())
+}
+
+func visibleChoiceWindow(height, rowCount, selected int) (start, end int, clippedTop, clippedBottom bool) {
+	if rowCount <= 0 {
+		return 0, 0, false, false
+	}
+	visible := height - 8 // title, divider, section, help, spacer, and margins.
+	if visible < 1 {
+		visible = 1
+	}
+	if visible > rowCount {
+		visible = rowCount
+	}
+	if selected < 0 {
+		selected = 0
+	}
+	if selected >= rowCount {
+		selected = rowCount - 1
+	}
+	start = selected - visible/2
+	if start < 0 {
+		start = 0
+	}
+	if start+visible > rowCount {
+		start = rowCount - visible
+	}
+	end = start + visible
+	return start, end, start > 0, end < rowCount
 }
