@@ -316,6 +316,7 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	m.streaming = true
 	m.editor.Blur()
 	m.layout()
+	m.viewport.GotoBottom()
 	content := []ai.ContentBlock{ai.TextBlock{Text: text}}
 	for _, im := range images {
 		content = append(content, im)
@@ -428,6 +429,7 @@ func (m *RootModel) View() string {
 	}
 	msgArea := m.viewport.View()
 	edArea := m.styles.EditorBox.Render(m.editor.View(m.width))
+	hint := m.editorScrollHint()
 	overlay := ""
 	switch m.editor.Mode() {
 	case editor.ModeFilePicker:
@@ -439,16 +441,43 @@ func (m *RootModel) View() string {
 	}
 	foot := m.footer.Render(m.styles)
 	activity := m.renderActivityLine()
-	if overlay != "" {
-		if activity != "" {
-			return msgArea + "\n\n" + activity + "\n" + edArea + "\n" + overlay + "\n" + foot
-		}
-		return msgArea + "\n" + edArea + "\n" + overlay + "\n" + foot
-	}
+
+	out := msgArea
 	if activity != "" {
-		return msgArea + "\n\n" + activity + "\n" + edArea + "\n" + foot
+		out += "\n\n" + activity
 	}
-	return msgArea + "\n" + edArea + "\n" + foot
+	if hint != "" {
+		out += "\n" + hint
+	}
+	out += "\n" + edArea
+	if overlay != "" {
+		out += "\n" + overlay
+	}
+	out += "\n" + foot
+	return out
+}
+
+func (m *RootModel) editorScrollHint() string {
+	above, below := m.editor.ScrollState()
+	if above == 0 && below == 0 {
+		return ""
+	}
+	rowWord := func(n int) string {
+		if n == 1 {
+			return "row"
+		}
+		return "rows"
+	}
+	var s string
+	switch {
+	case above > 0 && below > 0:
+		s = fmt.Sprintf("↑ %d above · ↓ %d below", above, below)
+	case above > 0:
+		s = fmt.Sprintf("↑ %d %s above (use ↑ to scroll)", above, rowWord(above))
+	default:
+		s = fmt.Sprintf("↓ %d %s below (use ↓ to scroll)", below, rowWord(below))
+	}
+	return m.styles.Info.Render(s)
 }
 
 func renderList(title string, items []string, sel int) string {
@@ -489,6 +518,17 @@ func (m *RootModel) layout() {
 	if m.width == 0 || m.height == 0 {
 		return
 	}
+	// EditorBox renders with rounded border (2 cols) + horizontal padding (2 cols);
+	// reserve those so the editor never overflows the terminal width.
+	m.editor.SetWidth(m.width - 4)
+	// Cap the editor at ~25% of the terminal so a long wrapped sentence can grow
+	// without swallowing the message viewport.
+	maxRows := m.height / 4
+	if maxRows < 3 {
+		maxRows = 3
+	}
+	m.editor.SetMaxRows(maxRows)
+
 	footerH := 1
 	editorRows := m.editor.Rows()
 	editorH := editorRows + 2 // border top + bottom
@@ -500,15 +540,16 @@ func (m *RootModel) layout() {
 	if m.showActivity() {
 		activityRows = 2
 	}
-	msgH := m.height - footerH - editorH - overlayRows - activityRows
+	hintRows := 0
+	if m.editor.RawRows() > editorRows {
+		hintRows = 1
+	}
+	msgH := m.height - footerH - editorH - overlayRows - activityRows - hintRows
 	if msgH < 3 {
 		msgH = 3
 	}
 	m.viewport.Width = m.width
 	m.viewport.Height = msgH
-	// EditorBox renders with rounded border (2 cols) + horizontal padding (2 cols);
-	// reserve those so the editor never overflows the terminal width.
-	m.editor.SetWidth(m.width - 4)
 	m.footer.Width = m.width
 	m.msgs.SetWidth(m.width)
 }

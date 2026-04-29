@@ -179,15 +179,60 @@ func TestRowsFor(t *testing.T) {
 		{"hi", w, 1},
 		{"a\nb", w, 2},
 		{"a\nb\nc", w, 3},
-		{strings.Repeat("x\n", 50), w, maxEditorRows},
-		{strings.Repeat("x", 10), w, 1},              // exactly fits
-		{strings.Repeat("x", 11), w, 2},              // soft-wrap to 2
-		{strings.Repeat("x", 30), w, 3},              // 30 / 10 = 3
-		{strings.Repeat("x", 100), w, maxEditorRows}, // capped
+		{strings.Repeat("x\n", 50), w, 51}, // 50 lines + trailing empty
+		{strings.Repeat("x", 10), w, 1},    // exactly fits
+		{strings.Repeat("x", 11), w, 2},    // soft-wrap to 2
+		{strings.Repeat("x", 30), w, 3},    // 30 / 10 = 3
+		{strings.Repeat("x", 100), w, 10},  // 100 / 10 = 10, uncapped
 	}
 	for _, c := range cases {
 		if got := rowsFor(c.in, c.width); got != c.want {
 			t.Errorf("rowsFor(%q, %d) = %d, want %d", c.in, c.width, got, c.want)
 		}
+	}
+}
+
+// Regression: typing runes that soft-wrap to a new visual row used to leave
+// the textarea's internal viewport scrolled past the top — even after the
+// editor grew to fit the content. Pre-growing to maxRows before each KeyMsg
+// keeps the textarea from scrolling, so all rows stay visible while the
+// content fits within the cap.
+func TestEditor_TypingThatWrapsKeepsTopVisible(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	e.SetWidth(12) // wrapWidth = 10
+	e.SetMaxRows(8)
+	for _, r := range strings.Repeat("x", 30) { // wraps to 3 rows, fits cap
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if got, want := e.Rows(), 3; got != want {
+		t.Fatalf("Rows() = %d, want %d", got, want)
+	}
+	above, below := e.ScrollState()
+	if above != 0 || below != 0 {
+		t.Fatalf("expected all content visible, got above=%d below=%d", above, below)
+	}
+	view := e.View(12)
+	if !strings.Contains(view, "xxxxxxxxxx") {
+		t.Fatalf("expected first wrapped row visible in view, got:\n%s", view)
+	}
+}
+
+func TestEditor_RowsCappedByMaxRows(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	e.SetWidth(12) // wrapWidth = 10
+	e.SetMaxRows(8)
+	e.ta.SetValue(strings.Repeat("x", 100)) // 10 raw rows
+	if got, want := e.Rows(), 8; got != want {
+		t.Fatalf("Rows() = %d, want %d (capped)", got, want)
+	}
+	if got, want := e.RawRows(), 10; got != want {
+		t.Fatalf("RawRows() = %d, want %d", got, want)
+	}
+	above, below := e.ScrollState()
+	if above+below == 0 {
+		t.Fatalf("expected scroll state with %d hidden rows, got above=%d below=%d", 10-8, above, below)
+	}
+	if above+below != 2 {
+		t.Fatalf("expected total hidden = 2, got above=%d below=%d", above, below)
 	}
 }

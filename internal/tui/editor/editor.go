@@ -24,41 +24,48 @@ const (
 	ModeSlashMenu
 )
 
-// maxEditorRows caps the auto-grown editor so the viewport always has room.
-// Beyond this the textarea's internal viewport scrolls.
-const maxEditorRows = 8
+// defaultMaxEditorRows is the fallback cap before the host calls SetMaxRows.
+// The host (root layout) overrides this based on terminal height.
+const defaultMaxEditorRows = 8
 
-// rowsFor returns the number of rows the textarea should occupy for the given value
-// at the given outer width. At least 1, at most maxEditorRows. Each \n-separated
-// line contributes ceil(visualWidth / wrapWidth) visual rows.
+// rowsFor returns the raw number of visual rows the value needs at the given
+// outer width. Each \n-separated line contributes ceil(visualWidth / wrapWidth)
+// visual rows. Callers cap with the editor's maxRows.
 func rowsFor(value string, width int) int {
-	wrapWidth := width - promptWidth
-	if wrapWidth < 1 {
-		wrapWidth = 1
-	}
+	wrapWidth := wrapWidthFor(width)
 	n := 0
 	for _, line := range strings.Split(value, "\n") {
-		w := lipgloss.Width(line)
-		rows := 1 + (w-1)/wrapWidth
-		if rows < 1 {
-			rows = 1
-		}
-		n += rows
+		n += visualRowsForLine(line, wrapWidth)
 	}
 	if n < 1 {
 		n = 1
 	}
-	if n > maxEditorRows {
-		n = maxEditorRows
-	}
 	return n
 }
 
+func wrapWidthFor(width int) int {
+	w := width - promptWidth
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
+func visualRowsForLine(line string, wrapWidth int) int {
+	w := lipgloss.Width(line)
+	rows := 1 + (w-1)/wrapWidth
+	if rows < 1 {
+		rows = 1
+	}
+	return rows
+}
+
 type Editor struct {
-	ta    textarea.Model
-	mode  Mode
-	cwd   string
-	width int
+	ta      textarea.Model
+	mode    Mode
+	cwd     string
+	width   int
+	maxRows int
 
 	fp        *FilePicker
 	slash     *SlashMenu
@@ -83,6 +90,7 @@ func New(cwd string, slashCmds []string) *Editor {
 		ta:        ta,
 		cwd:       cwd,
 		width:     80,
+		maxRows:   defaultMaxEditorRows,
 		slashCmds: slashCmds,
 		atts:      NewAttachments(),
 	}
@@ -105,7 +113,57 @@ func (e *Editor) SetWidth(w int) {
 func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
-func (e *Editor) Rows() int       { return rowsFor(e.ta.Value(), e.width) }
+func (e *Editor) Rows() int       { return e.cap(rowsFor(e.ta.Value(), e.width)) }
+func (e *Editor) RawRows() int    { return rowsFor(e.ta.Value(), e.width) }
+
+func (e *Editor) SetMaxRows(n int) {
+	if n < 1 {
+		n = 1
+	}
+	if e.maxRows == n {
+		return
+	}
+	e.maxRows = n
+	e.updateHeight()
+}
+
+func (e *Editor) cap(n int) int {
+	if e.maxRows > 0 && n > e.maxRows {
+		return e.maxRows
+	}
+	return n
+}
+
+// ScrollState reports how many wrapped rows are hidden above and below the
+// visible editor viewport. Both zero when all content fits.
+func (e *Editor) ScrollState() (above, below int) {
+	visible := e.Rows()
+	total := e.RawRows()
+	if total <= visible {
+		return 0, 0
+	}
+	cursor := e.cursorVisualRow()
+	offset := 0
+	if cursor >= visible {
+		offset = cursor - visible + 1
+	}
+	if max := total - visible; offset > max {
+		offset = max
+	}
+	return offset, total - visible - offset
+}
+
+func (e *Editor) cursorVisualRow() int {
+	wrapWidth := wrapWidthFor(e.width)
+	val := e.ta.Value()
+	line := e.ta.Line()
+	row := 0
+	lines := strings.Split(val, "\n")
+	for i := 0; i < line && i < len(lines); i++ {
+		row += visualRowsForLine(lines[i], wrapWidth)
+	}
+	return row + e.ta.LineInfo().RowOffset
+}
 
 func (e *Editor) Mode() Mode                 { return e.mode }
 func (e *Editor) FilePicker() *FilePicker    { return e.fp }
@@ -119,14 +177,6 @@ func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
 		if r, cmd, handled := e.handleKey(k); handled {
 			return r, cmd
 		}
-	}
-	// The textarea scrolls its internal viewport during Update based on its
-	// current height. Since this wrapper auto-grows after edits, a newline typed
-	// while the editor is one row tall can make the textarea scroll to the new
-	// blank line, hiding the existing content. Pre-grow for Shift+Enter so the
-	// textarea can keep both lines visible while it processes the key.
-	if k, ok := msg.(tea.KeyMsg); ok && isShiftEnter(k) {
-		e.ta.SetHeight(rowsFor(e.ta.Value()+"\n", e.width))
 	}
 	var cmd tea.Cmd
 	e.ta, cmd = e.ta.Update(msg)
@@ -205,13 +255,18 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 				}
 			}
 		}
-		if k.Type == tea.KeyUp && e.hist != nil && e.atFirstLine() {
+		// Only navigate history when the input is empty (so a draft is never
+		// destroyed) or when already mid-navigation (so Up/Down keep walking
+		// the same recall sequence). Down also still requires the existing
+		// Navigating() guard.
+		if k.Type == tea.KeyUp && e.hist != nil && e.atFirstVisualRow() &&
+			(e.ta.Value() == "" || e.hist.Navigating()) {
 			if text, ok := e.hist.Prev(e.ta.Value()); ok {
 				e.setValueFromHistory(text)
 				return Result{}, nil, true
 			}
 		}
-		if k.Type == tea.KeyDown && e.hist != nil && e.hist.Navigating() && e.atLastLine() {
+		if k.Type == tea.KeyDown && e.hist != nil && e.hist.Navigating() && e.atLastVisualRow() {
 			if text, ok := e.hist.Next(); ok {
 				e.setValueFromHistory(text)
 				return Result{}, nil, true
@@ -309,8 +364,17 @@ func (e *Editor) closeOverlay() {
 	e.slash = nil
 }
 
+// updateHeight keeps the textarea sized to its full allowed budget (maxRows)
+// rather than shrinking to current content. The textarea's internal viewport
+// scrolls to follow the cursor when its height is smaller than content, and
+// in v1.0.0 of bubbles/textarea the YOffset is not reset when height grows
+// back. By keeping height fixed at maxRows, the textarea never needs to
+// scroll until content actually exceeds maxRows. We crop the rendered view
+// to the current row count in View() so the editor box still hugs content.
 func (e *Editor) updateHeight() {
-	e.ta.SetHeight(rowsFor(e.ta.Value(), e.width))
+	if e.maxRows > 0 {
+		e.ta.SetHeight(e.maxRows)
+	}
 }
 
 func (e *Editor) currentLine() string {
@@ -356,9 +420,20 @@ func isShiftEnter(k tea.KeyMsg) bool {
 	return k.String() == "shift+enter" || k.String() == "alt+enter" || k.Type == tea.KeyCtrlJ
 }
 
-func (e *Editor) atFirstLine() bool { return e.ta.Line() == 0 }
+func (e *Editor) atFirstVisualRow() bool {
+	return e.ta.Line() == 0 && e.ta.LineInfo().RowOffset == 0
+}
 
-func (e *Editor) atLastLine() bool { return e.ta.Line() == e.ta.LineCount()-1 }
+func (e *Editor) atLastVisualRow() bool {
+	if e.ta.Line() != e.ta.LineCount()-1 {
+		return false
+	}
+	info := e.ta.LineInfo()
+	if info.Height <= 0 {
+		return true
+	}
+	return info.RowOffset >= info.Height-1
+}
 
 func (e *Editor) setValueFromHistory(text string) {
 	e.ta.SetValue(text)
@@ -366,7 +441,16 @@ func (e *Editor) setValueFromHistory(text string) {
 }
 
 func (e *Editor) View(width int) string {
-	return e.ta.View()
+	raw := e.ta.View()
+	visible := e.Rows()
+	if visible <= 0 {
+		visible = 1
+	}
+	lines := strings.Split(raw, "\n")
+	if len(lines) <= visible {
+		return raw
+	}
+	return strings.Join(lines[:visible], "\n")
 }
 
 func (e *Editor) AddAttachmentPath(p string) error    { return e.atts.AddFromPath(p) }

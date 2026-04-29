@@ -78,7 +78,10 @@ func TestEditor_ArrowUpRecallsLastPrompt(t *testing.T) {
 	}
 }
 
-func TestEditor_ArrowDownRestoresDraft(t *testing.T) {
+// History navigation should not fire when the editor already has typed
+// content — otherwise Up would destroy the draft. Once already navigating
+// (entered via Up from an empty input), continued Up/Down stays in history.
+func TestEditor_ArrowUpPreservesDraftWhenContentPresent(t *testing.T) {
 	e := New(t.TempDir(), nil)
 	e.SetHistory(NewHistory(""))
 	for _, r := range "old" {
@@ -89,12 +92,8 @@ func TestEditor_ArrowDownRestoresDraft(t *testing.T) {
 		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	e.Update(tea.KeyMsg{Type: tea.KeyUp})
-	if got := e.ta.Value(); got != "old" {
-		t.Fatalf("after Up, value = %q", got)
-	}
-	e.Update(tea.KeyMsg{Type: tea.KeyDown})
 	if got := e.ta.Value(); got != "draft" {
-		t.Fatalf("after Down, value = %q, want draft", got)
+		t.Fatalf("Up with content present must not navigate history; value = %q", got)
 	}
 }
 
