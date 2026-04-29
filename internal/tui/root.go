@@ -428,7 +428,14 @@ func (m *RootModel) View() string {
 		return m.modal.View(m.width, m.height)
 	}
 	msgArea := m.viewport.View()
-	edArea := m.styles.EditorBox.Render(m.editor.View(m.width))
+	box := m.styles.EditorBox
+	switch m.editor.ShellMode() {
+	case editor.ShellModeInsert:
+		box = m.styles.EditorBoxShellInsert
+	case editor.ShellModeSend:
+		box = m.styles.EditorBoxShellSend
+	}
+	edArea := box.Render(m.editor.View(m.width))
 	hint := m.editorScrollHint()
 	overlay := ""
 	switch m.editor.Mode() {

@@ -85,6 +85,31 @@ func TestEditor_SlashMenuOpensAndCommitsCommand(t *testing.T) {
 	}
 }
 
+func TestEditor_ShellModeReflectsPrefix(t *testing.T) {
+	cases := []struct {
+		typed string
+		want  ShellMode
+	}{
+		{"", ShellModeNone},
+		{"hi", ShellModeNone},
+		{"!", ShellModeSend},
+		{"!ls", ShellModeSend},
+		{" !ls", ShellModeSend},
+		{"!!", ShellModeInsert},
+		{"!!ls", ShellModeInsert},
+		{" !!ls", ShellModeInsert},
+	}
+	for _, c := range cases {
+		e := New(t.TempDir(), nil)
+		for _, r := range c.typed {
+			e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		}
+		if got := e.ShellMode(); got != c.want {
+			t.Errorf("ShellMode after %q = %v, want %v", c.typed, got, c.want)
+		}
+	}
+}
+
 func TestEditor_BangCommandRunsAndSends(t *testing.T) {
 	e := New(t.TempDir(), nil)
 	for _, r := range "!echo rune-test-marker" {

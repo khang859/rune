@@ -22,8 +22,10 @@ type Styles struct {
 	FooterTokens   lipgloss.Style
 	FooterContext  lipgloss.Style
 	FooterSep      lipgloss.Style
-	EditorBox      lipgloss.Style
-	Activity       lipgloss.Style
+	EditorBox            lipgloss.Style
+	EditorBoxShellSend   lipgloss.Style // "!cmd": run shell, send output to AI
+	EditorBoxShellInsert lipgloss.Style // "!!cmd": run shell, insert output locally
+	Activity             lipgloss.Style
 	Icons          IconSet
 	Markdown       Markdown
 }
@@ -53,8 +55,10 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		FooterTokens:   lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 		FooterContext:  lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
 		FooterSep:      lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
-		EditorBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
-		Activity:       lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
+		EditorBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
+		EditorBoxShellSend:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("11")).Padding(0, 1),
+		EditorBoxShellInsert: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("13")).Padding(0, 1),
+		Activity:             lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
 		Icons:          IconSetForMode(mode),
 		Markdown:       NewMarkdown(),
 	}

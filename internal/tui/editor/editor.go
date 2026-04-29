@@ -24,6 +24,14 @@ const (
 	ModeSlashMenu
 )
 
+type ShellMode int
+
+const (
+	ShellModeNone   ShellMode = iota
+	ShellModeSend             // "!cmd": run shell, send output to AI
+	ShellModeInsert           // "!!cmd": run shell, insert output locally
+)
+
 // defaultMaxEditorRows is the fallback cap before the host calls SetMaxRows.
 // The host (root layout) overrides this based on terminal height.
 const defaultMaxEditorRows = 8
@@ -166,6 +174,17 @@ func (e *Editor) cursorVisualRow() int {
 }
 
 func (e *Editor) Mode() Mode                 { return e.mode }
+func (e *Editor) ShellMode() ShellMode {
+	v := strings.TrimSpace(e.ta.Value())
+	switch {
+	case strings.HasPrefix(v, "!!"):
+		return ShellModeInsert
+	case strings.HasPrefix(v, "!"):
+		return ShellModeSend
+	default:
+		return ShellModeNone
+	}
+}
 func (e *Editor) FilePicker() *FilePicker    { return e.fp }
 func (e *Editor) SlashMenu() *SlashMenu      { return e.slash }
 func (e *Editor) PendingImages() int         { return e.atts.Pending() }
