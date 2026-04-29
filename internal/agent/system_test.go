@@ -16,6 +16,7 @@ func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
 		"You are rune, a coding agent.",
 		"present a concise plan",
 		"wait for the user's approval before editing files",
+		"Prefer `read`, `write`, and `edit` over `bash`",
 		"do not call get_subagent_result immediately after starting it",
 	} {
 		if !strings.Contains(got, want) {
