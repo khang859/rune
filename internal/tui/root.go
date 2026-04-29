@@ -13,6 +13,7 @@ import (
 	"golang.design/x/clipboard"
 
 	"github.com/charmbracelet/bubbles/viewport"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/config"
@@ -106,9 +107,30 @@ func (m *RootModel) SetSkills(skills []skill.Skill) {
 	m.editor.SetSlashCmds(cmds)
 }
 
-func (m *RootModel) Init() tea.Cmd { return nil }
+func (m *RootModel) Init() tea.Cmd {
+	return enableKittyKeyboard
+}
+
+func enableKittyKeyboard() tea.Msg {
+	// Ask terminals that support the Kitty keyboard protocol to report
+	// modified keys distinctly, including Shift+Enter as CSI 13;2u.
+	// Unsupported terminals safely ignore this escape sequence.
+	fmt.Print(ansi.PushKittyKeyboard(ansi.KittyDisambiguateEscapeCodes))
+	return nil
+}
+
+func normalizeShiftEnterMsg(msg tea.Msg) tea.Msg {
+	// Bubble Tea v1.3 treats Kitty CSI-u modified Enter sequences as unknown
+	// CSI messages. Normalize Shift+Enter to a synthetic message while leaving
+	// plain Enter untouched.
+	if fmt.Sprint(msg) == "?CSI[49 51 59 50 117]?" {
+		return tea.KeyMsg{Type: tea.KeyCtrlJ}
+	}
+	return msg
+}
 
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	msg = normalizeShiftEnterMsg(msg)
 	switch v := msg.(type) {
 	case compactDoneMsg:
 		// Drop late completions from a session that was swapped out mid-compact.
@@ -419,12 +441,12 @@ func (m *RootModel) View() string {
 	activity := m.renderActivityLine()
 	if overlay != "" {
 		if activity != "" {
-			return msgArea + "\n" + activity + "\n" + edArea + "\n" + overlay + "\n" + foot
+			return msgArea + "\n\n" + activity + "\n" + edArea + "\n" + overlay + "\n" + foot
 		}
 		return msgArea + "\n" + edArea + "\n" + overlay + "\n" + foot
 	}
 	if activity != "" {
-		return msgArea + "\n" + activity + "\n" + edArea + "\n" + foot
+		return msgArea + "\n\n" + activity + "\n" + edArea + "\n" + foot
 	}
 	return msgArea + "\n" + edArea + "\n" + foot
 }
@@ -476,7 +498,7 @@ func (m *RootModel) layout() {
 	}
 	activityRows := 0
 	if m.showActivity() {
-		activityRows = 1
+		activityRows = 2
 	}
 	msgH := m.height - footerH - editorH - overlayRows - activityRows
 	if msgH < 3 {

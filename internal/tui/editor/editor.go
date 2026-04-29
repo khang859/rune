@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,6 +69,10 @@ type Editor struct {
 
 func New(cwd string, slashCmds []string) *Editor {
 	ta := textarea.New()
+	ta.KeyMap.InsertNewline = key.NewBinding(
+		key.WithKeys("shift+enter", "alt+enter", "ctrl+j"),
+		key.WithHelp("shift+enter", "insert newline"),
+	)
 	ta.Placeholder = "type a message…"
 	ta.Prompt = "› "
 	ta.SetWidth(80)
@@ -114,6 +119,14 @@ func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
 		if r, cmd, handled := e.handleKey(k); handled {
 			return r, cmd
 		}
+	}
+	// The textarea scrolls its internal viewport during Update based on its
+	// current height. Since this wrapper auto-grows after edits, a newline typed
+	// while the editor is one row tall can make the textarea scroll to the new
+	// blank line, hiding the existing content. Pre-grow for Shift+Enter so the
+	// textarea can keep both lines visible while it processes the key.
+	if k, ok := msg.(tea.KeyMsg); ok && isShiftEnter(k) {
+		e.ta.SetHeight(rowsFor(e.ta.Value()+"\n", e.width))
 	}
 	var cmd tea.Cmd
 	e.ta, cmd = e.ta.Update(msg)
@@ -340,7 +353,7 @@ func (e *Editor) replaceCurrentWordWith(s string) {
 }
 
 func isShiftEnter(k tea.KeyMsg) bool {
-	return k.String() == "shift+enter" || k.String() == "alt+enter"
+	return k.String() == "shift+enter" || k.String() == "alt+enter" || k.Type == tea.KeyCtrlJ
 }
 
 func (e *Editor) atFirstLine() bool { return e.ta.Line() == 0 }

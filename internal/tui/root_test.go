@@ -38,6 +38,18 @@ func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
 	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
 }
 
+func TestNormalizeShiftEnterCSIU(t *testing.T) {
+	msg := normalizeShiftEnterMsg(fmt.Stringer(unknownCSIString("?CSI[49 51 59 50 117]?")))
+	k, ok := msg.(tea.KeyMsg)
+	if !ok || k.Type != tea.KeyCtrlJ {
+		t.Fatalf("expected Kitty Shift+Enter CSI-u to normalize to Ctrl+J KeyMsg, got %#v", msg)
+	}
+}
+
+type unknownCSIString string
+
+func (s unknownCSIString) String() string { return string(s) }
+
 func TestRoot_CtrlCQuitsEvenWhileStreaming(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

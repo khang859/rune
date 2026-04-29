@@ -20,6 +20,30 @@ func TestEditor_EnterSendsText(t *testing.T) {
 	}
 }
 
+func TestEditor_ShiftEnterInsertsNewline(t *testing.T) {
+	e := New(t.TempDir(), nil)
+	for _, r := range "hello" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyCtrlJ})
+	if res.Send {
+		t.Fatalf("Shift+Enter/Ctrl+J must insert newline, not submit: %#v", res)
+	}
+	if got := e.ta.Value(); got != "hello\n" {
+		t.Fatalf("Shift+Enter/Ctrl+J must preserve existing text and append newline, got %q", got)
+	}
+	if got := e.Rows(); got != 2 {
+		t.Fatalf("Shift+Enter/Ctrl+J should pre-grow editor to show both lines, got %d rows", got)
+	}
+	for _, r := range "world" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ = e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !res.Send || res.Text != "hello\nworld" {
+		t.Fatalf("unexpected res after multiline submit: %#v", res)
+	}
+}
+
 func TestEditor_EmptyEnterDoesNotSend(t *testing.T) {
 	e := New(t.TempDir(), nil)
 	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
