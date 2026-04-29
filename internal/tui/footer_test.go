@@ -7,19 +7,35 @@ import (
 
 func TestFooter_RendersAllFields(t *testing.T) {
 	f := Footer{
+		Cwd:            "/home/x/proj",
+		GitBranch:      "main",
+		Session:        "demo",
+		Model:          "gpt-5",
+		ThinkingEffort: "medium",
+		Tokens:         1234,
+		ContextPct:     42,
+		Width:          120,
+	}
+	out := f.Render(DefaultStylesWithIconMode("nerd"))
+	for _, want := range []string{"ᚱ rune", " /home/x/proj", " main", " demo", "gpt-5", " medium", "󰆙 1.2k tok", "󰊚 42% ctx"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("footer missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFooter_OmitsThinkingWhenEmpty(t *testing.T) {
+	f := Footer{
 		Cwd:        "/home/x/proj",
-		GitBranch:  "main",
 		Session:    "demo",
-		Model:      "gpt-5",
+		Model:      "gpt-5.4-mini",
 		Tokens:     1234,
 		ContextPct: 42,
 		Width:      120,
 	}
-	out := f.Render(DefaultStylesWithIconMode("nerd"))
-	for _, want := range []string{"ᚱ rune", " /home/x/proj", " main", " demo", "gpt-5", "󰆙 1.2k tok", "󰊚 42% ctx"} {
-		if !strings.Contains(out, want) {
-			t.Fatalf("footer missing %q:\n%s", want, out)
-		}
+	out := f.Render(DefaultStylesWithIconMode("unicode"))
+	if strings.Contains(out, "medium") || strings.Contains(out, "thinking") {
+		t.Fatalf("footer rendered empty thinking effort:\n%s", out)
 	}
 }
 

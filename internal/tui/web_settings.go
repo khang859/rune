@@ -57,7 +57,14 @@ func (m *RootModel) applySettings(s modal.Settings) {
 	m.settings = s
 	m.styles.Icons = IconSetForMode(s.IconMode)
 	if s.Effort != "" {
-		m.agent.SetReasoningEffort(s.Effort)
+		if len(thinkingLevelsForModel(m.sess.Model)) == 0 || supportedThinkingEffort(m.sess.Model, s.Effort) {
+			m.agent.SetReasoningEffort(s.Effort)
+		} else {
+			m.msgs.OnInfo(fmt.Sprintf("(thinking effort %q is not supported by %s)", s.Effort, m.sess.Model))
+			s.Effort = m.agent.ReasoningEffort()
+			m.settings.Effort = s.Effort
+		}
+		m.refreshFooterThinkingEffort()
 	}
 	if err := config.SaveSettings(config.SettingsPath(), configFromModalSettings(s)); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))

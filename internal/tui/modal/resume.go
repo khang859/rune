@@ -3,7 +3,6 @@ package modal
 
 import (
 	"fmt"
-	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -46,20 +45,15 @@ func (r *Resume) Update(msg tea.Msg) (Modal, tea.Cmd) {
 
 func (r *Resume) View(width, height int) string {
 	if len(r.items) == 0 {
-		return "(no saved sessions)"
+		return renderChoiceModal(width, height, "✦ Resume Session ✦", "Saved Sessions", "Esc dismiss", []choiceRow{{Label: "(no saved sessions)"}}, -1)
 	}
-	var sb strings.Builder
-	sb.WriteString("Resume session (↑/↓, Enter, Esc):\n")
+	rows := make([]choiceRow, len(r.items))
 	for i, it := range r.items {
-		marker := "  "
-		if i == r.sel {
-			marker = "> "
-		}
 		name := it.Name
 		if name == "" {
 			name = "(unnamed)"
 		}
-		sb.WriteString(fmt.Sprintf("%s%s — %d msgs — %s\n", marker, name, it.MessageCount, it.Created.Format("2006-01-02 15:04")))
+		rows[i] = choiceRow{Label: name, Value: fmt.Sprintf("%d msgs — %s", it.MessageCount, it.Created.Format("2006-01-02 15:04"))}
 	}
-	return sb.String()
+	return renderChoiceModal(width, height, "✦ Resume Session ✦", "Saved Sessions", "↑/↓ choose rune · Enter bind · Esc dismiss", rows, r.sel)
 }

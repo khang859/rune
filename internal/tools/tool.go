@@ -37,6 +37,26 @@ func (r *Registry) Unregister(name string) { delete(r.tools, name) }
 
 func (r *Registry) Has(name string) bool { _, ok := r.tools[name]; return ok }
 
+func (r *Registry) Clone() *Registry {
+	cp := NewRegistry()
+	for name, tool := range r.tools {
+		cp.tools[name] = tool
+	}
+	return cp
+}
+
+func (r *Registry) CloneReadOnly() *Registry {
+	cp := r.Clone()
+	cp.Unregister("write")
+	cp.Unregister("edit")
+	cp.Unregister("bash")
+	cp.Unregister("spawn_subagent")
+	cp.Unregister("list_subagents")
+	cp.Unregister("get_subagent_result")
+	cp.Unregister("cancel_subagent")
+	return cp
+}
+
 type BuiltinOptions struct {
 	WebFetchEnabled      bool
 	WebFetchAllowPrivate bool

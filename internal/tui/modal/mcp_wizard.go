@@ -295,11 +295,16 @@ func (m *MCPWizard) review() string {
 }
 
 func writeChoice(sb *strings.Builder, selected bool, label string) {
+	styles := settingsStyles()
+	selector := styles.Gutter.Render("  ")
+	labelStyle := styles.Label
 	if selected {
-		sb.WriteString("  > " + label + "\n")
-		return
+		selector = styles.Selector.Render("➤ ")
+		labelStyle = styles.SelectedLabel
 	}
-	sb.WriteString("    " + label + "\n")
+	sb.WriteString(selector)
+	sb.WriteString(labelStyle.Render(label))
+	sb.WriteByte('\n')
 }
 
 func parseHeaderLines(s string) (map[string]string, error) {

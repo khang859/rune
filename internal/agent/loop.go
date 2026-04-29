@@ -31,6 +31,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	autoCompactRemaining := 1
 	streamAttempt := 0
 	for {
+		a.injectCompletedSubagentSummaries()
 		sys := a.system
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
@@ -148,6 +149,16 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			sendErrOrAbort(ctx, out, err)
 			return
 		}
+	}
+}
+
+func (a *Agent) injectCompletedSubagentSummaries() {
+	if a.subagents == nil {
+		return
+	}
+	for _, task := range a.subagents.DrainCompletedSummaries() {
+		text := "[Subagent completed: " + task.ID + " / " + task.Name + "]\n\n" + task.Summary
+		a.session.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: text}}})
 	}
 }
 

@@ -6,13 +6,14 @@ import (
 )
 
 type Footer struct {
-	Cwd        string
-	GitBranch  string
-	Session    string
-	Model      string
-	Tokens     int
-	ContextPct int
-	Width      int
+	Cwd            string
+	GitBranch      string
+	Session        string
+	Model          string
+	ThinkingEffort string
+	Tokens         int
+	ContextPct     int
+	Width          int
 }
 
 func (f Footer) Render(s Styles) string {
@@ -27,6 +28,11 @@ func (f Footer) Render(s Styles) string {
 	parts = append(parts,
 		s.FooterSession.Render(iconLabel(s.Icons.Session, f.Session)),
 		s.FooterModel.Render(f.Model),
+	)
+	if f.ThinkingEffort != "" {
+		parts = append(parts, s.FooterModel.Render(iconLabel(s.Icons.Thinking, f.ThinkingEffort)))
+	}
+	parts = append(parts,
 		s.FooterTokens.Render(iconLabel(s.Icons.Tokens, fmt.Sprintf("%s tok", compactCount(f.Tokens)))),
 		s.FooterContext.Render(iconLabel(s.Icons.Context, fmt.Sprintf("%d%% ctx", f.ContextPct))),
 	)

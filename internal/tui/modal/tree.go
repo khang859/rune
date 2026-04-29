@@ -2,7 +2,6 @@
 package modal
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -70,17 +69,11 @@ func (t *Tree) Update(msg tea.Msg) (Modal, tea.Cmd) {
 }
 
 func (t *Tree) View(width, height int) string {
-	var sb strings.Builder
-	sb.WriteString("Pick a node to continue from (↑/↓, Enter, Esc):\n")
+	rows := make([]choiceRow, len(t.flat))
 	for i, r := range t.flat {
-		marker := "  "
-		if i == t.sel {
-			marker = "> "
-		}
-		snippet := previewMessage(r.Node.Message)
-		sb.WriteString(fmt.Sprintf("%s%s%s %s\n", marker, indent(r.Depth), prefix(r.Node.Message.Role), snippet))
+		rows[i] = choiceRow{Label: indent(r.Depth) + prefix(r.Node.Message.Role), Value: previewMessage(r.Node.Message)}
 	}
-	return sb.String()
+	return renderChoiceModal(width, height, "✦ Conversation Tree ✦", "Branches", "↑/↓ choose rune · Enter bind · Esc dismiss", rows, t.sel)
 }
 
 func indent(d int) string { return strings.Repeat("  ", d) }

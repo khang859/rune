@@ -28,6 +28,7 @@ const (
 	bkError
 	bkInfo
 	bkSummary
+	bkSubagent
 )
 
 type block struct {
@@ -143,6 +144,12 @@ func (m *Messages) AppendSummary(text string, count int) {
 	m.blocks = append(m.blocks, block{kind: bkSummary, text: text, count: count})
 }
 
+func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
+	m.FinalizeStreamingThinking(time.Now())
+	m.streamingAsstIdx = -1
+	m.blocks = append(m.blocks, block{kind: bkSubagent, meta: string(ev.Status), text: renderSubagentEventText(ev)})
+}
+
 func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {
 	var sb strings.Builder
 	for i, b := range m.blocks {
@@ -174,6 +181,14 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		case bkSummary:
 			header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
 			rendered = s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
+		case bkSubagent:
+			if b.meta == string(agent.SubagentCompleted) {
+				rendered = s.ToolResult.Render(b.text)
+			} else if b.meta == string(agent.SubagentFailed) || b.meta == string(agent.SubagentCancelled) {
+				rendered = s.ToolError.Render(b.text)
+			} else {
+				rendered = s.Info.Render(b.text)
+			}
 		}
 		if m.width > 0 {
 			rendered = ansi.Wrap(rendered, m.width, " \t")
@@ -181,6 +196,35 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		sb.WriteString(rendered)
 	}
 	return sb.String()
+}
+
+func renderSubagentEventText(ev agent.SubagentEvent) string {
+	t := ev.Task
+	label := fmt.Sprintf("subagent %s", t.Name)
+	if t.ID != "" {
+		label += fmt.Sprintf(" (%s)", t.ID)
+	}
+	switch ev.Status {
+	case agent.SubagentPending:
+		return fmt.Sprintf("◌ %s queued", label)
+	case agent.SubagentRunning:
+		return fmt.Sprintf("◐ %s working…", label)
+	case agent.SubagentCompleted:
+		if strings.TrimSpace(t.Summary) == "" {
+			return fmt.Sprintf("✓ %s completed", label)
+		}
+		lines := strings.Count(strings.TrimSpace(t.Summary), "\n") + 1
+		return fmt.Sprintf("✓ %s completed — %d result lines added to context", label, lines)
+	case agent.SubagentFailed:
+		if strings.TrimSpace(t.Error) == "" {
+			return fmt.Sprintf("✗ %s failed", label)
+		}
+		return fmt.Sprintf("✗ %s failed: %s", label, strings.TrimSpace(t.Error))
+	case agent.SubagentCancelled:
+		return fmt.Sprintf("⊘ %s cancelled", label)
+	default:
+		return fmt.Sprintf("%s %s", label, ev.Status)
+	}
 }
 
 func renderThinking(s Styles, b block, showThinking bool, now time.Time) string {

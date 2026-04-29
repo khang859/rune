@@ -1,11 +1,7 @@
 // internal/tui/modal/model_picker.go
 package modal
 
-import (
-	"strings"
-
-	tea "github.com/charmbracelet/bubbletea"
-)
+import tea "github.com/charmbracelet/bubbletea"
 
 type ModelPicker struct {
 	items []string
@@ -54,14 +50,9 @@ func (m *ModelPicker) Down() {
 }
 
 func (m *ModelPicker) View(width, height int) string {
-	var sb strings.Builder
-	sb.WriteString("Select model (↑/↓, Enter, Esc):\n")
+	rows := make([]choiceRow, len(m.items))
 	for i, it := range m.items {
-		if i == m.sel {
-			sb.WriteString("  > " + it + "\n")
-		} else {
-			sb.WriteString("    " + it + "\n")
-		}
+		rows[i] = choiceRow{Label: it}
 	}
-	return sb.String()
+	return renderChoiceModal(width, height, "✦ Model Selection ✦", "Mind", "↑/↓ choose rune · Enter bind · Esc dismiss", rows, m.sel)
 }

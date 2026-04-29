@@ -43,6 +43,13 @@ type RootModel struct {
 	eventCh    <-chan agent.Event
 	cancel     context.CancelFunc
 
+	subagentCtx                 context.Context
+	subagentCancel              context.CancelFunc
+	subagentCh                  <-chan agent.SubagentEvent
+	subagents                   map[string]agent.SubagentEvent
+	autoContinueSubagentResults map[string]bool
+	pendingSubagentContinuation bool
+
 	currentTokens int
 
 	modal           modal.Modal
@@ -77,7 +84,7 @@ type RootModel struct {
 const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
-	"/quit", "/model", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
+	"/quit", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/compact", "/reload", "/hotkeys",
 }
@@ -86,6 +93,9 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	realCwd, _ := os.Getwd()
 	iconMode := string(DefaultIconMode())
 	settings := modalSettingsFromConfig(config.DefaultSettings(), braveKeyConfigured())
+	if settings.Effort != "" {
+		a.SetReasoningEffort(settings.Effort)
+	}
 	settings.Effort = a.ReasoningEffort()
 	if settings.IconMode == "" {
 		settings.IconMode = iconMode
@@ -104,9 +114,17 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
 		editor:   ed,
-		footer:   Footer{Cwd: displayCwd, GitBranch: currentGitBranch(realCwd), Session: sessionLabel(sess), Model: sess.Model},
-		queue:    &Queue{},
-		settings: settings,
+		footer: Footer{
+			Cwd:            displayCwd,
+			GitBranch:      currentGitBranch(realCwd),
+			Session:        sessionLabel(sess),
+			Model:          sess.Model,
+			ThinkingEffort: footerThinkingEffort(sess.Model, a.ReasoningEffort()),
+		},
+		queue:                       &Queue{},
+		settings:                    settings,
+		subagents:                   map[string]agent.SubagentEvent{},
+		autoContinueSubagentResults: map[string]bool{},
 	}
 }
 
@@ -129,7 +147,7 @@ func (m *RootModel) SetMCPStatuses(statuses []mcp.Status) {
 }
 
 func (m *RootModel) Init() tea.Cmd {
-	return enableKittyKeyboard
+	return tea.Batch(enableKittyKeyboard, m.startSubagentListener())
 }
 
 func enableKittyKeyboard() tea.Msg {
@@ -261,6 +279,29 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Images)
 		}
+		if m.pendingSubagentContinuation {
+			m.pendingSubagentContinuation = false
+			return m, m.startSubagentContinuationTurn()
+		}
+		return m, nil
+
+	case SubagentEventMsg:
+		if v.Ch != m.subagentCh {
+			return m, nil
+		}
+		m.handleSubagentEvent(v.Event)
+		m.refreshViewport()
+		cmds := []tea.Cmd{nextSubagentEventCmd(m.subagentCh)}
+		if m.pendingTickCmd != nil {
+			cmds = append(cmds, m.pendingTickCmd)
+			m.pendingTickCmd = nil
+		}
+		return m, tea.Batch(cmds...)
+
+	case SubagentChannelDoneMsg:
+		if v.Ch == m.subagentCh {
+			m.subagentCh = nil
+		}
 		return m, nil
 
 	case tea.MouseMsg:
@@ -381,6 +422,12 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	return tea.Batch(nextEventCmd(ch), m.startActivityTick())
 }
 
+const subagentContinuationPrompt = "A subagent has completed. Review the subagent result that was added to your context and continue the user's task. If actions are needed, take them; otherwise briefly report the conclusion."
+
+func (m *RootModel) startSubagentContinuationTurn() tea.Cmd {
+	return m.startTurn(subagentContinuationPrompt, nil)
+}
+
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	if strings.HasPrefix(cmd, "/skill:") {
 		slug := strings.TrimPrefix(cmd, "/skill:")
@@ -394,12 +441,25 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.layout()
 		return nil
 	}
+	if strings.HasPrefix(cmd, "/subagent-cancel ") {
+		m.cancelSubagentsCommand(strings.TrimSpace(strings.TrimPrefix(cmd, "/subagent-cancel ")))
+		m.refreshViewport()
+		m.layout()
+		return nil
+	}
 	var initCmd tea.Cmd
 	switch cmd {
 	case "/quit":
 		return tea.Quit
 	case "/model":
 		initCmd = m.openModal(modal.NewModelPicker(codexModelIDs(), m.sess.Model))
+	case "/thinking":
+		levels := thinkingLevelsForModel(m.sess.Model)
+		if len(levels) == 0 {
+			m.msgs.OnInfo(fmt.Sprintf("(thinking levels for %s are unknown)", m.sess.Model))
+			break
+		}
+		initCmd = m.openModal(modal.NewThinkingPicker(levels, m.agent.ReasoningEffort()))
 	case "/tree":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -455,6 +515,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.refreshViewport()
 		m.layout()
 		return tea.Batch(m.startCompact(), m.startActivityTick())
+	case "/subagents":
+		m.showSubagentsInfo()
 	case "/reload":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -474,6 +536,58 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	m.refreshViewport()
 	m.layout()
 	return initCmd
+}
+
+func (m *RootModel) showSubagentsInfo() {
+	tasks := m.agent.Subagents().List()
+	if len(tasks) == 0 {
+		m.msgs.OnInfo("(no subagents)")
+		return
+	}
+	var b strings.Builder
+	b.WriteString("(subagents)")
+	for _, task := range tasks {
+		b.WriteString("\n- ")
+		b.WriteString(task.ID)
+		if task.Name != "" {
+			b.WriteString(" ")
+			b.WriteString(task.Name)
+		}
+		b.WriteString(" ")
+		b.WriteString(task.Status)
+		if task.Error != "" {
+			b.WriteString(": ")
+			b.WriteString(task.Error)
+		}
+	}
+	m.msgs.OnInfo(b.String())
+}
+
+func (m *RootModel) cancelSubagentsCommand(arg string) {
+	if arg == "" {
+		m.msgs.OnInfo("(usage: /subagent-cancel <task_id|all>)")
+		return
+	}
+	if arg == "all" {
+		cancelled := 0
+		for _, task := range m.agent.Subagents().List() {
+			if !isActiveSubagentStatus(task.Status) {
+				continue
+			}
+			if err := m.agent.Subagents().Cancel(task.ID); err != nil {
+				m.msgs.OnTurnError(err)
+				continue
+			}
+			cancelled++
+		}
+		m.msgs.OnInfo(fmt.Sprintf("(cancelled %d subagents)", cancelled))
+		return
+	}
+	if err := m.agent.Subagents().Cancel(arg); err != nil {
+		m.msgs.OnTurnError(err)
+		return
+	}
+	m.msgs.OnInfo(fmt.Sprintf("(cancelled %s)", arg))
 }
 
 // openModal sets the current modal and returns its Init cmd so async
@@ -659,6 +773,30 @@ func (m *RootModel) refreshViewport() {
 	}
 }
 
+func (m *RootModel) handleSubagentEvent(e agent.SubagentEvent) {
+	if m.subagents == nil {
+		m.subagents = map[string]agent.SubagentEvent{}
+	}
+	if m.autoContinueSubagentResults == nil {
+		m.autoContinueSubagentResults = map[string]bool{}
+	}
+	m.subagents[e.Task.ID] = e
+	m.msgs.OnSubagentEvent(e)
+	if e.Status == agent.SubagentRunning || e.Status == agent.SubagentPending {
+		m.pendingTickCmd = m.startActivityTick()
+	} else if !m.showActivity() {
+		m.stopActivityTick()
+	}
+	if e.Status == agent.SubagentCompleted && strings.TrimSpace(e.Task.Summary) != "" && !m.autoContinueSubagentResults[e.Task.ID] {
+		m.autoContinueSubagentResults[e.Task.ID] = true
+		if m.streaming || m.compacting {
+			m.pendingSubagentContinuation = true
+			return
+		}
+		m.pendingTickCmd = tea.Batch(m.pendingTickCmd, m.startSubagentContinuationTurn())
+	}
+}
+
 func (m *RootModel) handleEvent(e agent.Event) {
 	switch v := e.(type) {
 	case agent.AssistantText:
@@ -728,6 +866,71 @@ func codexModelIDs() []string {
 	}
 }
 
+func thinkingLevelsForModel(model string) []string {
+	switch strings.ToLower(model) {
+	case "gpt-5.5", "gpt-5.4", "gpt-5.2":
+		return []string{"none", "low", "medium", "high", "xhigh"}
+	case "gpt-5.3-codex", "gpt-5.2-codex":
+		return []string{"low", "medium", "high", "xhigh"}
+	case "gpt-5.1":
+		return []string{"none", "low", "medium", "high"}
+	default:
+		return nil
+	}
+}
+
+func supportedThinkingEffort(model, effort string) bool {
+	for _, level := range thinkingLevelsForModel(model) {
+		if level == effort {
+			return true
+		}
+	}
+	return false
+}
+
+func footerThinkingEffort(model, effort string) string {
+	if effort == "" || !supportedThinkingEffort(model, effort) {
+		return ""
+	}
+	return effort
+}
+
+func (m *RootModel) refreshFooterThinkingEffort() {
+	m.footer.ThinkingEffort = footerThinkingEffort(m.sess.Model, m.agent.ReasoningEffort())
+}
+
+func defaultThinkingEffort(levels []string) string {
+	for _, level := range levels {
+		if level == "medium" {
+			return level
+		}
+	}
+	if len(levels) > 0 {
+		return levels[0]
+	}
+	return ""
+}
+
+func (m *RootModel) clampThinkingForCurrentModel() {
+	levels := thinkingLevelsForModel(m.sess.Model)
+	if len(levels) == 0 || supportedThinkingEffort(m.sess.Model, m.agent.ReasoningEffort()) {
+		return
+	}
+	m.applyThinkingEffort(defaultThinkingEffort(levels))
+}
+
+func (m *RootModel) applyThinkingEffort(effort string) {
+	if !supportedThinkingEffort(m.sess.Model, effort) {
+		m.msgs.OnInfo(fmt.Sprintf("(thinking effort %q is not supported by %s)", effort, m.sess.Model))
+		m.refreshViewport()
+		return
+	}
+	m.settings.Effort = effort
+	m.applySettings(m.settings)
+	m.msgs.OnInfo(fmt.Sprintf("(thinking effort: %s)", effort))
+	m.refreshViewport()
+}
+
 func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	switch cur.(type) {
 	case *modal.ModelPicker:
@@ -735,6 +938,12 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			m.sess.Model = id
 			m.footer.Model = id
 			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+			m.clampThinkingForCurrentModel()
+			m.refreshFooterThinkingEffort()
+		}
+	case *modal.ThinkingPicker:
+		if effort, ok := payload.(string); ok {
+			m.applyThinkingEffort(effort)
 		}
 	case *modal.SettingsModal:
 		switch v := payload.(type) {
@@ -837,6 +1046,17 @@ func sessionLabel(s *session.Session) string {
 	return s.ID
 }
 
+func (m *RootModel) startSubagentListener() tea.Cmd {
+	if m.subagentCancel != nil {
+		m.subagentCancel()
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	m.subagentCtx = ctx
+	m.subagentCancel = cancel
+	m.subagentCh = m.agent.Subagents().Subscribe(ctx)
+	return nextSubagentEventCmd(m.subagentCh)
+}
+
 func (m *RootModel) swapSession(s *session.Session) {
 	// Cancel any in-flight turn on the previous session before replacing
 	// pointers — otherwise the old goroutine's events could bleed into
@@ -850,6 +1070,13 @@ func (m *RootModel) swapSession(s *session.Session) {
 	prev := m.agent.ReasoningEffort()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), s, m.agent.System())
 	m.agent.SetReasoningEffort(prev)
+	m.agent.RegisterSubagentTools()
+	m.subagents = map[string]agent.SubagentEvent{}
+	m.autoContinueSubagentResults = map[string]bool{}
+	m.pendingSubagentContinuation = false
+	_ = m.startSubagentListener()
+	m.clampThinkingForCurrentModel()
+	m.refreshFooterThinkingEffort()
 }
 
 // stopActiveTurn cancels any in-flight agent turn, clears streaming state,
@@ -992,16 +1219,82 @@ func (m *RootModel) stopActivityTick() {
 }
 
 func (m *RootModel) showActivity() bool {
-	return (m.streaming || m.compacting) && m.settings.ActivityMode != "off"
+	return (m.streaming || m.compacting || m.activeSubagentCount() > 0) && m.settings.ActivityMode != "off"
+}
+
+func (m *RootModel) activeSubagentCount() int {
+	count := 0
+	for _, ev := range m.subagents {
+		if ev.Status == agent.SubagentPending || ev.Status == agent.SubagentRunning {
+			count++
+		}
+	}
+	return count
+}
+
+func isActiveSubagentStatus(status string) bool {
+	return status == string(agent.SubagentPending) || status == string(agent.SubagentRunning)
 }
 
 func (m *RootModel) renderActivityLine() string {
 	if !m.showActivity() {
 		return ""
 	}
-	phrases := m.activityPhrases()
-	line := activitySpinnerFrame(m.activityFrame) + " " + phrases[m.activityPhrase%len(phrases)]
+	left := ""
+	if m.streaming || m.compacting {
+		phrases := m.activityPhrases()
+		left = activitySpinnerFrame(m.activityFrame) + " " + phrases[m.activityPhrase%len(phrases)]
+	}
+	right := m.renderSubagentActivityIndicator()
+	line := composeActivityLine(left, right, m.width)
 	return m.styles.Activity.Width(m.width).Render(line)
+}
+
+func (m *RootModel) renderSubagentActivityIndicator() string {
+	n := m.activeSubagentCount()
+	if n == 0 {
+		return ""
+	}
+	label := "subagent"
+	if n != 1 {
+		label = "subagents"
+	}
+	return fmt.Sprintf("%s %d %s working…", activitySpinnerFrame(m.activityFrame+1), n, label)
+}
+
+func composeActivityLine(left, right string, width int) string {
+	left = strings.TrimSpace(left)
+	right = strings.TrimSpace(right)
+	if left == "" {
+		return fitActivitySegment(right, width)
+	}
+	if right == "" {
+		return fitActivitySegment(left, width)
+	}
+	if width <= 0 {
+		return left + " " + right
+	}
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	if leftW+1+rightW > width {
+		if rightW+1 >= width {
+			return fitActivitySegment(right, width)
+		}
+		left = fitActivitySegment(left, width-rightW-1)
+		leftW = lipgloss.Width(left)
+	}
+	pad := width - leftW - rightW
+	if pad < 1 {
+		pad = 1
+	}
+	return left + strings.Repeat(" ", pad) + right
+}
+
+func fitActivitySegment(s string, width int) string {
+	if width <= 0 || lipgloss.Width(s) <= width {
+		return s
+	}
+	return ansi.Truncate(s, width, "…")
 }
 
 func (m *RootModel) activityPhrases() []string {
@@ -1142,4 +1435,9 @@ func (m *RootModel) refreshSystemPrompt() {
 	prev := m.agent.ReasoningEffort()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), m.sess, sys)
 	m.agent.SetReasoningEffort(prev)
+	m.agent.RegisterSubagentTools()
+	m.subagents = map[string]agent.SubagentEvent{}
+	m.autoContinueSubagentResults = map[string]bool{}
+	m.pendingSubagentContinuation = false
+	_ = m.startSubagentListener()
 }

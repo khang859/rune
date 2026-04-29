@@ -16,6 +16,7 @@ import (
 	"github.com/khang859/rune/internal/ai/faux"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
+	"github.com/khang859/rune/internal/tui/modal"
 )
 
 func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
@@ -497,6 +498,26 @@ func TestCtxPctForModelUsesCodexWindow(t *testing.T) {
 	}
 }
 
+func TestThinkingLevelsForKnownModels(t *testing.T) {
+	cases := map[string][]string{
+		"gpt-5.5":       {"none", "low", "medium", "high", "xhigh"},
+		"gpt-5.4":       {"none", "low", "medium", "high", "xhigh"},
+		"gpt-5.3-codex": {"low", "medium", "high", "xhigh"},
+		"gpt-5.2":       {"none", "low", "medium", "high", "xhigh"},
+		"gpt-5.2-codex": {"low", "medium", "high", "xhigh"},
+		"gpt-5.1":       {"none", "low", "medium", "high"},
+	}
+	for model, want := range cases {
+		got := thinkingLevelsForModel(model)
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("thinkingLevelsForModel(%q) = %v, want %v", model, got, want)
+		}
+	}
+	if got := thinkingLevelsForModel("gpt-5.4-mini"); len(got) != 0 {
+		t.Fatalf("thinkingLevelsForModel unknown = %v, want none", got)
+	}
+}
+
 func TestCodexModelIDsMatchesPiCodexList(t *testing.T) {
 	got := strings.Join(codexModelIDs(), ",")
 	want := strings.Join([]string{
@@ -531,6 +552,64 @@ func TestRoot_RendersSimpleActivityLineWhenConfigured(t *testing.T) {
 	}
 }
 
+func TestRoot_ThinkingUnknownModelDoesNotOpenModal(t *testing.T) {
+	s := session.New("gpt-5.4-mini")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	cmd := m.handleSlashCommand("/thinking")
+	if cmd != nil {
+		t.Fatal("/thinking for unknown model returned a command")
+	}
+	if m.modal != nil {
+		t.Fatal("/thinking for unknown model opened a modal")
+	}
+}
+
+func TestRoot_ThinkingPickerUpdatesEffort(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	if cmd := m.handleSlashCommand("/thinking"); cmd != nil {
+		_, _ = m.Update(cmd())
+	}
+	if _, ok := m.modal.(*modal.ThinkingPicker); !ok {
+		t.Fatalf("modal = %T, want ThinkingPicker", m.modal)
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyDown}) // high
+	if cmd != nil {
+		_, _ = m.Update(cmd())
+	}
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected thinking picker result command")
+	}
+	_, _ = m.Update(cmd())
+
+	if got := a.ReasoningEffort(); got != "high" {
+		t.Fatalf("reasoning effort = %q, want high", got)
+	}
+}
+
+func TestRoot_ModelSwitchClampsThinkingEffort(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	a.SetReasoningEffort("xhigh")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.applyModalResult(modal.NewModelPicker(nil, ""), "gpt-5.1")
+
+	if got := a.ReasoningEffort(); got != "medium" {
+		t.Fatalf("reasoning effort = %q, want medium", got)
+	}
+}
+
 func TestRoot_SettingsPreserveCurrentEffortByDefault(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
@@ -546,6 +625,57 @@ func TestRoot_SettingsPreserveCurrentEffortByDefault(t *testing.T) {
 
 	if got := a.ReasoningEffort(); got != "medium" {
 		t.Fatalf("reasoning effort changed after applying default settings: %q", got)
+	}
+}
+
+func TestRoot_FooterThinkingEffortForSupportedModel(t *testing.T) {
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	if got, want := m.footer.ThinkingEffort, "medium"; got != want {
+		t.Fatalf("footer thinking effort = %q, want %q", got, want)
+	}
+}
+
+func TestRoot_FooterThinkingEffortHiddenForUnsupportedModel(t *testing.T) {
+	s := session.New("gpt-5.4-mini")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	if got := m.footer.ThinkingEffort; got != "" {
+		t.Fatalf("footer thinking effort = %q, want empty", got)
+	}
+}
+
+func TestRoot_FooterThinkingEffortUpdatesFromPicker(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.applyModalResult(modal.NewThinkingPicker(nil, ""), "high")
+
+	if got, want := m.footer.ThinkingEffort, "high"; got != want {
+		t.Fatalf("footer thinking effort = %q, want %q", got, want)
+	}
+}
+
+func TestRoot_FooterThinkingEffortRefreshesOnModelSwitch(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	a.SetReasoningEffort("xhigh")
+	m := NewRootModel(a, s)
+
+	m.applyModalResult(modal.NewModelPicker(nil, ""), "gpt-5.1")
+	if got, want := m.footer.ThinkingEffort, "medium"; got != want {
+		t.Fatalf("footer thinking effort after clamp = %q, want %q", got, want)
+	}
+
+	m.applyModalResult(modal.NewModelPicker(nil, ""), "gpt-5.4-mini")
+	if got := m.footer.ThinkingEffort; got != "" {
+		t.Fatalf("footer thinking effort for unsupported model = %q, want empty", got)
 	}
 }
 
@@ -569,6 +699,145 @@ func TestRoot_IgnoresStaleActivityTicks(t *testing.T) {
 	}
 }
 
+func TestRoot_SubagentCompletionStartsContinuationWhenIdle(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Reply("continued from subagent").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	ev := agent.SubagentEvent{
+		Status: agent.SubagentCompleted,
+		Task: tools.SubagentTask{
+			ID:        "subagent_1",
+			Name:      "repo-plan",
+			AgentType: "general",
+			Status:    string(agent.SubagentCompleted),
+			CreatedAt: time.Now(),
+			Summary:   "## Summary\nneeds follow-up",
+		},
+	}
+	_, cmd := m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+	if cmd == nil {
+		t.Fatal("expected continuation command after completed subagent")
+	}
+	if !m.streaming {
+		t.Fatal("expected continuation turn to start")
+	}
+	path := s.PathToActive()
+	if len(path) != 1 || path[0].Role != ai.RoleUser {
+		t.Fatalf("expected synthetic continuation user message, got %#v", path)
+	}
+	if got := path[0].Content[0].(ai.TextBlock).Text; got != subagentContinuationPrompt {
+		t.Fatalf("continuation prompt = %q, want %q", got, subagentContinuationPrompt)
+	}
+}
+
+func TestRoot_SubagentCompletionQueuesContinuationWhenBusy(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Reply("continued from subagent").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.streaming = true
+
+	ev := agent.SubagentEvent{
+		Status: agent.SubagentCompleted,
+		Task: tools.SubagentTask{
+			ID:        "subagent_1",
+			Name:      "repo-plan",
+			AgentType: "general",
+			Status:    string(agent.SubagentCompleted),
+			CreatedAt: time.Now(),
+			Summary:   "## Summary\nneeds follow-up",
+		},
+	}
+	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+	if !m.pendingSubagentContinuation {
+		t.Fatal("expected continuation to be queued while streaming")
+	}
+}
+
 var _ = ai.RoleUser
 var _ = json.Valid
 var _ = context.Background
+
+func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.streaming = true
+	m.subagents["subagent_1"] = agent.SubagentEvent{
+		Status: agent.SubagentRunning,
+		Task:   tools.SubagentTask{ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: time.Now()},
+	}
+
+	line := m.renderActivityLine()
+	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 subagent working") {
+		t.Fatalf("combined activity line missing main/subagent indicators: %q", line)
+	}
+	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 subagent working") {
+		t.Fatalf("subagent indicator should render to the right of main activity: %q", line)
+	}
+}
+
+func TestRoot_SubagentSlashCommandsListAndCancel(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Reply("working").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{Name: "repo-plan", Prompt: "inspect", AgentType: "general", Background: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m.subagents[task.ID] = agent.SubagentEvent{Status: agent.SubagentRunning, Task: *task}
+
+	m.handleSlashCommand("/subagents")
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, task.ID) || !strings.Contains(out, "repo-plan") {
+		t.Fatalf("/subagents did not render task list: %q", out)
+	}
+
+	m.handleSlashCommand("/subagent-cancel all")
+	out = m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "cancelled 1 subagents") {
+		t.Fatalf("/subagent-cancel all did not report cancellation: %q", out)
+	}
+}
+
+func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Reply("continued").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	created := time.Now()
+	ev := agent.SubagentEvent{
+		Status: agent.SubagentRunning,
+		Task:   tools.SubagentTask{ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: created},
+	}
+	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "subagent repo-plan") || !strings.Contains(out, "working") {
+		t.Fatalf("running subagent not rendered: %q", out)
+	}
+	if m.activeSubagentCount() != 1 {
+		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
+	}
+
+	doneAt := time.Now()
+	ev.Status = agent.SubagentCompleted
+	ev.Task.Status = string(agent.SubagentCompleted)
+	ev.Task.CompletedAt = &doneAt
+	ev.Task.Summary = "## Summary\nall done"
+	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+	out = m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "completed") || !strings.Contains(out, "result lines added to context") {
+		t.Fatalf("completed subagent not rendered collapsed: %q", out)
+	}
+	if strings.Contains(out, "all done") {
+		t.Fatalf("completed subagent summary should be collapsed by default: %q", out)
+	}
+	if m.activeSubagentCount() != 0 {
+		t.Fatalf("activeSubagentCount = %d, want 0", m.activeSubagentCount())
+	}
+}

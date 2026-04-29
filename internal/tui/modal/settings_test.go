@@ -39,7 +39,7 @@ func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 func TestSettings_ViewShowsNewRows(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "nerd", ActivityMode: "arcane"}).(*SettingsModal)
 	out := s.View(80, 24)
-	for _, want := range []string{"thinking effort: medium", "icon mode: nerd", "activity indicator: arcane"} {
+	for _, want := range []string{"Grimoire of Settings", "✧ Mind", "thinking effort", "medium", "✧ Interface", "icon mode", "nerd", "activity indicator", "arcane"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("settings view missing %q:\n%s", want, out)
 		}

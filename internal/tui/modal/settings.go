@@ -39,6 +39,7 @@ const (
 
 type settingsRow struct {
 	kind    settingsRowKind
+	section string
 	label   string
 	options []string
 	value   int
@@ -49,20 +50,20 @@ type settingsRow struct {
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
 	return &SettingsModal{cur: cur, rows: []settingsRow{
-		newSettingsRow("thinking effort", []string{"minimal", "low", "medium", "high"}, cur.Effort),
-		newSettingsRow("icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
-		newSettingsRow("activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
-		newSettingsRow("web fetch", []string{"off", "on"}, cur.WebFetch),
-		newSettingsRow("fetch private urls", []string{"off", "on"}, cur.FetchPrivateURLs),
-		newSettingsRow("web search", []string{"auto", "off", "on"}, cur.WebSearch),
-		newSettingsRow("search provider", []string{"auto", "brave", "searxng"}, cur.SearchProvider),
-		{kind: settingsRowAction, label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
+		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
+		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
+		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
+		newSettingsRow("Web Scrying", "web fetch", []string{"off", "on"}, cur.WebFetch),
+		newSettingsRow("Web Scrying", "fetch private urls", []string{"off", "on"}, cur.FetchPrivateURLs),
+		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
+		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "searxng"}, cur.SearchProvider),
+		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
 	}}
 }
 
 func normalizeSettings(s Settings) Settings {
 	if s.Effort == "" {
-		s.Effort = "minimal"
+		s.Effort = "medium"
 	}
 	if s.IconMode == "" {
 		s.IconMode = "unicode"
@@ -88,8 +89,8 @@ func normalizeSettings(s Settings) Settings {
 	return s
 }
 
-func newSettingsRow(label string, options []string, current string) settingsRow {
-	row := settingsRow{kind: settingsRowEnum, label: label, options: options}
+func newSettingsRow(section, label string, options []string, current string) settingsRow {
+	row := settingsRow{kind: settingsRowEnum, section: section, label: label, options: options}
 	for i, opt := range options {
 		if opt == current {
 			row.value = i
@@ -152,18 +153,48 @@ func (s *SettingsModal) selectedSettings() Settings {
 
 func (s *SettingsModal) View(width, height int) string {
 	var sb strings.Builder
-	sb.WriteString("Settings\n")
+	styles := settingsStyles()
+
+	contentWidth := modalContentWidth(width)
+
+	sb.WriteString(styles.Title.Render("✦ Grimoire of Settings ✦"))
+	sb.WriteByte('\n')
+	sb.WriteString(styles.Divider.Width(contentWidth).Render(""))
+	sb.WriteString("\n\n")
+
+	lastSection := ""
 	for i, row := range s.rows {
-		m := "  "
-		if i == s.sel {
-			m = "> "
+		if row.section != lastSection {
+			if lastSection != "" {
+				sb.WriteByte('\n')
+			}
+			sb.WriteString(styles.Section.Render("✧ " + row.section))
+			sb.WriteByte('\n')
+			lastSection = row.section
 		}
+
+		selected := i == s.sel
+		selector := styles.Gutter.Render("  ")
+		label := styles.Label.Render(row.label)
+		value := ""
 		if row.kind == settingsRowAction {
-			sb.WriteString(fmt.Sprintf("%s%s: %s\n", m, row.label, row.status))
-			continue
+			value = row.status
+		} else {
+			value = row.options[row.value]
 		}
-		sb.WriteString(fmt.Sprintf("%s%s: %s\n", m, row.label, row.options[row.value]))
+
+		valueStyle := styles.Value
+		if selected {
+			selector = styles.Selector.Render("➤ ")
+			label = styles.SelectedLabel.Render(row.label)
+			valueStyle = styles.SelectedValue
+		}
+
+		fmt.Fprintf(&sb, "%s%s %s\n", selector, label, valueStyle.Render(value))
 	}
-	sb.WriteString("\n(↑/↓ select, ←/→ change, Enter apply/action, Esc cancel)")
-	return sb.String()
+
+	sb.WriteByte('\n')
+	sb.WriteString(styles.Help.Render("↑/↓ choose rune · ←/→ alter enchantment · Enter bind · Esc dismiss"))
+
+	return centeredModal(width, height, contentWidth, sb.String())
 }

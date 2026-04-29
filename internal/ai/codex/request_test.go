@@ -84,6 +84,21 @@ func TestBuildPayload_EmptyToolOutputSerializesPlaceholder(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesReasoningNone(t *testing.T) {
+	req := ai.Request{
+		Model:     "gpt-5.5",
+		Messages:  []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hi"}}}},
+		Reasoning: ai.ReasoningConfig{Effort: "none"},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), `"reasoning":{"effort":"none"`) {
+		t.Fatalf("payload missing effort none:\n%s", string(b))
+	}
+}
+
 func TestBuildPayload_IncludesMessagesAndTools(t *testing.T) {
 	req := ai.Request{
 		Model:  "gpt-5",
