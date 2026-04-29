@@ -14,6 +14,7 @@ type Styles struct {
 	ThinkingHeader lipgloss.Style
 	Footer         lipgloss.Style
 	EditorBox      lipgloss.Style
+	Markdown       Markdown
 }
 
 func DefaultStyles() Styles {
@@ -29,5 +30,6 @@ func DefaultStyles() Styles {
 		ThinkingHeader: lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
 		Footer:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Reverse(true).Padding(0, 1),
 		EditorBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
+		Markdown:       NewMarkdown(),
 	}
 }
