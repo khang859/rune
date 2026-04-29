@@ -17,6 +17,28 @@ type SubagentManager interface {
 	Cancel(id string) error
 }
 
+type disabledSubagentManager struct{}
+
+func DisabledSubagentManager() SubagentManager { return disabledSubagentManager{} }
+
+func (disabledSubagentManager) Spawn(ctx context.Context, req SpawnSubagentRequest) (*SubagentTask, error) {
+	_ = ctx
+	_ = req
+	return nil, fmt.Errorf("subagents are disabled in settings")
+}
+
+func (disabledSubagentManager) List() []SubagentTask { return nil }
+
+func (disabledSubagentManager) Get(id string) *SubagentTask {
+	_ = id
+	return nil
+}
+
+func (disabledSubagentManager) Cancel(id string) error {
+	_ = id
+	return fmt.Errorf("subagents are disabled in settings")
+}
+
 type SpawnSubagentRequest struct {
 	Name        string
 	Prompt      string

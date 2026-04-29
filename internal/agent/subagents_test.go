@@ -8,6 +8,7 @@ import (
 
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
+	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 )
@@ -114,6 +115,32 @@ func TestSubagentSupervisor_PublishesLifecycleEvents(t *testing.T) {
 		if statuses[i] != want[i] {
 			t.Fatalf("statuses = %v, want prefix %v", statuses, want)
 		}
+	}
+}
+
+func TestSubagentConfigFromSettings(t *testing.T) {
+	cfg := SubagentConfigFromSettings(config.SubagentSettings{MaxConcurrent: 2, DefaultTimeoutSecs: 30, MaxCompletedRetain: 7})
+	if cfg.MaxConcurrent != 2 {
+		t.Fatalf("MaxConcurrent = %d, want 2", cfg.MaxConcurrent)
+	}
+	if cfg.DefaultTimeout != 30*time.Second {
+		t.Fatalf("DefaultTimeout = %s, want 30s", cfg.DefaultTimeout)
+	}
+	if cfg.MaxCompletedRetain != 7 {
+		t.Fatalf("MaxCompletedRetain = %d, want 7", cfg.MaxCompletedRetain)
+	}
+}
+
+func TestRegisterSubagentToolsDisabled(t *testing.T) {
+	reg := tools.NewRegistry()
+	a := New(faux.New(), reg, session.New("gpt-test"), "")
+	a.RegisterSubagentToolsEnabled(false)
+	res, err := reg.Run(context.Background(), ai.ToolCall{Name: "spawn_subagent", Args: []byte(`{"name":"x","prompt":"y"}`)})
+	if err != nil {
+		t.Fatalf("Run error: %v", err)
+	}
+	if !res.IsError || !strings.Contains(res.Output, "subagents are disabled") {
+		t.Fatalf("result = %+v, want disabled error", res)
 	}
 }
 

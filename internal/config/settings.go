@@ -9,10 +9,11 @@ import (
 )
 
 type Settings struct {
-	ReasoningEffort string      `json:"reasoning_effort,omitempty"`
-	IconMode        string      `json:"icon_mode,omitempty"`
-	ActivityMode    string      `json:"activity_mode,omitempty"`
-	Web             WebSettings `json:"web,omitempty"`
+	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
+	IconMode        string           `json:"icon_mode,omitempty"`
+	ActivityMode    string           `json:"activity_mode,omitempty"`
+	Web             WebSettings      `json:"web,omitempty"`
+	Subagents       SubagentSettings `json:"subagents,omitempty"`
 }
 
 type WebSettings struct {
@@ -22,8 +23,30 @@ type WebSettings struct {
 	SearchProvider    string `json:"search_provider,omitempty"`
 }
 
+type SubagentSettings struct {
+	Enabled            *bool `json:"enabled,omitempty"`
+	MaxConcurrent      int   `json:"max_concurrent,omitempty"`
+	DefaultTimeoutSecs int   `json:"default_timeout_secs,omitempty"`
+	MaxCompletedRetain int   `json:"max_completed_retain,omitempty"`
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func (s SubagentSettings) EnabledValue() bool {
+	if s.Enabled == nil {
+		return true
+	}
+	return *s.Enabled
+}
+
 func DefaultSettings() Settings {
-	return Settings{ReasoningEffort: "medium", IconMode: "unicode", ActivityMode: "arcane", Web: WebSettings{FetchEnabled: true, SearchEnabled: "auto", SearchProvider: "auto"}}
+	return Settings{
+		ReasoningEffort: "medium",
+		IconMode:        "unicode",
+		ActivityMode:    "arcane",
+		Web:             WebSettings{FetchEnabled: true, SearchEnabled: "auto", SearchProvider: "auto"},
+		Subagents:       SubagentSettings{Enabled: boolPtr(true), MaxConcurrent: 4, DefaultTimeoutSecs: 600, MaxCompletedRetain: 100},
+	}
 }
 
 func LoadSettings(path string) (Settings, error) {
@@ -57,6 +80,18 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.Web.SearchProvider == "" {
 		s.Web.SearchProvider = d.Web.SearchProvider
+	}
+	if s.Subagents.Enabled == nil {
+		s.Subagents.Enabled = d.Subagents.Enabled
+	}
+	if s.Subagents.MaxConcurrent <= 0 {
+		s.Subagents.MaxConcurrent = d.Subagents.MaxConcurrent
+	}
+	if s.Subagents.DefaultTimeoutSecs <= 0 {
+		s.Subagents.DefaultTimeoutSecs = d.Subagents.DefaultTimeoutSecs
+	}
+	if s.Subagents.MaxCompletedRetain <= 0 {
+		s.Subagents.MaxCompletedRetain = d.Subagents.MaxCompletedRetain
 	}
 	return s
 }

@@ -72,12 +72,21 @@ Implemented in the second MVP pass:
 - Activity-line support for background subagents, for example `◐ 1 subagent working…`.
 - Subagent completion is posted to the visible TUI message view without requiring the main agent to poll `get_subagent_result` for user-visible progress.
 - `get_subagent_result` remains available for model/tool use and explicit result lookup.
-- Subagent events are intentionally not appended directly to the model session transcript yet, avoiding asynchronous mutation of provider conversation history while a turn/tool-call sequence may be active.
+- Completed subagent summaries are injected once into future main-agent context/session history before provider requests, avoiding asynchronous mutation while a turn/tool-call sequence is active.
+
+Implemented in the third MVP pass:
+
+- Settings-backed subagent configuration:
+  - `enabled`
+  - `max_concurrent`
+  - `default_timeout_secs`
+  - `max_completed_retain`
+- Interactive mode and one-shot `rune prompt` mode construct subagent supervisors from settings.
+- When subagents are disabled, parent-facing subagent tools return clear disabled errors instead of starting tasks.
 
 Not yet implemented:
 
 - Durable subagent persistence in session files.
-- Injecting completed subagent summaries into future main-agent context/session history.
 - Dependency handling / `blocked` tasks.
 - Per-subagent model selection.
 - Custom user-defined subagent type registry.
@@ -606,18 +615,23 @@ Still to improve within Phase 1:
 
 - More structured result parsing beyond storing the final assistant summary string.
 - Session/transcript artifact references.
-- Settings-backed configuration for concurrency/timeouts.
 
 This enables safe parallel research and codebase exploration.
 
-### Phase 2: background task UX
+### Phase 2: background task UX — mostly implemented
 
-Add:
+Implemented:
 
-- Progress events.
+- Lifecycle progress events.
 - TUI display for active subagents.
-- Better result notifications.
-- Task history in session view.
+- Result notifications with summaries.
+- Background activity indicator.
+- Completed summary injection into future main-agent context.
+
+Still to improve within Phase 2:
+
+- Durable task history in session view backed by persisted task metadata.
+- More granular progress events beyond lifecycle transitions.
 
 ### Phase 3: dependency-aware orchestration
 

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/search"
@@ -16,18 +18,23 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Sett
 		status = "configured — Enter to replace"
 	}
 	return modal.Settings{
-		Effort:            s.ReasoningEffort,
-		IconMode:          s.IconMode,
-		ActivityMode:      s.ActivityMode,
-		WebFetch:          onOff(s.Web.FetchEnabled),
-		FetchPrivateURLs:  onOff(s.Web.FetchAllowPrivate),
-		WebSearch:         s.Web.SearchEnabled,
-		SearchProvider:    s.Web.SearchProvider,
-		BraveAPIKeyStatus: status,
+		Effort:                s.ReasoningEffort,
+		IconMode:              s.IconMode,
+		ActivityMode:          s.ActivityMode,
+		WebFetch:              onOff(s.Web.FetchEnabled),
+		FetchPrivateURLs:      onOff(s.Web.FetchAllowPrivate),
+		WebSearch:             s.Web.SearchEnabled,
+		SearchProvider:        s.Web.SearchProvider,
+		Subagents:             onOff(s.Subagents.EnabledValue()),
+		SubagentMaxConcurrent: strconv.Itoa(s.Subagents.MaxConcurrent),
+		SubagentTimeout:       fmt.Sprintf("%ds", s.Subagents.DefaultTimeoutSecs),
+		SubagentRetain:        strconv.Itoa(s.Subagents.MaxCompletedRetain),
+		BraveAPIKeyStatus:     status,
 	}
 }
 
 func configFromModalSettings(s modal.Settings) config.Settings {
+	enabled := s.Subagents != "off"
 	return config.NormalizeSettings(config.Settings{
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
@@ -38,6 +45,12 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 			SearchEnabled:     s.WebSearch,
 			SearchProvider:    s.SearchProvider,
 		},
+		Subagents: config.SubagentSettings{
+			Enabled:            boolPtr(enabled),
+			MaxConcurrent:      atoiDefault(s.SubagentMaxConcurrent, 4),
+			DefaultTimeoutSecs: parseSecondsDefault(s.SubagentTimeout, 600),
+			MaxCompletedRetain: atoiDefault(s.SubagentRetain, 100),
+		},
 	})
 }
 
@@ -46,6 +59,21 @@ func onOff(v bool) string {
 		return "on"
 	}
 	return "off"
+}
+
+func boolPtr(v bool) *bool { return &v }
+
+func atoiDefault(s string, fallback int) int {
+	v, err := strconv.Atoi(strings.TrimSpace(s))
+	if err != nil || v <= 0 {
+		return fallback
+	}
+	return v
+}
+
+func parseSecondsDefault(s string, fallback int) int {
+	s = strings.TrimSpace(strings.TrimSuffix(s, "s"))
+	return atoiDefault(s, fallback)
 }
 
 func braveKeyConfigured() bool {
@@ -70,6 +98,7 @@ func (m *RootModel) applySettings(s modal.Settings) {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
 	} else {
 		m.reconfigureWebTools()
+		m.reconfigureSubagentTools()
 	}
 	if m.showActivity() {
 		m.pendingTickCmd = m.startActivityTick()
@@ -101,4 +130,12 @@ func (m *RootModel) reconfigureWebTools() {
 	if s.Web.SearchEnabled == "on" && status != "" {
 		m.msgs.OnInfo("(" + status + ")")
 	}
+}
+
+func (m *RootModel) reconfigureSubagentTools() {
+	s := configFromModalSettings(m.settings)
+	for _, name := range []string{"spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent"} {
+		m.agent.Tools().Unregister(name)
+	}
+	m.agent.RegisterSubagentToolsEnabled(s.Subagents.EnabledValue())
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,57 @@ import (
 	"github.com/khang859/rune/internal/tools"
 	"github.com/khang859/rune/internal/tui/modal"
 )
+
+func TestRoot_SavesOnlyAfterFirstUserMessage(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	a := agent.New(faux.New().Reply("hello back").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	if _, err := os.Stat(s.Path()); !os.IsNotExist(err) {
+		t.Fatalf("new empty session should not be saved yet, stat err=%v", err)
+	}
+
+	cmd := m.startTurn("hi", nil)
+	if cmd == nil {
+		t.Fatal("expected startTurn command")
+	}
+	if _, err := os.Stat(s.Path()); err != nil {
+		t.Fatalf("session should be saved after first user message: %v", err)
+	}
+
+	loaded, err := session.Load(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := loaded.PathToActive()
+	if len(msgs) != 1 || msgs[0].Role != ai.RoleUser {
+		t.Fatalf("saved messages after startTurn = %#v, want one user message", msgs)
+	}
+}
+
+func TestRoot_SavesAssistantMessageWhenTurnCompletes(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.eventCh = make(chan agent.Event)
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hi"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "hello"}}})
+
+	_, _ = m.Update(AgentChannelDoneMsg{Ch: m.eventCh})
+
+	loaded, err := session.Load(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs := loaded.PathToActive()
+	if len(msgs) != 2 || msgs[1].Role != ai.RoleAssistant {
+		t.Fatalf("saved messages after done = %#v, want user + assistant", msgs)
+	}
+}
 
 func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
 	f := faux.New().Reply("hello back").Done()

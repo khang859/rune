@@ -9,14 +9,18 @@ import (
 )
 
 type Settings struct {
-	Effort            string
-	IconMode          string
-	ActivityMode      string
-	WebFetch          string
-	FetchPrivateURLs  string
-	WebSearch         string
-	SearchProvider    string
-	BraveAPIKeyStatus string
+	Effort                string
+	IconMode              string
+	ActivityMode          string
+	WebFetch              string
+	FetchPrivateURLs      string
+	WebSearch             string
+	SearchProvider        string
+	Subagents             string
+	SubagentMaxConcurrent string
+	SubagentTimeout       string
+	SubagentRetain        string
+	BraveAPIKeyStatus     string
 }
 
 type SettingsAction struct {
@@ -47,6 +51,21 @@ type settingsRow struct {
 	status  string
 }
 
+const (
+	settingsRowEffort = iota
+	settingsRowIconMode
+	settingsRowActivityMode
+	settingsRowWebFetch
+	settingsRowFetchPrivateURLs
+	settingsRowWebSearch
+	settingsRowSearchProvider
+	settingsRowBraveAPIKey
+	settingsRowSubagents
+	settingsRowSubagentMaxConcurrent
+	settingsRowSubagentTimeout
+	settingsRowSubagentRetain
+)
+
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
 	return &SettingsModal{cur: cur, rows: []settingsRow{
@@ -58,6 +77,10 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
 		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "searxng"}, cur.SearchProvider),
 		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
+		newSettingsRow("Subagents", "subagents", []string{"off", "on"}, cur.Subagents),
+		newSettingsRow("Subagents", "max concurrent", []string{"1", "2", "4", "8"}, cur.SubagentMaxConcurrent),
+		newSettingsRow("Subagents", "default timeout", []string{"30s", "60s", "120s", "300s", "600s"}, cur.SubagentTimeout),
+		newSettingsRow("Subagents", "keep recent", []string{"25", "50", "100", "250"}, cur.SubagentRetain),
 	}}
 }
 
@@ -82,6 +105,18 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.SearchProvider == "" {
 		s.SearchProvider = "auto"
+	}
+	if s.Subagents == "" {
+		s.Subagents = "on"
+	}
+	if s.SubagentMaxConcurrent == "" {
+		s.SubagentMaxConcurrent = "4"
+	}
+	if s.SubagentTimeout == "" {
+		s.SubagentTimeout = "600s"
+	}
+	if s.SubagentRetain == "" {
+		s.SubagentRetain = "100"
 	}
 	if s.BraveAPIKeyStatus == "" {
 		s.BraveAPIKeyStatus = "missing — Enter to set"
@@ -140,14 +175,18 @@ func (s *SettingsModal) cycleSelected(delta int) {
 
 func (s *SettingsModal) selectedSettings() Settings {
 	return Settings{
-		Effort:            s.rows[0].options[s.rows[0].value],
-		IconMode:          s.rows[1].options[s.rows[1].value],
-		ActivityMode:      s.rows[2].options[s.rows[2].value],
-		WebFetch:          s.rows[3].options[s.rows[3].value],
-		FetchPrivateURLs:  s.rows[4].options[s.rows[4].value],
-		WebSearch:         s.rows[5].options[s.rows[5].value],
-		SearchProvider:    s.rows[6].options[s.rows[6].value],
-		BraveAPIKeyStatus: s.cur.BraveAPIKeyStatus,
+		Effort:                s.rows[settingsRowEffort].options[s.rows[settingsRowEffort].value],
+		IconMode:              s.rows[settingsRowIconMode].options[s.rows[settingsRowIconMode].value],
+		ActivityMode:          s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
+		WebFetch:              s.rows[settingsRowWebFetch].options[s.rows[settingsRowWebFetch].value],
+		FetchPrivateURLs:      s.rows[settingsRowFetchPrivateURLs].options[s.rows[settingsRowFetchPrivateURLs].value],
+		WebSearch:             s.rows[settingsRowWebSearch].options[s.rows[settingsRowWebSearch].value],
+		SearchProvider:        s.rows[settingsRowSearchProvider].options[s.rows[settingsRowSearchProvider].value],
+		Subagents:             s.rows[settingsRowSubagents].options[s.rows[settingsRowSubagents].value],
+		SubagentMaxConcurrent: s.rows[settingsRowSubagentMaxConcurrent].options[s.rows[settingsRowSubagentMaxConcurrent].value],
+		SubagentTimeout:       s.rows[settingsRowSubagentTimeout].options[s.rows[settingsRowSubagentTimeout].value],
+		SubagentRetain:        s.rows[settingsRowSubagentRetain].options[s.rows[settingsRowSubagentRetain].value],
+		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
 	}
 }
 

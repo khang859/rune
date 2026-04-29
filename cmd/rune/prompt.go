@@ -60,8 +60,8 @@ func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	if agentsMD != "" {
 		system += "\n\nProject context:\n" + agentsMD
 	}
-	a := agent.New(p, reg, sess, system)
-	a.RegisterSubagentTools()
+	a := agent.NewWithSubagentConfig(p, reg, sess, system, agent.SubagentConfigFromSettings(settings.Subagents))
+	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: text}}}
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {

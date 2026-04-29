@@ -200,7 +200,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.compacting = false
-		m.stopActivityTick()
+		if !m.showActivity() {
+			m.stopActivityTick()
+		}
 		if !m.copyMode {
 			m.editor.Focus()
 		}
@@ -208,6 +210,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if v.err != nil {
 			m.msgs.OnTurnError(fmt.Errorf("compact failed: %v", v.err))
 		} else {
+			m.saveSessionIfStarted()
 			m.msgs.OnInfo(fmt.Sprintf("(compacted %d messages)", v.count))
 		}
 		m.layout()
@@ -266,10 +269,13 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// pop the queue on the wrong session.
 			return m, nil
 		}
+		m.saveSessionIfStarted()
 		m.streaming = false
 		m.eventCh = nil
 		m.cancel = nil
-		m.stopActivityTick()
+		if !m.showActivity() {
+			m.stopActivityTick()
+		}
 		if !m.copyMode {
 			m.editor.Focus()
 		}
@@ -418,6 +424,7 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	}
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	ch := m.agent.Run(ctx, msg)
+	m.saveSessionIfStarted()
 	m.eventCh = ch
 	return tea.Batch(nextEventCmd(ch), m.startActivityTick())
 }
@@ -940,6 +947,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 			m.clampThinkingForCurrentModel()
 			m.refreshFooterThinkingEffort()
+			m.saveSessionIfStarted()
 		}
 	case *modal.ThinkingPicker:
 		if effort, ok := payload.(string); ok {
@@ -992,6 +1000,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				} else {
 					m.sess.Active = target
 				}
+				m.saveSessionIfStarted()
 				m.rebuildMessagesFromSession()
 			}
 		}
@@ -1033,6 +1042,13 @@ func (m *RootModel) startNewSession() {
 	m.swapSession(nc)
 }
 
+func (m *RootModel) saveSessionIfStarted() {
+	if m == nil || m.sess == nil || len(m.sess.PathToActive()) == 0 {
+		return
+	}
+	_ = m.sess.Save()
+}
+
 func sessionLabel(s *session.Session) string {
 	if s == nil {
 		return ""
@@ -1068,9 +1084,9 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
 	prev := m.agent.ReasoningEffort()
-	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), s, m.agent.System())
+	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), s, m.agent.System(), currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
-	m.agent.RegisterSubagentTools()
+	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
 	m.pendingSubagentContinuation = false
@@ -1243,7 +1259,7 @@ func (m *RootModel) renderActivityLine() string {
 	left := ""
 	if m.streaming || m.compacting {
 		phrases := m.activityPhrases()
-		left = activitySpinnerFrame(m.activityFrame) + " " + phrases[m.activityPhrase%len(phrases)]
+		left = activityMotionText(phrases[m.activityPhrase%len(phrases)], m.activityFrame)
 	}
 	right := m.renderSubagentActivityIndicator()
 	line := composeActivityLine(left, right, m.width)
@@ -1259,14 +1275,14 @@ func (m *RootModel) renderSubagentActivityIndicator() string {
 	if n != 1 {
 		label = "subagents"
 	}
-	return fmt.Sprintf("%s %d %s working…", activitySpinnerFrame(m.activityFrame+1), n, label)
+	return subagentSpinnerText(fmt.Sprintf("%d %s working", n, label), m.activityFrame)
 }
 
 func composeActivityLine(left, right string, width int) string {
 	left = strings.TrimSpace(left)
 	right = strings.TrimSpace(right)
 	if left == "" {
-		return fitActivitySegment(right, width)
+		return rightAlignActivitySegment(right, width)
 	}
 	if right == "" {
 		return fitActivitySegment(left, width)
@@ -1278,7 +1294,7 @@ func composeActivityLine(left, right string, width int) string {
 	rightW := lipgloss.Width(right)
 	if leftW+1+rightW > width {
 		if rightW+1 >= width {
-			return fitActivitySegment(right, width)
+			return rightAlignActivitySegment(right, width)
 		}
 		left = fitActivitySegment(left, width-rightW-1)
 		leftW = lipgloss.Width(left)
@@ -1288,6 +1304,17 @@ func composeActivityLine(left, right string, width int) string {
 		pad = 1
 	}
 	return left + strings.Repeat(" ", pad) + right
+}
+
+func rightAlignActivitySegment(s string, width int) string {
+	if width <= 0 {
+		return s
+	}
+	w := lipgloss.Width(s)
+	if w >= width {
+		return fitActivitySegment(s, width)
+	}
+	return strings.Repeat(" ", width-w) + s
 }
 
 func fitActivitySegment(s string, width int) string {
@@ -1315,9 +1342,19 @@ func nextActivityPhraseIndex(current, phraseCount int) int {
 	return next
 }
 
-func activitySpinnerFrame(frame int) string {
-	frames := []string{"◐", "◓", "◑", "◒"}
-	return frames[frame%len(frames)]
+func activityMotionText(text string, frame int) string {
+	dots := []string{"", ".", "..", "..."}
+	base := strings.TrimRight(strings.TrimSpace(text), ".…")
+	return base + dots[frame%len(dots)]
+}
+
+// subagentSpinnerText prefixes the subagent indicator with a fixed-width
+// braille spinner instead of trailing dots. The constant width keeps the
+// right edge of the activity bar from jiggling as frames advance.
+func subagentSpinnerText(text string, frame int) string {
+	spinner := []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+	base := strings.TrimRight(strings.TrimSpace(text), ".…")
+	return spinner[frame%len(spinner)] + " " + base
 }
 
 func simpleActivityPhrases() []string {
@@ -1433,9 +1470,9 @@ func (m *RootModel) refreshSystemPrompt() {
 	home, _ := os.UserHomeDir()
 	sys := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	prev := m.agent.ReasoningEffort()
-	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), m.sess, sys)
+	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), m.sess, sys, currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
-	m.agent.RegisterSubagentTools()
+	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
 	m.pendingSubagentContinuation = false

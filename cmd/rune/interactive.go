@@ -66,8 +66,8 @@ func runInteractive(ctx context.Context, model string) error {
 	}).Load()
 
 	system := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
-	a := agent.New(p, reg, sess, system)
-	a.RegisterSubagentTools()
+	a := agent.NewWithSubagentConfig(p, reg, sess, system, agent.SubagentConfigFromSettings(settings.Subagents))
+	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 
 	return tui.Run(a, sess, skills, mgr.Statuses())
 }
