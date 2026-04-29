@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,7 @@ type RootModel struct {
 	showToolResults bool
 	pendingTickCmd  tea.Cmd
 	activityFrame   int
+	activityPhrase  int
 	activityTicking bool
 	activitySeq     int
 
@@ -213,6 +215,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.activityFrame++
+		if m.activityFrame%activityPhraseChangeFrames == 0 {
+			m.activityPhrase = nextActivityPhraseIndex(m.activityPhrase, len(m.activityPhrases()))
+		}
 		return m, m.startActivityTick()
 
 	case AgentEventMsg:
@@ -881,8 +886,13 @@ func (m *RootModel) handleCtrlC() (tea.Model, tea.Cmd) {
 
 type activityTickMsg struct{ seq int }
 
+const (
+	activityTickInterval       = 120 * time.Millisecond
+	activityPhraseChangeFrames = 14
+)
+
 func activityTickCmd(seq int) tea.Cmd {
-	return tea.Tick(time.Second, func(time.Time) tea.Msg { return activityTickMsg{seq: seq} })
+	return tea.Tick(activityTickInterval, func(time.Time) tea.Msg { return activityTickMsg{seq: seq} })
 }
 
 func (m *RootModel) startActivityTick() tea.Cmd {
@@ -909,16 +919,49 @@ func (m *RootModel) renderActivityLine() string {
 	if !m.showActivity() {
 		return ""
 	}
-	phrases := simpleActivityPhrases()
-	if m.settings.ActivityMode == "arcane" || m.settings.ActivityMode == "" {
-		phrases = arcaneActivityPhrases(m.styles.Icons)
-	}
-	line := phrases[m.activityFrame%len(phrases)]
+	phrases := m.activityPhrases()
+	line := activitySpinnerFrame(m.activityFrame) + " " + phrases[m.activityPhrase%len(phrases)]
 	return m.styles.Activity.Width(m.width).Render(line)
 }
 
+func (m *RootModel) activityPhrases() []string {
+	if m.settings.ActivityMode == "arcane" || m.settings.ActivityMode == "" {
+		return arcaneActivityPhrases(m.styles.Icons)
+	}
+	return simpleActivityPhrases()
+}
+
+func nextActivityPhraseIndex(current, phraseCount int) int {
+	if phraseCount <= 1 {
+		return 0
+	}
+	next := rand.IntN(phraseCount - 1)
+	if next >= current%phraseCount {
+		next++
+	}
+	return next
+}
+
+func activitySpinnerFrame(frame int) string {
+	frames := []string{"◐", "◓", "◑", "◒"}
+	return frames[frame%len(frames)]
+}
+
 func simpleActivityPhrases() []string {
-	return []string{"running...", "waiting for response...", "working..."}
+	return []string{
+		"running...",
+		"waiting for response...",
+		"working...",
+		"thinking...",
+		"checking the plan...",
+		"reading context...",
+		"following the trail...",
+		"looking things over...",
+		"sorting it out...",
+		"making progress...",
+		"connecting the dots...",
+		"reviewing the details...",
+	}
 }
 
 func arcaneActivityPhrases(icons IconSet) []string {
@@ -929,6 +972,50 @@ func arcaneActivityPhrases(icons IconSet) []string {
 		iconLabel(icons.Summary, "opening the grimoire..."),
 		iconLabel(icons.Tool, "binding tools to the circle..."),
 		iconLabel(icons.Context, "measuring the leyline pressure..."),
+		iconLabel(icons.Thinking, "listening for compiler omens..."),
+		iconLabel(icons.Assistant, "deciphering ancient stack traces..."),
+		iconLabel(icons.Invoke, "aligning the sigils..."),
+		iconLabel(icons.Summary, "dusting off a forgotten scroll..."),
+		iconLabel(icons.Tool, "sharpening the ritual dagger..."),
+		iconLabel(icons.Context, "charting the ley lines..."),
+		iconLabel(icons.Thinking, "stirring the cauldron..."),
+		iconLabel(icons.Assistant, "summoning a helpful familiar..."),
+		iconLabel(icons.Invoke, "etching glyphs into the terminal..."),
+		iconLabel(icons.Summary, "reading tea leaves in the diff..."),
+		iconLabel(icons.Tool, "polishing the crystal ball..."),
+		iconLabel(icons.Context, "weighing the context crystals..."),
+		iconLabel(icons.Thinking, "casting a careful incantation..."),
+		iconLabel(icons.Assistant, "wandering the astral syntax tree..."),
+		iconLabel(icons.Invoke, "opening a tiny portal..."),
+		iconLabel(icons.Summary, "consulting the moonlit changelog..."),
+		iconLabel(icons.Tool, "feeding breadcrumbs to the tools..."),
+		iconLabel(icons.Context, "counting tokens by candlelight..."),
+		iconLabel(icons.Thinking, "asking the oracle for hints..."),
+		iconLabel(icons.Assistant, "tracking a spectral bug..."),
+		iconLabel(icons.Invoke, "braiding command threads..."),
+		iconLabel(icons.Summary, "unrolling the parchment..."),
+		iconLabel(icons.Tool, "charging the wand..."),
+		iconLabel(icons.Context, "mapping hidden corridors..."),
+		iconLabel(icons.Thinking, "brewing a safer answer..."),
+		iconLabel(icons.Assistant, "translating whispers from the repo..."),
+		iconLabel(icons.Invoke, "nudging the invocation circle..."),
+		iconLabel(icons.Summary, "indexing enchanted footnotes..."),
+		iconLabel(icons.Tool, "waking the clockwork helpers..."),
+		iconLabel(icons.Context, "measuring the spell radius..."),
+		iconLabel(icons.Thinking, "testing the wards..."),
+		iconLabel(icons.Assistant, "following foxfire through the files..."),
+		iconLabel(icons.Invoke, "threading a silver needle..."),
+		iconLabel(icons.Summary, "checking the prophecy twice..."),
+		iconLabel(icons.Tool, "calibrating the astrolabe..."),
+		iconLabel(icons.Context, "gathering stardust from context..."),
+		iconLabel(icons.Thinking, "pondering beneath a wizard hat..."),
+		iconLabel(icons.Assistant, "hunting gremlins in the margins..."),
+		iconLabel(icons.Invoke, "whispering to the shell spirits..."),
+		iconLabel(icons.Summary, "illuminating the manuscript..."),
+		iconLabel(icons.Tool, "unlocking the tool chest..."),
+		iconLabel(icons.Context, "balancing the mana budget..."),
+		iconLabel(icons.Thinking, "peering beyond the veil..."),
+		iconLabel(icons.Assistant, "arranging constellations of code..."),
 	}
 }
 
