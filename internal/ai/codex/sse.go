@@ -87,12 +87,29 @@ type respIncomplete struct {
 	} `json:"response"`
 }
 
+// respFailed mirrors the shape of a "response.failed" SSE frame from the
+// OpenAI Responses API. The error is nested under "response", same as
+// "response.incomplete" — putting it at the top level here would silently
+// drop the message and surface as an empty error to users.
 type respFailed struct {
+	Type     string `json:"type"`
+	Response struct {
+		Error struct {
+			Message string `json:"message"`
+			Code    string `json:"code"`
+		} `json:"error"`
+	} `json:"response"`
+}
+
+// streamErrorEvent matches the bare "event: error" SSE frame, where the error
+// object is at the top level of the data payload.
+type streamErrorEvent struct {
 	Type  string `json:"type"`
 	Error struct {
 		Message string `json:"message"`
-		Code    string `json:"code"`
+		Code    any    `json:"code"`
 	} `json:"error"`
+	Message string `json:"message"`
 }
 
 type textDelta struct {
@@ -301,8 +318,27 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 	case "response.failed":
 		var rf respFailed
 		_ = json.Unmarshal([]byte(data), &rf)
+		msg := rf.Response.Error.Message
+		if msg == "" {
+			msg = "response failed (no error message in payload)"
+		}
 		return send(ctx, out, ai.StreamError{
-			Err:   errString(rf.Error.Message),
+			Err:   errString(msg),
+			Class: ai.ErrFatal,
+		})
+
+	case "error":
+		var ev streamErrorEvent
+		_ = json.Unmarshal([]byte(data), &ev)
+		msg := ev.Error.Message
+		if msg == "" {
+			msg = ev.Message
+		}
+		if msg == "" {
+			msg = "stream error (no message in payload)"
+		}
+		return send(ctx, out, ai.StreamError{
+			Err:   errString(msg),
 			Class: ai.ErrFatal,
 		})
 	}

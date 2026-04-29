@@ -1,0 +1,2 @@
+event: error
+data: {"type":"error","error":{"code":"invalid_request_error","message":"input too large"}}

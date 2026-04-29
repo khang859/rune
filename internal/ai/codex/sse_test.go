@@ -140,6 +140,88 @@ func TestParseSSE_ContextOverflow(t *testing.T) {
 	t.Fatal("missing Done{context_overflow}")
 }
 
+func TestParseSSE_ResponseFailed_SurfacesNestedErrorMessage(t *testing.T) {
+	// Regression: the API nests the error under "response.error", not at the
+	// top level. If respFailed reads the wrong path the user sees an empty
+	// "error:" block in the TUI.
+	b, _ := os.ReadFile("testdata/stream_failed.sse")
+	out := make(chan ai.Event, 32)
+	if err := parseSSE(context.Background(), strings.NewReader(string(b)), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+	evs := collect(t, out)
+
+	var se ai.StreamError
+	var found bool
+	for _, e := range evs {
+		if v, ok := e.(ai.StreamError); ok {
+			se = v
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no StreamError emitted for response.failed")
+	}
+	if se.Err == nil || se.Err.Error() != "internal server error" {
+		t.Fatalf("StreamError.Err = %v, want %q", se.Err, "internal server error")
+	}
+	if se.Class != ai.ErrFatal {
+		t.Fatalf("StreamError.Class = %v, want ErrFatal", se.Class)
+	}
+}
+
+func TestParseSSE_ErrorEvent_SurfacesMessage(t *testing.T) {
+	// The Responses streaming API can also emit a bare "event: error" frame
+	// (top-level "error" object). Previously dispatchEvent dropped it, so the
+	// stream ended without a Done event and the caller saw "stream ended
+	// unexpectedly" instead of the actual cause.
+	b, _ := os.ReadFile("testdata/stream_error_event.sse")
+	out := make(chan ai.Event, 32)
+	if err := parseSSE(context.Background(), strings.NewReader(string(b)), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+	evs := collect(t, out)
+
+	var se ai.StreamError
+	var found bool
+	for _, e := range evs {
+		if v, ok := e.(ai.StreamError); ok {
+			se = v
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no StreamError emitted for event: error")
+	}
+	if se.Err == nil || se.Err.Error() != "input too large" {
+		t.Fatalf("StreamError.Err = %v, want %q", se.Err, "input too large")
+	}
+}
+
+func TestParseSSE_ResponseFailed_FallbackOnEmptyMessage(t *testing.T) {
+	// Defensive: even if the upstream payload doesn't carry a message, never
+	// surface a bare "error:" with empty text to the user.
+	const data = `event: response.failed
+data: {"type":"response.failed","response":{"status":"failed","error":{}}}
+`
+	out := make(chan ai.Event, 4)
+	if err := parseSSE(context.Background(), strings.NewReader(data), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+	for _, e := range collect(t, out) {
+		if v, ok := e.(ai.StreamError); ok {
+			if v.Err == nil || v.Err.Error() == "" {
+				t.Fatalf("empty StreamError.Err — TUI would render a bare 'error:'")
+			}
+			return
+		}
+	}
+	t.Fatal("no StreamError emitted")
+}
+
 func TestParseSSE_ReasoningSummary(t *testing.T) {
 	b, _ := os.ReadFile("testdata/stream_reasoning.sse")
 	out := make(chan ai.Event, 32)
