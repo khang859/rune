@@ -109,10 +109,18 @@ func messageToInputItems(m ai.Message) ([]inputItem, error) {
 	case ai.RoleToolResult:
 		for _, c := range m.Content {
 			if v, ok := c.(ai.ToolResultBlock); ok {
+				out := v.Output
+				if out == "" {
+					// The Responses API rejects function_call_output items
+					// without an "output" field, and our struct tag is
+					// omitempty. Substitute a placeholder so the field is
+					// always serialized.
+					out = "(no output)"
+				}
 				return []inputItem{{
 					Type:   "function_call_output",
 					CallID: v.ToolCallID,
-					Output: v.Output,
+					Output: out,
 				}}, nil
 			}
 		}

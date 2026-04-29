@@ -13,6 +13,13 @@ type Styles struct {
 	SummaryHeader  lipgloss.Style
 	ThinkingHeader lipgloss.Style
 	Footer         lipgloss.Style
+	FooterApp      lipgloss.Style
+	FooterCwd      lipgloss.Style
+	FooterSession  lipgloss.Style
+	FooterModel    lipgloss.Style
+	FooterTokens   lipgloss.Style
+	FooterContext  lipgloss.Style
+	FooterSep      lipgloss.Style
 	EditorBox      lipgloss.Style
 	Activity       lipgloss.Style
 	Icons          IconSet
@@ -34,7 +41,14 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		Info:           lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color("8")),
 		SummaryHeader:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
 		ThinkingHeader: lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
-		Footer:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Reverse(true).Padding(0, 1),
+		Footer:         lipgloss.NewStyle().Padding(0, 1),
+		FooterApp:      lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
+		FooterCwd:      lipgloss.NewStyle().Foreground(lipgloss.Color("12")),
+		FooterSession:  lipgloss.NewStyle().Foreground(lipgloss.Color("6")),
+		FooterModel:    lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
+		FooterTokens:   lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
+		FooterContext:  lipgloss.NewStyle().Foreground(lipgloss.Color("5")),
+		FooterSep:      lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
 		EditorBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
 		Activity:       lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
 		Icons:          IconSetForMode(mode),

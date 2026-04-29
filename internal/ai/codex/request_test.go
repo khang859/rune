@@ -43,6 +43,47 @@ func TestBuildPayload_PreservesParallelToolCallsInOneAssistantMessage(t *testing
 	}
 }
 
+func TestBuildPayload_EmptyToolOutputSerializesPlaceholder(t *testing.T) {
+	req := ai.Request{
+		Model: "gpt-5",
+		Messages: []ai.Message{
+			{Role: ai.RoleAssistant, Content: []ai.ContentBlock{
+				ai.ToolUseBlock{ID: "fc_AAA", Name: "bash", Args: json.RawMessage(`{"command":"grep zzz"}`)},
+			}},
+			{Role: ai.RoleToolResult, ToolCallID: "fc_AAA", Content: []ai.ContentBlock{
+				ai.ToolResultBlock{ToolCallID: "fc_AAA", Output: ""},
+			}},
+		},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Input []map[string]any `json:"input"`
+	}
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, item := range decoded.Input {
+		if item["type"] != "function_call_output" {
+			continue
+		}
+		found = true
+		out, ok := item["output"]
+		if !ok {
+			t.Fatalf("function_call_output is missing the required 'output' field — the API rejects this with 400:\n%s", string(b))
+		}
+		if out == "" {
+			t.Fatalf("function_call_output.output is empty — should be a non-empty placeholder:\n%s", string(b))
+		}
+	}
+	if !found {
+		t.Fatalf("no function_call_output item in payload:\n%s", string(b))
+	}
+}
+
 func TestBuildPayload_IncludesMessagesAndTools(t *testing.T) {
 	req := ai.Request{
 		Model:  "gpt-5",
