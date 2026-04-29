@@ -9,10 +9,19 @@ subscriptions via OAuth.
 ## Quick start
 
 ```bash
-go install github.com/khang859/rune/cmd/rune@latest
+curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh
 
 rune login codex          # opens a browser to auth via your ChatGPT account
 rune                      # interactive mode
+```
+
+The installer downloads the latest GitHub release for macOS or Linux and can be
+rerun later to update rune.
+
+If you have Go installed, you can also install or update from source:
+
+```bash
+go install github.com/khang859/rune/cmd/rune@latest
 ```
 
 ## Usage
