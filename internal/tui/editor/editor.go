@@ -121,6 +121,19 @@ func (e *Editor) SetWidth(w int) {
 func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
+
+// Reset clears the textarea and any open overlay (file picker, slash menu),
+// and resets history navigation so the next Up arrow starts from the latest
+// entry. Used by the host when surfacing a "discard input" affordance like
+// Ctrl+C's first press.
+func (e *Editor) Reset() {
+	e.ta.Reset()
+	e.closeOverlay()
+	if e.hist != nil {
+		e.hist.Reset()
+	}
+	e.updateHeight()
+}
 func (e *Editor) Rows() int       { return e.cap(rowsFor(e.ta.Value(), e.width)) }
 func (e *Editor) RawRows() int    { return rowsFor(e.ta.Value(), e.width) }
 

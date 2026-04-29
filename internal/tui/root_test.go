@@ -35,6 +35,7 @@ func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
 	}, teatest.WithDuration(2*time.Second))
 
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
 }
 
@@ -50,18 +51,165 @@ type unknownCSIString string
 
 func (s unknownCSIString) String() string { return string(s) }
 
-func TestRoot_CtrlCQuitsEvenWhileStreaming(t *testing.T) {
+func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.streaming = true
+	cancelled := false
+	m.cancel = func() { cancelled = true }
 
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.quitPrimed {
+		t.Fatal("first Ctrl+C should prime the quit indicator")
+	}
+	if !cancelled {
+		t.Fatal("first Ctrl+C should cancel an in-flight streaming turn")
+	}
 	if cmd == nil {
-		t.Fatal("expected Quit cmd while streaming, got nil")
+		t.Fatal("expected a quitPrimeExpired tick cmd, got nil")
+	}
+	if msg := cmd(); msg == (tea.QuitMsg{}) {
+		t.Fatalf("first Ctrl+C must not produce tea.QuitMsg")
+	}
+	if !strings.Contains(m.View(), "Press Ctrl+C again to exit") {
+		t.Fatal("expected primed indicator in View()")
+	}
+}
+
+func TestRoot_CtrlCSecondPressQuits(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if cmd == nil {
+		t.Fatal("expected Quit cmd from second Ctrl+C")
 	}
 	if msg := cmd(); msg != (tea.QuitMsg{}) {
 		t.Fatalf("expected tea.QuitMsg, got %T", msg)
+	}
+}
+
+func TestRoot_CtrlCFirstPressClearsEditorInput(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	for _, r := range "hello world" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if !strings.Contains(m.View(), "hello world") {
+		t.Fatal("setup: editor should contain typed text before Ctrl+C")
+	}
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	if strings.Contains(m.View(), "hello world") {
+		t.Fatal("first Ctrl+C should clear the editor input")
+	}
+	if !m.quitPrimed {
+		t.Fatal("first Ctrl+C should prime the indicator")
+	}
+}
+
+func TestRoot_NonCtrlCKeyDisarmsQuitPrime(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.quitPrimed {
+		t.Fatal("setup: expected quit primed after first Ctrl+C")
+	}
+
+	// Any non-Ctrl+C key must dis-arm so a subsequent Ctrl+C primes again
+	// rather than exiting.
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	if m.quitPrimed {
+		t.Fatal("typing should dis-arm the quit indicator")
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if !m.quitPrimed {
+		t.Fatal("Ctrl+C after dis-arm should re-prime, not quit")
+	}
+	if cmd == nil {
+		t.Fatal("expected primed tick cmd")
+	}
+	if msg := cmd(); msg == (tea.QuitMsg{}) {
+		t.Fatal("Ctrl+C after dis-arm must not quit immediately")
+	}
+}
+
+func TestRoot_QuitPrimeExpiresAfterTimeout(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	seq := m.quitPrimedSeq
+	if !m.quitPrimed {
+		t.Fatal("setup: first Ctrl+C should prime")
+	}
+
+	_, _ = m.Update(quitPrimeExpiredMsg{seq: seq})
+
+	if m.quitPrimed {
+		t.Fatal("matching expiration tick should clear the primed flag")
+	}
+	if strings.Contains(m.View(), "Press Ctrl+C again to exit") {
+		t.Fatal("indicator should not render after expiration")
+	}
+}
+
+func TestRoot_StaleQuitPrimeExpirationIgnored(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	staleSeq := m.quitPrimedSeq
+	// Re-prime by dis-arming (typing) then pressing Ctrl+C again.
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'x'}})
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+
+	// A late tick from the prior priming cycle must not clear the
+	// currently-primed state.
+	_, _ = m.Update(quitPrimeExpiredMsg{seq: staleSeq})
+	if !m.quitPrimed {
+		t.Fatal("stale expiration tick must not dis-arm an active prime")
+	}
+}
+
+func TestRoot_CtrlCWithModalOpenClosesModalAndPrimes(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.handleSlashCommand("/hotkeys")
+	if m.modal == nil {
+		t.Fatal("setup: modal should be open")
+	}
+
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	if m.modal != nil {
+		t.Fatal("first Ctrl+C should close the open modal")
+	}
+	if !m.quitPrimed {
+		t.Fatal("first Ctrl+C should prime even with a modal open")
+	}
+	if cmd == nil {
+		t.Fatal("expected tick cmd")
+	}
+	if msg := cmd(); msg == (tea.QuitMsg{}) {
+		t.Fatal("first Ctrl+C with modal open must not quit")
 	}
 }
 

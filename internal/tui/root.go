@@ -59,7 +59,17 @@ type RootModel struct {
 
 	skills           map[string]string
 	pendingSkillBody string
+
+	// Ctrl+C requires a double press to exit. The first press clears the
+	// editor (and closes a modal / cancels a streaming turn), primes the
+	// "press again to exit" indicator, and schedules a quitPrimeExpiredMsg
+	// after quitPrimeWindow. The seq counter invalidates stale ticks after
+	// dis-arm (any other key disarms early).
+	quitPrimed    bool
+	quitPrimedSeq int
 }
+
+const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
 	"/quit", "/model", "/tree", "/resume", "/settings",
@@ -132,7 +142,30 @@ func normalizeShiftEnterMsg(msg tea.Msg) tea.Msg {
 
 func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	msg = normalizeShiftEnterMsg(msg)
+
+	// Single point of Ctrl+C handling. First press primes/clears, second
+	// quits. Any other key while primed dis-arms the indicator. This runs
+	// before the type switch so it covers both the modal-open and main
+	// paths uniformly.
+	if k, ok := msg.(tea.KeyMsg); ok {
+		if k.Type == tea.KeyCtrlC {
+			return m.handleCtrlC()
+		}
+		if m.quitPrimed {
+			m.quitPrimed = false
+			m.quitPrimedSeq++
+			m.layout()
+		}
+	}
+
 	switch v := msg.(type) {
+	case quitPrimeExpiredMsg:
+		if v.seq != m.quitPrimedSeq {
+			return m, nil
+		}
+		m.quitPrimed = false
+		m.layout()
+		return m, nil
 	case compactDoneMsg:
 		// Drop late completions from a session that was swapped out mid-compact.
 		if v.sess != m.sess {
@@ -239,19 +272,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	if m.modal != nil {
-		// Quit shortcut still works while a modal is open.
-		if k, ok := msg.(tea.KeyMsg); ok && k.Type == tea.KeyCtrlC {
-			return m, tea.Quit
-		}
 		next, cmd := m.modal.Update(msg)
 		m.modal = next
 		return m, cmd
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok {
-		if k.Type == tea.KeyCtrlC {
-			return m, tea.Quit
-		}
 		if k.Type == tea.KeyShiftTab {
 			return m, m.toggleCopyMode()
 		}
@@ -468,6 +494,10 @@ func (m *RootModel) View() string {
 	if m.copyMode {
 		banner = m.styles.CopyModeBanner.Render("[copy mode] drag to highlight, copy with your terminal shortcut · Shift+Tab/Esc to exit")
 	}
+	quitNotice := ""
+	if m.quitPrimed {
+		quitNotice = m.styles.QuitPrimedBanner.Render("Press Ctrl+C again to exit")
+	}
 
 	out := msgArea
 	if activity != "" {
@@ -478,6 +508,9 @@ func (m *RootModel) View() string {
 	}
 	if hint != "" {
 		out += "\n" + hint
+	}
+	if quitNotice != "" {
+		out += "\n" + quitNotice
 	}
 	out += "\n" + edArea
 	if overlay != "" {
@@ -578,7 +611,11 @@ func (m *RootModel) layout() {
 	if m.copyMode {
 		bannerRows = 1
 	}
-	msgH := m.height - footerH - editorH - overlayRows - activityRows - hintRows - bannerRows
+	quitPrimedRows := 0
+	if m.quitPrimed {
+		quitPrimedRows = 1
+	}
+	msgH := m.height - footerH - editorH - overlayRows - activityRows - hintRows - bannerRows - quitPrimedRows
 	if msgH < 3 {
 		msgH = 3
 	}
@@ -809,6 +846,33 @@ type thinkingTickMsg struct{}
 
 func thinkingTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return thinkingTickMsg{} })
+}
+
+type quitPrimeExpiredMsg struct{ seq int }
+
+func quitPrimeExpiredCmd(seq int) tea.Cmd {
+	return tea.Tick(quitPrimeWindow, func(time.Time) tea.Msg { return quitPrimeExpiredMsg{seq: seq} })
+}
+
+// handleCtrlC implements double-press-to-exit. The first press clears the
+// editor (and closes a modal / cancels a streaming turn if applicable), then
+// arms the "press Ctrl+C again to exit" indicator for quitPrimeWindow.
+// A second press within that window quits.
+func (m *RootModel) handleCtrlC() (tea.Model, tea.Cmd) {
+	if m.quitPrimed {
+		return m, tea.Quit
+	}
+	if m.modal != nil {
+		m.modal = nil
+	}
+	if m.streaming && m.cancel != nil {
+		m.cancel()
+	}
+	m.editor.Reset()
+	m.quitPrimed = true
+	m.quitPrimedSeq++
+	m.layout()
+	return m, quitPrimeExpiredCmd(m.quitPrimedSeq)
 }
 
 type activityTickMsg struct{ seq int }
