@@ -140,7 +140,7 @@ func (m *Messages) AppendSummary(text string, count int) {
 	m.blocks = append(m.blocks, block{kind: bkSummary, text: text, count: count})
 }
 
-func (m *Messages) Render(s Styles, showThinking bool, now time.Time) string {
+func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {
 	var sb strings.Builder
 	for i, b := range m.blocks {
 		if i > 0 {
@@ -151,20 +151,24 @@ func (m *Messages) Render(s Styles, showThinking bool, now time.Time) string {
 		case bkUser:
 			rendered = s.User.Render("user> ") + b.text
 		case bkAssistant:
-			rendered = s.Assistant.Render(b.text)
+			if i == m.streamingAsstIdx {
+				rendered = s.Assistant.Render(b.text)
+			} else {
+				rendered = s.Markdown.Render(b.text)
+			}
 		case bkThinking:
 			rendered = renderThinking(s, b, showThinking, now)
 		case bkToolCall:
 			rendered = s.ToolCall.Render(fmt.Sprintf("· %s(%s)", b.meta, b.text))
 		case bkToolResult:
-			rendered = s.ToolResult.Render(fmt.Sprintf("← %s\n%s", b.meta, b.text))
+			rendered = renderToolResult(s, b, showToolResults)
 		case bkError:
 			rendered = s.ToolError.Render("error: " + b.text)
 		case bkInfo:
 			rendered = s.Info.Render(b.text)
 		case bkSummary:
 			header := fmt.Sprintf("── compacted summary (%d messages) ──", b.count)
-			rendered = s.SummaryHeader.Render(header) + "\n" + s.Assistant.Render(b.text)
+			rendered = s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
 		}
 		if m.width > 0 {
 			rendered = ansi.Wrap(rendered, m.width, " \t")
@@ -198,4 +202,15 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 		return headerLine
 	}
 	return headerLine + "\n" + s.Thinking.Render(b.text)
+}
+
+func renderToolResult(s Styles, b block, show bool) string {
+	if show {
+		return s.ToolResult.Render(fmt.Sprintf("▾ ← %s\n%s", b.meta, b.text))
+	}
+	lines := 0
+	if b.text != "" {
+		lines = strings.Count(b.text, "\n") + 1
+	}
+	return s.ToolResult.Render(fmt.Sprintf("▸ ← %s (%d lines)", b.meta, lines))
 }

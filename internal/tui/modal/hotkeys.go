@@ -24,6 +24,7 @@ func (Hotkeys) View(width, height int) string {
   Ctrl+C ×2       quit
   Ctrl+L          /model
   Ctrl+T          toggle thinking
+  Ctrl+R          toggle tool results
   Tab             path completion
   @               file picker
   /               command menu

@@ -93,7 +93,7 @@ func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected cmd from drain (startTurn)")
 	}
-	out := m.msgs.Render(m.styles, false, time.Time{})
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
 	if !strings.Contains(out, "queued one") {
 		t.Fatalf("expected queued message in chat log; got: %q", out)
 	}
@@ -128,7 +128,7 @@ func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 
 	// A stale event from the old channel must not reach handleEvent.
 	_, _ = m.Update(AgentEventMsg{Event: agent.AssistantText{Delta: "STALE"}, Ch: oldCh})
-	if got := m.msgs.Render(m.styles, false, time.Time{}); strings.Contains(got, "STALE") {
+	if got := m.msgs.Render(m.styles, false, false, time.Time{}); strings.Contains(got, "STALE") {
 		t.Fatalf("stale event leaked into messages: %q", got)
 	}
 
@@ -170,7 +170,7 @@ func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
 	m.compacting = true
 
 	_, _ = m.Update(compactDoneMsg{sess: s, count: 4})
-	out := m.msgs.Render(m.styles, false, time.Time{})
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
 	if !strings.Contains(out, "compacted summary (4 messages)") {
 		t.Fatalf("missing summary header: %q", out)
 	}
@@ -193,7 +193,7 @@ func TestRoot_CompactDoneSurfacesError(t *testing.T) {
 	m.compacting = true
 
 	_, _ = m.Update(compactDoneMsg{sess: s, err: fmt.Errorf("boom")})
-	out := m.msgs.Render(m.styles, false, time.Time{})
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
 	if !strings.Contains(out, "compact failed") || !strings.Contains(out, "boom") {
 		t.Fatalf("error not surfaced: %q", out)
 	}
@@ -215,7 +215,7 @@ func TestRoot_CompactDoneFromSwappedSessionIsDropped(t *testing.T) {
 	if !m.compacting {
 		t.Fatal("stale compactDoneMsg must not clear compacting flag on the active session")
 	}
-	if strings.Contains(m.msgs.Render(m.styles, false, time.Time{}), "compacted 9 messages") {
+	if strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "compacted 9 messages") {
 		t.Fatal("stale compactDoneMsg leaked into messages")
 	}
 }
@@ -232,7 +232,7 @@ func TestRoot_CompactQueuesUserInputAndDrainsOnDone(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected drain cmd after compactDoneMsg with queued item")
 	}
-	if !strings.Contains(m.msgs.Render(m.styles, false, time.Time{}), "queued during compact") {
+	if !strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "queued during compact") {
 		t.Fatal("queued message did not appear in chat after compact done")
 	}
 }
@@ -248,7 +248,7 @@ func TestRoot_RefusesCompactWhileStreaming(t *testing.T) {
 	if got != nil {
 		t.Fatal("/compact must be a no-op while streaming")
 	}
-	if !strings.Contains(m.msgs.Render(m.styles, false, time.Time{}), "busy") {
+	if !strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "busy") {
 		t.Fatal("expected busy notice after /compact while streaming")
 	}
 }

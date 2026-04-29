@@ -48,8 +48,9 @@ type RootModel struct {
 	clipboardReady  bool
 	clipboardErr    error
 
-	showThinking   bool
-	pendingTickCmd tea.Cmd
+	showThinking    bool
+	showToolResults bool
+	pendingTickCmd  tea.Cmd
 
 	skills           map[string]string
 	pendingSkillBody string
@@ -205,10 +206,17 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.cancel()
 			return m, nil
 		}
-		if k.Type == tea.KeyCtrlT {
-			m.showThinking = !m.showThinking
-			m.refreshViewport()
-			return m, nil
+		if m.editor.Mode() == editor.ModeNormal {
+			if k.Type == tea.KeyCtrlT {
+				m.showThinking = !m.showThinking
+				m.refreshViewport()
+				return m, nil
+			}
+			if k.Type == tea.KeyCtrlR {
+				m.showToolResults = !m.showToolResults
+				m.refreshViewport()
+				return m, nil
+			}
 		}
 		if !m.streaming {
 			switch k.Type {
@@ -450,7 +458,7 @@ func (m *RootModel) layout() {
 
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
-	m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, time.Now()))
+	m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, m.showToolResults, time.Now()))
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
