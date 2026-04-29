@@ -171,7 +171,7 @@ func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
 
 	_, _ = m.Update(compactDoneMsg{sess: s, count: 4})
 	out := m.msgs.Render(m.styles, false, false, time.Time{})
-	if !strings.Contains(out, "compacted summary (4 messages)") {
+	if !strings.Contains(out, "compacted memory (4 messages)") {
 		t.Fatalf("missing summary header: %q", out)
 	}
 	if !strings.Contains(out, "the summary") {
@@ -250,6 +250,79 @@ func TestRoot_RefusesCompactWhileStreaming(t *testing.T) {
 	}
 	if !strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "busy") {
 		t.Fatal("expected busy notice after /compact while streaming")
+	}
+}
+
+func TestRoot_RendersArcaneActivityLineWhileStreaming(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.streaming = true
+	m.layout()
+
+	out := m.View()
+	if !strings.Contains(out, "consulting the runes") {
+		t.Fatalf("missing activity line while streaming:\n%s", out)
+	}
+
+	_, _ = m.Update(AgentChannelDoneMsg{})
+	out = m.View()
+	if strings.Contains(out, "consulting the runes") {
+		t.Fatalf("activity line remained after done:\n%s", out)
+	}
+}
+
+func TestRoot_RendersSimpleActivityLineWhenConfigured(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.settings.ActivityMode = "simple"
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.compacting = true
+	m.layout()
+
+	out := m.View()
+	if !strings.Contains(out, "running") {
+		t.Fatalf("missing simple activity line while compacting:\n%s", out)
+	}
+}
+
+func TestRoot_SettingsPreserveCurrentEffortByDefault(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	m.handleSlashCommand("/settings")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected settings result command")
+	}
+	_, _ = m.Update(cmd())
+
+	if got := a.ReasoningEffort(); got != "medium" {
+		t.Fatalf("reasoning effort changed after applying default settings: %q", got)
+	}
+}
+
+func TestRoot_IgnoresStaleActivityTicks(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.streaming = true
+	m.activitySeq = 1
+	m.activityTicking = true
+	m.activityFrame = 0
+
+	_, _ = m.Update(activityTickMsg{seq: 0})
+
+	if m.activityFrame != 0 {
+		t.Fatalf("stale activity tick advanced frame to %d", m.activityFrame)
+	}
+	if !m.activityTicking {
+		t.Fatal("stale activity tick cleared the active tick state")
 	}
 }
 

@@ -14,10 +14,16 @@ type Styles struct {
 	ThinkingHeader lipgloss.Style
 	Footer         lipgloss.Style
 	EditorBox      lipgloss.Style
+	Activity       lipgloss.Style
+	Icons          IconSet
 	Markdown       Markdown
 }
 
 func DefaultStyles() Styles {
+	return DefaultStylesWithIconMode(string(DefaultIconMode()))
+}
+
+func DefaultStylesWithIconMode(mode string) Styles {
 	return Styles{
 		User:           lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
 		Assistant:      lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
@@ -30,6 +36,8 @@ func DefaultStyles() Styles {
 		ThinkingHeader: lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
 		Footer:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Reverse(true).Padding(0, 1),
 		EditorBox:      lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
+		Activity:       lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
+		Icons:          IconSetForMode(mode),
 		Markdown:       NewMarkdown(),
 	}
 }

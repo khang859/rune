@@ -51,6 +51,9 @@ type RootModel struct {
 	showThinking    bool
 	showToolResults bool
 	pendingTickCmd  tea.Cmd
+	activityFrame   int
+	activityTicking bool
+	activitySeq     int
 
 	skills           map[string]string
 	pendingSkillBody string
@@ -64,6 +67,8 @@ var baseSlashCmds = []string{
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	realCwd, _ := os.Getwd()
+	iconMode := string(DefaultIconMode())
+	settings := modal.Settings{Effort: a.ReasoningEffort(), IconMode: iconMode, ActivityMode: "arcane"}
 	displayCwd := realCwd
 	if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(realCwd, home) {
 		displayCwd = "~" + strings.TrimPrefix(realCwd, home)
@@ -81,12 +86,13 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
-		styles:   DefaultStyles(),
+		styles:   DefaultStylesWithIconMode(iconMode),
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
 		editor:   ed,
 		footer:   Footer{Cwd: displayCwd, Session: sessLabel, Model: sess.Model},
 		queue:    &Queue{},
+		settings: settings,
 	}
 }
 
@@ -110,6 +116,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.compacting = false
+		m.stopActivityTick()
 		m.editor.Focus()
 		m.rebuildMessagesFromSession()
 		if v.err != nil {
@@ -117,6 +124,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.msgs.OnInfo(fmt.Sprintf("(compacted %d messages)", v.count))
 		}
+		m.layout()
 		m.refreshViewport()
 		if item, ok := m.queue.Pop(); ok {
 			m.msgs.AppendUser(item.Text)
@@ -137,6 +145,17 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, thinkingTickCmd()
 		}
 		return m, nil
+
+	case activityTickMsg:
+		if v.seq != m.activitySeq {
+			return m, nil
+		}
+		m.activityTicking = false
+		if !m.showActivity() {
+			return m, nil
+		}
+		m.activityFrame++
+		return m, m.startActivityTick()
 
 	case AgentEventMsg:
 		if v.Ch != m.eventCh {
@@ -161,7 +180,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.streaming = false
 		m.eventCh = nil
 		m.cancel = nil
+		m.stopActivityTick()
 		m.editor.Focus()
+		m.layout()
 		if item, ok := m.queue.Pop(); ok {
 			m.msgs.AppendUser(item.Text)
 			m.refreshViewport()
@@ -272,6 +293,7 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	m.cancel = cancel
 	m.streaming = true
 	m.editor.Blur()
+	m.layout()
 	content := []ai.ContentBlock{ai.TextBlock{Text: text}}
 	for _, im := range images {
 		content = append(content, im)
@@ -279,7 +301,7 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	ch := m.agent.Run(ctx, msg)
 	m.eventCh = ch
-	return nextEventCmd(ch)
+	return tea.Batch(nextEventCmd(ch), m.startActivityTick())
 }
 
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
@@ -349,7 +371,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.msgs.OnInfo("(compacting…)")
 		m.refreshViewport()
 		m.layout()
-		return m.startCompact()
+		return tea.Batch(m.startCompact(), m.startActivityTick())
 	case "/reload":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -394,8 +416,15 @@ func (m *RootModel) View() string {
 		overlay = renderList("commands", sm.Items(), sm.Sel())
 	}
 	foot := m.footer.Render(m.styles)
+	activity := m.renderActivityLine()
 	if overlay != "" {
+		if activity != "" {
+			return msgArea + "\n" + activity + "\n" + edArea + "\n" + overlay + "\n" + foot
+		}
 		return msgArea + "\n" + edArea + "\n" + overlay + "\n" + foot
+	}
+	if activity != "" {
+		return msgArea + "\n" + activity + "\n" + edArea + "\n" + foot
 	}
 	return msgArea + "\n" + edArea + "\n" + foot
 }
@@ -445,7 +474,11 @@ func (m *RootModel) layout() {
 	if m.editor.Mode() != editor.ModeNormal {
 		overlayRows = 9
 	}
-	msgH := m.height - footerH - editorH - overlayRows
+	activityRows := 0
+	if m.showActivity() {
+		activityRows = 1
+	}
+	msgH := m.height - footerH - editorH - overlayRows - activityRows
 	if msgH < 3 {
 		msgH = 3
 	}
@@ -514,9 +547,14 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.SettingsModal:
 		if s, ok := payload.(modal.Settings); ok {
 			m.settings = s
+			m.styles.Icons = IconSetForMode(s.IconMode)
 			if s.Effort != "" {
 				m.agent.SetReasoningEffort(s.Effort)
 			}
+			if m.showActivity() {
+				return m.startActivityTick()
+			}
+			m.stopActivityTick()
 		}
 	case *modal.Resume:
 		if sum, ok := payload.(session.Summary); ok {
@@ -604,6 +642,7 @@ func (m *RootModel) stopActiveTurn() {
 	m.streaming = false
 	m.compacting = false
 	m.pendingTickCmd = nil
+	m.stopActivityTick()
 	m.queue = &Queue{}
 	m.editor.Focus()
 }
@@ -673,6 +712,59 @@ type thinkingTickMsg struct{}
 
 func thinkingTickCmd() tea.Cmd {
 	return tea.Tick(time.Second, func(time.Time) tea.Msg { return thinkingTickMsg{} })
+}
+
+type activityTickMsg struct{ seq int }
+
+func activityTickCmd(seq int) tea.Cmd {
+	return tea.Tick(time.Second, func(time.Time) tea.Msg { return activityTickMsg{seq: seq} })
+}
+
+func (m *RootModel) startActivityTick() tea.Cmd {
+	if !m.showActivity() || m.activityTicking {
+		return nil
+	}
+	m.activityTicking = true
+	m.activitySeq++
+	return activityTickCmd(m.activitySeq)
+}
+
+func (m *RootModel) stopActivityTick() {
+	if m.activityTicking {
+		m.activitySeq++
+	}
+	m.activityTicking = false
+}
+
+func (m *RootModel) showActivity() bool {
+	return (m.streaming || m.compacting) && m.settings.ActivityMode != "off"
+}
+
+func (m *RootModel) renderActivityLine() string {
+	if !m.showActivity() {
+		return ""
+	}
+	phrases := simpleActivityPhrases()
+	if m.settings.ActivityMode == "arcane" || m.settings.ActivityMode == "" {
+		phrases = arcaneActivityPhrases(m.styles.Icons)
+	}
+	line := phrases[m.activityFrame%len(phrases)]
+	return m.styles.Activity.Width(m.width).Render(line)
+}
+
+func simpleActivityPhrases() []string {
+	return []string{"running...", "waiting for response...", "working..."}
+}
+
+func arcaneActivityPhrases(icons IconSet) []string {
+	return []string{
+		iconLabel(icons.Thinking, "consulting the runes..."),
+		iconLabel(icons.Assistant, "scrying through the code..."),
+		iconLabel(icons.Invoke, "tracing the invocation..."),
+		iconLabel(icons.Summary, "opening the grimoire..."),
+		iconLabel(icons.Tool, "binding tools to the circle..."),
+		iconLabel(icons.Context, "measuring the leyline pressure..."),
+	}
 }
 
 func (m *RootModel) copyToClipboard(text string) {

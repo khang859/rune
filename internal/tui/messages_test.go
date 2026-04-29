@@ -13,8 +13,18 @@ import (
 func TestMessages_AppendUser(t *testing.T) {
 	m := NewMessages(80)
 	m.AppendUser("hi there")
-	if !strings.Contains(m.Render(DefaultStyles(), false, false, time.Time{}), "hi there") {
+	out := m.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
+	if !strings.Contains(out, " you> hi there") {
 		t.Fatal("user text missing")
+	}
+}
+
+func TestMessages_AssistantUsesRuneLabel(t *testing.T) {
+	m := NewMessages(80)
+	m.OnAssistantDelta("hello")
+	out := m.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
+	if !strings.Contains(out, "󰬯 rune") || !strings.Contains(out, "hello") {
+		t.Fatalf("assistant label missing:\n%s", out)
 	}
 }
 
@@ -47,8 +57,8 @@ func TestMessages_ToolResultCollapsedByDefault(t *testing.T) {
 	call := ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x"}`)}
 	m.OnToolStarted(call)
 	m.OnToolFinished(agent.ToolFinished{Call: call, Result: tools.Result{Output: "line1\nline2\nline3"}})
-	out := m.Render(DefaultStyles(), false, false, time.Time{})
-	if !strings.Contains(out, "▸ ← read (3 lines)") {
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	if !strings.Contains(out, "▸ ⚒ read (3 lines)") {
 		t.Fatalf("expected collapsed header with line count, got:\n%s", out)
 	}
 	if strings.Contains(out, "line1") || strings.Contains(out, "line2") || strings.Contains(out, "line3") {
@@ -61,8 +71,8 @@ func TestMessages_ToolResultExpandedShowsBody(t *testing.T) {
 	call := ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x"}`)}
 	m.OnToolStarted(call)
 	m.OnToolFinished(agent.ToolFinished{Call: call, Result: tools.Result{Output: "line1\nline2"}})
-	out := m.Render(DefaultStyles(), false, true, time.Time{})
-	if !strings.Contains(out, "▾ ← read") {
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, true, time.Time{})
+	if !strings.Contains(out, "▾ ⚒ read") {
 		t.Fatalf("expected expanded header with ▾, got:\n%s", out)
 	}
 	if !strings.Contains(out, "line1") || !strings.Contains(out, "line2") {
@@ -96,7 +106,7 @@ func TestMessages_AppendSummaryRendersHeader(t *testing.T) {
 	m := NewMessages(80)
 	m.AppendSummary("the gist", 5)
 	out := m.Render(DefaultStyles(), false, false, time.Time{})
-	if !strings.Contains(out, "compacted summary") {
+	if !strings.Contains(out, "compacted memory") {
 		t.Fatalf("missing header: %q", out)
 	}
 	if !strings.Contains(out, "5 messages") {
@@ -185,8 +195,8 @@ func TestMessages_ThinkingHeaderStreamingCollapsed(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.OnThinkingDeltaAt("hmm", start)
 	now := start.Add(3 * time.Second)
-	out := m.Render(DefaultStyles(), false, false, now)
-	if !strings.Contains(out, "▸ thinking… (3s)") {
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, now)
+	if !strings.Contains(out, "▸ ✦ thinking… (3s)") {
 		t.Fatalf("expected streaming-collapsed header, got:\n%s", out)
 	}
 	if strings.Contains(out, "hmm") {
@@ -200,8 +210,8 @@ func TestMessages_ThinkingHeaderFinalizedCollapsed(t *testing.T) {
 	m.OnThinkingDeltaAt("hmm", start)
 	end := start.Add(5 * time.Second)
 	m.FinalizeStreamingThinking(end)
-	out := m.Render(DefaultStyles(), false, false, end.Add(time.Hour))
-	if !strings.Contains(out, "▸ thought for 5s") {
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, end.Add(time.Hour))
+	if !strings.Contains(out, "▸ ✦ thought for 5s") {
 		t.Fatalf("expected finalized-collapsed header, got:\n%s", out)
 	}
 }
@@ -210,8 +220,8 @@ func TestMessages_ThinkingExpandedShowsBody(t *testing.T) {
 	m := NewMessages(80)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	m.OnThinkingDeltaAt("hmm", start)
-	out := m.Render(DefaultStyles(), true, false, start.Add(2*time.Second))
-	if !strings.Contains(out, "▾ thinking… (2s)") {
+	out := m.Render(DefaultStylesWithIconMode("unicode"), true, false, start.Add(2*time.Second))
+	if !strings.Contains(out, "▾ ✦ thinking… (2s)") {
 		t.Fatalf("expected expanded header with ▾, got:\n%s", out)
 	}
 	if !strings.Contains(out, "hmm") {

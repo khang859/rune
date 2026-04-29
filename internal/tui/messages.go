@@ -149,25 +149,26 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		var rendered string
 		switch b.kind {
 		case bkUser:
-			rendered = s.User.Render("user> ") + b.text
+			rendered = s.User.Render(iconLabel(s.Icons.User, "you>")+" ") + b.text
 		case bkAssistant:
+			label := s.Assistant.Render(iconLabel(s.Icons.Assistant, "rune"))
 			if i == m.streamingAsstIdx {
-				rendered = s.Assistant.Render(b.text)
+				rendered = label + "\n" + s.Assistant.Render(b.text)
 			} else {
-				rendered = s.Markdown.Render(b.text)
+				rendered = label + "\n" + s.Markdown.Render(b.text)
 			}
 		case bkThinking:
 			rendered = renderThinking(s, b, showThinking, now)
 		case bkToolCall:
-			rendered = s.ToolCall.Render(fmt.Sprintf("· %s(%s)", b.meta, b.text))
+			rendered = s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
 		case bkToolResult:
 			rendered = renderToolResult(s, b, showToolResults)
 		case bkError:
-			rendered = s.ToolError.Render("error: " + b.text)
+			rendered = s.ToolError.Render(iconLabel(s.Icons.Error, "error") + ": " + b.text)
 		case bkInfo:
 			rendered = s.Info.Render(b.text)
 		case bkSummary:
-			header := fmt.Sprintf("── compacted summary (%d messages) ──", b.count)
+			header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
 			rendered = s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
 		}
 		if m.width > 0 {
@@ -189,13 +190,13 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 		if secs < 0 {
 			secs = 0
 		}
-		header = fmt.Sprintf("%s thinking… (%ds)", caret, secs)
+		header = fmt.Sprintf("%s %s… (%ds)", caret, iconLabel(s.Icons.Thinking, "thinking"), secs)
 	} else {
 		secs := int(b.endedAt.Sub(b.startedAt).Seconds())
 		if secs < 0 {
 			secs = 0
 		}
-		header = fmt.Sprintf("%s thought for %ds", caret, secs)
+		header = fmt.Sprintf("%s %s for %ds", caret, iconLabel(s.Icons.Thinking, "thought"), secs)
 	}
 	headerLine := s.ThinkingHeader.Render(header)
 	if !showThinking {
@@ -206,11 +207,11 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 
 func renderToolResult(s Styles, b block, show bool) string {
 	if show {
-		return s.ToolResult.Render(fmt.Sprintf("▾ ← %s\n%s", b.meta, b.text))
+		return s.ToolResult.Render(fmt.Sprintf("▾ %s %s\n%s", s.Icons.Tool, b.meta, b.text))
 	}
 	lines := 0
 	if b.text != "" {
 		lines = strings.Count(b.text, "\n") + 1
 	}
-	return s.ToolResult.Render(fmt.Sprintf("▸ ← %s (%d lines)", b.meta, lines))
+	return s.ToolResult.Render(fmt.Sprintf("▸ %s %s (%d lines)", s.Icons.Tool, b.meta, lines))
 }

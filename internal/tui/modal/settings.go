@@ -9,25 +9,54 @@ import (
 )
 
 type Settings struct {
-	Effort string
+	Effort       string
+	IconMode     string
+	ActivityMode string
 }
 
 type SettingsModal struct {
-	cur     Settings
+	cur  Settings
+	rows []settingsRow
+	sel  int
+}
+
+type settingsRow struct {
+	label   string
 	options []string
-	sel     int
+	value   int
 }
 
 func NewSettings(cur Settings) Modal {
-	options := []string{"minimal", "low", "medium", "high"}
-	sel := 0
-	for i, o := range options {
-		if o == cur.Effort {
-			sel = i
+	cur = normalizeSettings(cur)
+	return &SettingsModal{cur: cur, rows: []settingsRow{
+		newSettingsRow("thinking effort", []string{"minimal", "low", "medium", "high"}, cur.Effort),
+		newSettingsRow("icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
+		newSettingsRow("activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
+	}}
+}
+
+func normalizeSettings(s Settings) Settings {
+	if s.Effort == "" {
+		s.Effort = "minimal"
+	}
+	if s.IconMode == "" {
+		s.IconMode = "unicode"
+	}
+	if s.ActivityMode == "" {
+		s.ActivityMode = "arcane"
+	}
+	return s
+}
+
+func newSettingsRow(label string, options []string, current string) settingsRow {
+	row := settingsRow{label: label, options: options}
+	for i, opt := range options {
+		if opt == current {
+			row.value = i
 			break
 		}
 	}
-	return &SettingsModal{cur: cur, options: options, sel: sel}
+	return row
 }
 
 func (s *SettingsModal) Init() tea.Cmd { return nil }
@@ -40,11 +69,15 @@ func (s *SettingsModal) Update(msg tea.Msg) (Modal, tea.Cmd) {
 				s.sel--
 			}
 		case tea.KeyDown:
-			if s.sel < len(s.options)-1 {
+			if s.sel < len(s.rows)-1 {
 				s.sel++
 			}
+		case tea.KeyLeft:
+			s.cycleSelected(-1)
+		case tea.KeyRight:
+			s.cycleSelected(1)
 		case tea.KeyEnter:
-			return s, Result(Settings{Effort: s.options[s.sel]})
+			return s, Result(s.selectedSettings())
 		case tea.KeyEsc:
 			return s, Cancel()
 		}
@@ -52,16 +85,29 @@ func (s *SettingsModal) Update(msg tea.Msg) (Modal, tea.Cmd) {
 	return s, nil
 }
 
+func (s *SettingsModal) cycleSelected(delta int) {
+	row := &s.rows[s.sel]
+	row.value = (row.value + delta + len(row.options)) % len(row.options)
+}
+
+func (s *SettingsModal) selectedSettings() Settings {
+	return Settings{
+		Effort:       s.rows[0].options[s.rows[0].value],
+		IconMode:     s.rows[1].options[s.rows[1].value],
+		ActivityMode: s.rows[2].options[s.rows[2].value],
+	}
+}
+
 func (s *SettingsModal) View(width, height int) string {
 	var sb strings.Builder
-	sb.WriteString("Settings — thinking effort:\n")
-	for i, o := range s.options {
+	sb.WriteString("Settings\n")
+	for i, row := range s.rows {
 		m := "  "
 		if i == s.sel {
 			m = "> "
 		}
-		sb.WriteString(fmt.Sprintf("%s%s\n", m, o))
+		sb.WriteString(fmt.Sprintf("%s%s: %s\n", m, row.label, row.options[row.value]))
 	}
-	sb.WriteString("\n(Enter to apply, Esc to cancel)")
+	sb.WriteString("\n(↑/↓ select, ←/→ change, Enter apply, Esc cancel)")
 	return sb.String()
 }
