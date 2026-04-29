@@ -10,16 +10,15 @@ func currentGitBranch(cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	cmd := exec.Command("git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD")
+
+	// symbolic-ref works for both normal repositories and newly initialized
+	// repositories whose current branch is still unborn (no commits yet).
+	cmd := exec.Command("git", "-C", cwd, "symbolic-ref", "--quiet", "--short", "HEAD")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-	branch := strings.TrimSpace(string(out))
-	if branch == "" || branch == "HEAD" {
-		return ""
-	}
-	return branch
+	return strings.TrimSpace(string(out))
 }
