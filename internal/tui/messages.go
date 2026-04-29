@@ -207,12 +207,92 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 }
 
 func renderToolCall(s Styles, b block) string {
-	if b.meta == "edit" {
-		if rendered, ok := formatEditDiff(s, json.RawMessage(b.text)); ok {
-			return rendered
+	args := json.RawMessage(b.text)
+	switch b.meta {
+	case "edit":
+		if r, ok := formatEditDiff(s, args); ok {
+			return r
+		}
+	case "bash":
+		if r, ok := formatBashCall(s, args); ok {
+			return r
+		}
+	case "write":
+		if r, ok := formatWriteCall(s, args); ok {
+			return r
+		}
+	case "read":
+		if r, ok := formatReadCall(s, args); ok {
+			return r
 		}
 	}
 	return s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
+}
+
+func toolHeader(s Styles, body string) string {
+	return s.ToolCall.Render(iconLabel(s.Icons.Tool, "tool") + " " + body)
+}
+
+func formatBashCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	header := toolHeader(s, "bash")
+	if a.Command == "" {
+		return header, true
+	}
+	var sb strings.Builder
+	sb.WriteString(header)
+	for _, line := range strings.Split(a.Command, "\n") {
+		sb.WriteString("\n")
+		sb.WriteString(s.ToolCall.Render("  " + line))
+	}
+	return sb.String(), true
+}
+
+func formatWriteCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Path    string `json:"path"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	lines := 0
+	if a.Content != "" {
+		lines = strings.Count(a.Content, "\n")
+		if !strings.HasSuffix(a.Content, "\n") {
+			lines++
+		}
+	}
+	return toolHeader(s, fmt.Sprintf("write %s (%d lines, %d bytes)", a.Path, lines, len(a.Content))), true
+}
+
+func formatReadCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Path    string `json:"path"`
+		Offset  int    `json:"offset"`
+		Limit   int    `json:"limit"`
+		ReadAll bool   `json:"read_all"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	body := "read " + a.Path
+	switch {
+	case a.ReadAll:
+		body += " (all)"
+	case a.Offset > 0 && a.Limit > 0:
+		body += fmt.Sprintf(" (lines %d-%d)", a.Offset, a.Offset+a.Limit-1)
+	case a.Offset > 0:
+		body += fmt.Sprintf(" (from line %d)", a.Offset)
+	case a.Limit > 0:
+		body += fmt.Sprintf(" (first %d lines)", a.Limit)
+	}
+	return toolHeader(s, body), true
 }
 
 // formatEditDiff renders an edit tool call as a header line plus a unified
@@ -229,7 +309,7 @@ func formatEditDiff(s Styles, args json.RawMessage) (string, bool) {
 		return "", false
 	}
 	var sb strings.Builder
-	sb.WriteString(s.ToolCall.Render(fmt.Sprintf("%s edit %s", iconLabel(s.Icons.Tool, "tool"), a.Path)))
+	sb.WriteString(toolHeader(s, "edit "+a.Path))
 	for _, line := range strings.Split(a.OldString, "\n") {
 		sb.WriteString("\n")
 		sb.WriteString(s.DiffDel.Render("- " + line))

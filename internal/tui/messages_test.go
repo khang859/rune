@@ -108,12 +108,56 @@ func TestMessages_EditToolMalformedArgsFallsBack(t *testing.T) {
 	}
 }
 
-func TestMessages_NonEditToolUsesGenericFormat(t *testing.T) {
+func TestMessages_BashToolRendersCommand(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "bash", Args: []byte(`{"command":"ls -la\necho hi"}`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	for _, want := range []string{"bash", "ls -la", "echo hi"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in bash output, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `\n`) || strings.Contains(out, "command") {
+		t.Fatalf("escaped JSON leaked into bash output:\n%s", out)
+	}
+}
+
+func TestMessages_WriteToolRendersSummary(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "write", Args: []byte(`{"path":"/tmp/foo.txt","content":"a\nb\nc"}`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, "write /tmp/foo.txt (3 lines, 5 bytes)") {
+		t.Fatalf("expected write summary, got:\n%s", out)
+	}
+}
+
+func TestMessages_ReadToolRendersPath(t *testing.T) {
 	m := NewMessages(80)
 	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x"}`)})
 	out := m.Render(DefaultStyles(), false, false, time.Time{})
-	if !strings.Contains(out, `read({"path":"/x"})`) {
-		t.Fatalf("expected generic tool call format for read, got:\n%s", out)
+	if !strings.Contains(out, "read /x") {
+		t.Fatalf("expected 'read /x', got:\n%s", out)
+	}
+	if strings.Contains(out, "{") {
+		t.Fatalf("raw JSON leaked into read output:\n%s", out)
+	}
+}
+
+func TestMessages_ReadToolWithOffsetAndLimit(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x","offset":10,"limit":5}`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, "read /x (lines 10-14)") {
+		t.Fatalf("expected line range, got:\n%s", out)
+	}
+}
+
+func TestMessages_ReadToolWithReadAll(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x","read_all":true}`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, "read /x (all)") {
+		t.Fatalf("expected (all) suffix, got:\n%s", out)
 	}
 }
 
