@@ -163,9 +163,31 @@ type Usage struct {
 
 func (Usage) isEvent() {}
 
+// ErrorClass describes the nature of a stream-level failure so the agent
+// loop can decide whether to retry, heal session state, or surface to the user.
+// Each provider classifies its own errors at the boundary it understands;
+// the agent treats all providers uniformly via Class.
+type ErrorClass int
+
+const (
+	// ErrFatal is an unrecoverable error. Surface to the user.
+	ErrFatal ErrorClass = iota
+	// ErrTransient is a network blip / partial stream. Retry with short backoff.
+	ErrTransient
+	// ErrRateLimit is a 429-equivalent. Retry with backoff.
+	ErrRateLimit
+	// ErrServer is a 5xx-equivalent. Retry with backoff.
+	ErrServer
+	// ErrOrphanOutput is a provider rejection caused by a missing tool_result
+	// for a previously-emitted tool_use (e.g., OpenAI Responses 400 on
+	// "missing required parameter: 'input[N].output'"). The agent heals
+	// session state, then retries.
+	ErrOrphanOutput
+)
+
 type StreamError struct {
-	Err       error
-	Retryable bool
+	Err   error
+	Class ErrorClass
 }
 
 func (StreamError) isEvent() {}

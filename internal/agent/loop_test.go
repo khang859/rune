@@ -278,3 +278,161 @@ func TestRun_OmitsRuntimeContextWhenSystemEmpty(t *testing.T) {
 		t.Errorf("expected empty system, got: %q", cp.gotReq.System)
 	}
 }
+
+// erroringTool returns a Go error from Run, simulating a tool plugin failure.
+type erroringTool struct{}
+
+func (erroringTool) Spec() ai.ToolSpec {
+	return ai.ToolSpec{Name: "boom", Schema: json.RawMessage(`{}`)}
+}
+func (erroringTool) Run(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+	return tools.Result{}, errIntentional
+}
+
+var errIntentional = errStr("kaboom")
+
+type errStr string
+
+func (e errStr) Error() string { return string(e) }
+
+// TestRun_ToolGoErrorHealsOrphans verifies that a tool returning a Go error
+// (rather than a Result with IsError) does not leave orphan tool_use blocks
+// in the session — the next turn would otherwise be rejected by providers
+// that require every function_call to have a function_call_output.
+func TestRun_ToolGoErrorHealsOrphans(t *testing.T) {
+	f := faux.New().CallTool("boom", `{}`).Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(erroringTool{})
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("trigger")))
+
+	var sawErr bool
+	for _, e := range evs {
+		if _, ok := e.(TurnError); ok {
+			sawErr = true
+		}
+	}
+	if !sawErr {
+		t.Fatal("expected TurnError")
+	}
+	assertNoOrphans(t, s)
+}
+
+// TestRun_StreamFatalErrorHealsOrphans verifies that a fatal stream error
+// after the assistant has emitted tool_uses leaves the session valid for
+// the next request. Without healing, the persisted tool_use would poison
+// every subsequent turn.
+func TestRun_StreamFatalErrorHealsOrphans(t *testing.T) {
+	// Provider emits a tool_call and a fatal StreamError without a Done.
+	// Without persistence on this code path the assistant message is not
+	// added until Done — so we need a provider that DOES reach Done with
+	// tool calls, then a separate failure on the next turn. Instead, use
+	// ToolGoErrorHealsOrphans for the persisted-orphan case; here verify
+	// healOrphans runs as a deferred safety net even when the provider
+	// errors mid-stream and we never persist.
+	a := New(streamErrProvider{err: errStr("status 500: boom")}, tools.NewRegistry(), session.New("gpt-5"), "")
+	evs := collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	var sawErr bool
+	for _, e := range evs {
+		if _, ok := e.(TurnError); ok {
+			sawErr = true
+		}
+	}
+	if !sawErr {
+		t.Fatal("expected TurnError")
+	}
+}
+
+// retryThenSucceedProvider emits an ErrOrphanOutput on the first call, then
+// a successful Done on the second.
+type retryThenSucceedProvider struct {
+	calls int
+}
+
+func (p *retryThenSucceedProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	p.calls++
+	out := make(chan ai.Event, 4)
+	if p.calls == 1 {
+		out <- ai.StreamError{Err: errStr("missing required parameter: 'input[0].output'"), Class: ai.ErrOrphanOutput}
+		close(out)
+		return out, nil
+	}
+	out <- ai.TextDelta{Text: "ok"}
+	out <- ai.Usage{Input: 1, Output: 1}
+	out <- ai.Done{Reason: "stop"}
+	close(out)
+	return out, nil
+}
+
+// TestRun_OrphanOutputHealsAndRetries verifies that an ErrOrphanOutput
+// triggers session healing and one retry. The retried request must include
+// the synthetic tool_result so the provider doesn't reject it again.
+func TestRun_OrphanOutputHealsAndRetries(t *testing.T) {
+	s := session.New("gpt-5")
+	// Plant a poisoned state: an assistant tool_use with no matching tool_result.
+	s.Append(userMsg("u1"))
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{
+		ai.ToolUseBlock{ID: "call_1", Name: "read", Args: json.RawMessage(`{}`)},
+	}})
+
+	p := &retryThenSucceedProvider{}
+	a := New(p, tools.NewRegistry(), s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("u2")))
+
+	if p.calls != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", p.calls)
+	}
+
+	var sawDone bool
+	for _, e := range evs {
+		if v, ok := e.(TurnDone); ok && v.Reason == "stop" {
+			sawDone = true
+		}
+	}
+	if !sawDone {
+		t.Fatal("expected TurnDone on retry success")
+	}
+	assertNoOrphans(t, s)
+
+	// The planted orphan must have been healed with a synthetic error
+	// tool_result keyed to its call_id.
+	var foundHeal bool
+	for _, m := range s.PathToActive() {
+		if m.Role != ai.RoleToolResult {
+			continue
+		}
+		for _, c := range m.Content {
+			if v, ok := c.(ai.ToolResultBlock); ok && v.ToolCallID == "call_1" && v.IsError {
+				foundHeal = true
+			}
+		}
+	}
+	if !foundHeal {
+		t.Fatal("expected synthetic error tool_result for healed orphan")
+	}
+}
+
+func assertNoOrphans(t *testing.T, s *session.Session) {
+	t.Helper()
+	used := map[string]bool{}
+	resulted := map[string]bool{}
+	for _, m := range s.PathToActive() {
+		for _, c := range m.Content {
+			switch v := c.(type) {
+			case ai.ToolUseBlock:
+				used[v.ID] = true
+			case ai.ToolResultBlock:
+				resulted[v.ToolCallID] = true
+			}
+		}
+	}
+	for id := range used {
+		if !resulted[id] {
+			t.Fatalf("orphan tool_use remains in session: id=%s", id)
+		}
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/khang859/rune/internal/ai"
@@ -45,7 +46,7 @@ func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event,
 		defer close(out)
 		if err := p.streamWithRetry(ctx, body, out); err != nil {
 			select {
-			case out <- ai.StreamError{Err: err, Retryable: false}:
+			case out <- ai.StreamError{Err: err, Class: classify(err)}:
 			case <-ctx.Done():
 			}
 		}
@@ -77,14 +78,32 @@ func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- 
 	return lastErr
 }
 
-type retryableErr struct{ err error }
+// classifiedErr attaches an ai.ErrorClass so the agent layer can decide
+// retry / heal behavior, and so streamWithRetry can decide whether to retry
+// internally. Errors without classification surface as ErrFatal.
+type classifiedErr struct {
+	err   error
+	class ai.ErrorClass
+}
 
-func (e retryableErr) Error() string { return e.err.Error() }
-func (e retryableErr) Unwrap() error { return e.err }
+func (e classifiedErr) Error() string { return e.err.Error() }
+func (e classifiedErr) Unwrap() error { return e.err }
 
 func isRetryable(err error) bool {
-	_, ok := err.(retryableErr)
-	return ok
+	if ce, ok := err.(classifiedErr); ok {
+		switch ce.class {
+		case ai.ErrTransient, ai.ErrRateLimit, ai.ErrServer:
+			return true
+		}
+	}
+	return false
+}
+
+func classify(err error) ai.ErrorClass {
+	if ce, ok := err.(classifiedErr); ok {
+		return ce.class
+	}
+	return ai.ErrFatal
 }
 
 func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Event) error {
@@ -109,7 +128,7 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 
 	resp, err := p.httpClient.Do(httpReq)
 	if err != nil {
-		return retryableErr{err}
+		return classifiedErr{err: err, class: ai.ErrTransient}
 	}
 	defer resp.Body.Close()
 
@@ -117,15 +136,33 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 		if rerr := p.auth.Refresh(ctx); rerr != nil {
 			return fmt.Errorf("auth refresh failed: %w", rerr)
 		}
-		return retryableErr{fmt.Errorf("401 unauthorized, refreshed and retrying")}
+		return classifiedErr{err: fmt.Errorf("401 unauthorized, refreshed and retrying"), class: ai.ErrTransient}
 	}
-	if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+	if resp.StatusCode == 429 {
 		b, _ := io.ReadAll(resp.Body)
-		return retryableErr{fmt.Errorf("status %d: %s", resp.StatusCode, string(b))}
+		return classifiedErr{err: fmt.Errorf("status 429: %s", string(b)), class: ai.ErrRateLimit}
+	}
+	if resp.StatusCode >= 500 {
+		b, _ := io.ReadAll(resp.Body)
+		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, string(b)), class: ai.ErrServer}
 	}
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("status %d: %s", resp.StatusCode, string(b))
+		body := string(b)
+		class := ai.ErrFatal
+		if isOrphanOutputRejection(body) {
+			class = ai.ErrOrphanOutput
+		}
+		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, body), class: class}
 	}
 	return parseSSE(ctx, resp.Body, out)
+}
+
+// isOrphanOutputRejection matches the OpenAI Responses 400 returned when an
+// input array is missing a function_call_output for a function_call. The
+// agent loop heals this by appending synthetic tool_results, then retries.
+func isOrphanOutputRejection(body string) bool {
+	return strings.Contains(body, "missing_required_parameter") &&
+		strings.Contains(body, "input[") &&
+		strings.Contains(body, ".output")
 }

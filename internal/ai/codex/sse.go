@@ -302,8 +302,8 @@ func dispatchEvent(ctx context.Context, name, data string, out chan<- ai.Event, 
 		var rf respFailed
 		_ = json.Unmarshal([]byte(data), &rf)
 		return send(ctx, out, ai.StreamError{
-			Err:       errString(rf.Error.Message),
-			Retryable: false,
+			Err:   errString(rf.Error.Message),
+			Class: ai.ErrFatal,
 		})
 	}
 	return nil
