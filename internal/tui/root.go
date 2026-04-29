@@ -76,13 +76,15 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		}
 	}
 	cmds := append([]string{}, baseSlashCmds...)
+	ed := editor.New(realCwd, cmds)
+	ed.SetHistory(editor.NewHistory(config.HistoryPath()))
 	return &RootModel{
 		agent:    a,
 		sess:     sess,
 		styles:   DefaultStyles(),
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
-		editor:   editor.New(realCwd, cmds),
+		editor:   ed,
 		footer:   Footer{Cwd: displayCwd, Session: sessLabel, Model: sess.Model},
 		queue:    &Queue{},
 	}

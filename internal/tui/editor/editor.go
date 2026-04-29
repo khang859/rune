@@ -63,6 +63,7 @@ type Editor struct {
 	slash     *SlashMenu
 	slashCmds []string
 	atts      *Attachments
+	hist      *History
 }
 
 func New(cwd string, slashCmds []string) *Editor {
@@ -106,6 +107,7 @@ func (e *Editor) FilePicker() *FilePicker    { return e.fp }
 func (e *Editor) SlashMenu() *SlashMenu      { return e.slash }
 func (e *Editor) PendingImages() int         { return e.atts.Pending() }
 func (e *Editor) SetSlashCmds(cmds []string) { e.slashCmds = cmds }
+func (e *Editor) SetHistory(h *History)      { e.hist = h }
 
 func (e *Editor) Update(msg tea.Msg) (Result, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
@@ -190,6 +192,18 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 				}
 			}
 		}
+		if k.Type == tea.KeyUp && e.hist != nil && e.atFirstLine() {
+			if text, ok := e.hist.Prev(e.ta.Value()); ok {
+				e.setValueFromHistory(text)
+				return Result{}, nil, true
+			}
+		}
+		if k.Type == tea.KeyDown && e.hist != nil && e.hist.Navigating() && e.atLastLine() {
+			if text, ok := e.hist.Next(); ok {
+				e.setValueFromHistory(text)
+				return Result{}, nil, true
+			}
+		}
 		if k.Type == tea.KeyEnter && !isShiftEnter(k) {
 			return e.submit(), nil, true
 		}
@@ -202,7 +216,13 @@ func (e *Editor) submit() Result {
 	e.ta.Reset()
 	e.updateHeight()
 	if text == "" && e.atts.Pending() == 0 {
+		if e.hist != nil {
+			e.hist.Reset()
+		}
 		return Result{}
+	}
+	if e.hist != nil {
+		e.hist.Push(text)
 	}
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
@@ -321,6 +341,15 @@ func (e *Editor) replaceCurrentWordWith(s string) {
 
 func isShiftEnter(k tea.KeyMsg) bool {
 	return k.String() == "shift+enter" || k.String() == "alt+enter"
+}
+
+func (e *Editor) atFirstLine() bool { return e.ta.Line() == 0 }
+
+func (e *Editor) atLastLine() bool { return e.ta.Line() == e.ta.LineCount()-1 }
+
+func (e *Editor) setValueFromHistory(text string) {
+	e.ta.SetValue(text)
+	e.updateHeight()
 }
 
 func (e *Editor) View(width int) string {
