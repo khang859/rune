@@ -89,13 +89,6 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(realCwd, home) {
 		displayCwd = "~" + strings.TrimPrefix(realCwd, home)
 	}
-	sessLabel := sess.Name
-	if sessLabel == "" {
-		sessLabel = sess.ID
-		if len(sessLabel) > 8 {
-			sessLabel = sessLabel[:8]
-		}
-	}
 	cmds := append([]string{}, baseSlashCmds...)
 	ed := editor.New(realCwd, cmds)
 	ed.SetHistory(editor.NewHistory(config.HistoryPath()))
@@ -106,7 +99,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
 		editor:   ed,
-		footer:   Footer{Cwd: displayCwd, GitBranch: currentGitBranch(realCwd), Session: sessLabel, Model: sess.Model},
+		footer:   Footer{Cwd: displayCwd, GitBranch: currentGitBranch(realCwd), Session: sessionLabel(sess), Model: sess.Model},
 		queue:    &Queue{},
 		settings: settings,
 	}
@@ -812,6 +805,19 @@ func (m *RootModel) startNewSession() {
 	m.swapSession(nc)
 }
 
+func sessionLabel(s *session.Session) string {
+	if s == nil {
+		return ""
+	}
+	if s.Name != "" {
+		return s.Name
+	}
+	if len(s.ID) > 8 {
+		return s.ID[:8]
+	}
+	return s.ID
+}
+
 func (m *RootModel) swapSession(s *session.Session) {
 	// Cancel any in-flight turn on the previous session before replacing
 	// pointers — otherwise the old goroutine's events could bleed into
@@ -819,7 +825,7 @@ func (m *RootModel) swapSession(s *session.Session) {
 	// wrong session after AgentChannelDoneMsg fires.
 	m.stopActiveTurn()
 	m.sess = s
-	m.footer.Session = s.Name
+	m.footer.Session = sessionLabel(s)
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
 	prev := m.agent.ReasoningEffort()

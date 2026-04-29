@@ -259,6 +259,24 @@ func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
 	}
 }
 
+func TestRoot_SwapSessionFallsBackToShortIDWhenNameEmpty(t *testing.T) {
+	s := session.New("gpt-5")
+	s.Name = "named-session"
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	ns := session.New("gpt-5")
+	m.swapSession(ns)
+
+	want := ns.ID
+	if len(want) > 8 {
+		want = want[:8]
+	}
+	if m.footer.Session != want {
+		t.Fatalf("expected footer session %q, got %q", want, m.footer.Session)
+	}
+}
+
 func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
