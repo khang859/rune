@@ -91,7 +91,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		msgs:     NewMessages(80),
 		viewport: viewport.New(80, 20),
 		editor:   ed,
-		footer:   Footer{Cwd: displayCwd, Session: sessLabel, Model: sess.Model},
+		footer:   Footer{Cwd: displayCwd, GitBranch: currentGitBranch(realCwd), Session: sessLabel, Model: sess.Model},
 		queue:    &Queue{},
 		settings: settings,
 	}

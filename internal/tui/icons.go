@@ -21,6 +21,7 @@ type IconSet struct {
 	Warning   string
 	Error     string
 	Cwd       string
+	GitBranch string
 	Session   string
 	Tokens    string
 	Context   string
@@ -56,6 +57,7 @@ func IconSetForMode(mode string) IconSet {
 			Warning:   "",
 			Error:     "",
 			Cwd:       "",
+			GitBranch: "",
 			Session:   "",
 			Tokens:    "󰆙",
 			Context:   "󰊚",
@@ -73,6 +75,7 @@ func IconSetForMode(mode string) IconSet {
 			Warning:   "!",
 			Error:     "x",
 			Cwd:       "dir",
+			GitBranch: "git",
 			Session:   "sess",
 			Tokens:    "tok",
 			Context:   "ctx",
@@ -92,6 +95,7 @@ func IconSetForMode(mode string) IconSet {
 			Warning:   "!",
 			Error:     "✕",
 			Cwd:       "⌂",
+			GitBranch: "⑂",
 			Session:   "⑂",
 			Tokens:    "#",
 			Context:   "◷",

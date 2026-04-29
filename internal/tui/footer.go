@@ -7,6 +7,7 @@ import (
 
 type Footer struct {
 	Cwd        string
+	GitBranch  string
 	Session    string
 	Model      string
 	Tokens     int
@@ -19,11 +20,16 @@ func (f Footer) Render(s Styles) string {
 	parts := []string{
 		s.FooterApp.Render(iconLabel(s.Icons.App, "rune")),
 		s.FooterCwd.Render(iconLabel(s.Icons.Cwd, f.Cwd)),
+	}
+	if f.GitBranch != "" {
+		parts = append(parts, s.FooterSession.Render(iconLabel(s.Icons.GitBranch, f.GitBranch)))
+	}
+	parts = append(parts,
 		s.FooterSession.Render(iconLabel(s.Icons.Session, f.Session)),
 		s.FooterModel.Render(f.Model),
 		s.FooterTokens.Render(iconLabel(s.Icons.Tokens, fmt.Sprintf("%s tok", compactCount(f.Tokens)))),
 		s.FooterContext.Render(iconLabel(s.Icons.Context, fmt.Sprintf("%d%% ctx", f.ContextPct))),
-	}
+	)
 	return s.Footer.Width(f.Width).Render(strings.Join(parts, sep))
 }
 
