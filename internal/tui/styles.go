@@ -25,7 +25,9 @@ type Styles struct {
 	EditorBox            lipgloss.Style
 	EditorBoxShellSend   lipgloss.Style // "!cmd": run shell, send output to AI
 	EditorBoxShellInsert lipgloss.Style // "!!cmd": run shell, insert output locally
+	EditorBoxDim         lipgloss.Style // dimmed border while in copy mode
 	Activity             lipgloss.Style
+	CopyModeBanner       lipgloss.Style
 	Icons          IconSet
 	Markdown       Markdown
 }
@@ -58,7 +60,9 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		EditorBox:            lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1),
 		EditorBoxShellSend:   lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("11")).Padding(0, 1),
 		EditorBoxShellInsert: lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("13")).Padding(0, 1),
+		EditorBoxDim:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).Faint(true).Padding(0, 1),
 		Activity:             lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
+		CopyModeBanner:       lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
 		Icons:          IconSetForMode(mode),
 		Markdown:       NewMarkdown(),
 	}

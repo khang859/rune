@@ -48,6 +48,7 @@ type RootModel struct {
 	pendingForkMode bool
 	clipboardReady  bool
 	clipboardErr    error
+	copyMode        bool
 
 	showThinking    bool
 	showToolResults bool
@@ -62,7 +63,7 @@ type RootModel struct {
 
 var baseSlashCmds = []string{
 	"/quit", "/model", "/tree", "/resume", "/settings",
-	"/new", "/name", "/session", "/fork", "/clone", "/copy",
+	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/compact", "/reload", "/hotkeys",
 }
 
@@ -139,7 +140,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.compacting = false
 		m.stopActivityTick()
-		m.editor.Focus()
+		if !m.copyMode {
+			m.editor.Focus()
+		}
 		m.rebuildMessagesFromSession()
 		if v.err != nil {
 			m.msgs.OnTurnError(fmt.Errorf("compact failed: %v", v.err))
@@ -203,7 +206,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventCh = nil
 		m.cancel = nil
 		m.stopActivityTick()
-		m.editor.Focus()
+		if !m.copyMode {
+			m.editor.Focus()
+		}
 		m.layout()
 		if item, ok := m.queue.Pop(); ok {
 			m.msgs.AppendUser(item.Text)
@@ -246,6 +251,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if k, ok := msg.(tea.KeyMsg); ok {
 		if k.Type == tea.KeyCtrlC {
 			return m, tea.Quit
+		}
+		if k.Type == tea.KeyShiftTab {
+			return m, m.toggleCopyMode()
+		}
+		if m.copyMode && k.Type == tea.KeyEsc {
+			return m, m.toggleCopyMode()
 		}
 		if m.streaming && k.Type == tea.KeyEsc && m.cancel != nil {
 			m.cancel()
@@ -384,6 +395,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		} else {
 			m.copyToClipboard(last)
 		}
+	case "/copy-mode":
+		initCmd = m.toggleCopyMode()
 	case "/compact":
 		if m.streaming || m.compacting {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -435,6 +448,9 @@ func (m *RootModel) View() string {
 	case editor.ShellModeSend:
 		box = m.styles.EditorBoxShellSend
 	}
+	if m.copyMode {
+		box = m.styles.EditorBoxDim
+	}
 	edArea := box.Render(m.editor.View(m.width))
 	hint := m.editorScrollHint()
 	overlay := ""
@@ -448,10 +464,17 @@ func (m *RootModel) View() string {
 	}
 	foot := m.footer.Render(m.styles)
 	activity := m.renderActivityLine()
+	banner := ""
+	if m.copyMode {
+		banner = m.styles.CopyModeBanner.Render("[copy mode] drag to highlight, copy with your terminal shortcut · Shift+Tab/Esc to exit")
+	}
 
 	out := msgArea
 	if activity != "" {
 		out += "\n\n" + activity
+	}
+	if banner != "" {
+		out += "\n" + banner
 	}
 	if hint != "" {
 		out += "\n" + hint
@@ -551,7 +574,11 @@ func (m *RootModel) layout() {
 	if m.editor.RawRows() > editorRows {
 		hintRows = 1
 	}
-	msgH := m.height - footerH - editorH - overlayRows - activityRows - hintRows
+	bannerRows := 0
+	if m.copyMode {
+		bannerRows = 1
+	}
+	msgH := m.height - footerH - editorH - overlayRows - activityRows - hintRows - bannerRows
 	if msgH < 3 {
 		msgH = 3
 	}
@@ -835,6 +862,25 @@ func arcaneActivityPhrases(icons IconSet) []string {
 		iconLabel(icons.Tool, "binding tools to the circle..."),
 		iconLabel(icons.Context, "measuring the leyline pressure..."),
 	}
+}
+
+// toggleCopyMode flips terminal-native copy mode. When entering, we surrender
+// mouse capture so the terminal handles click-drag selection itself; the editor
+// is blurred and the box dims to signal it's not accepting input. When exiting,
+// we re-enable wheel-scroll and restore editor focus (unless a turn is
+// streaming or compacting, which independently keep the editor blurred).
+func (m *RootModel) toggleCopyMode() tea.Cmd {
+	m.copyMode = !m.copyMode
+	if m.copyMode {
+		m.editor.Blur()
+		m.layout()
+		return tea.DisableMouse
+	}
+	if !m.streaming && !m.compacting {
+		m.editor.Focus()
+	}
+	m.layout()
+	return tea.EnableMouseCellMotion
 }
 
 func (m *RootModel) copyToClipboard(text string) {
