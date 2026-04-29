@@ -11,12 +11,12 @@ import (
 const filePickerLimit = 50
 
 type FilePicker struct {
-	root    string
-	files   []string // relative paths
-	query   string
-	items   []string
-	sel     int
-	primed  bool
+	root   string
+	files  []string // relative paths
+	query  string
+	items  []string
+	sel    int
+	primed bool
 }
 
 func NewFilePicker(root string) *FilePicker {

@@ -134,8 +134,8 @@ func (e *Editor) Reset() {
 	}
 	e.updateHeight()
 }
-func (e *Editor) Rows() int       { return e.cap(rowsFor(e.ta.Value(), e.width)) }
-func (e *Editor) RawRows() int    { return rowsFor(e.ta.Value(), e.width) }
+func (e *Editor) Rows() int    { return e.cap(rowsFor(e.ta.Value(), e.width)) }
+func (e *Editor) RawRows() int { return rowsFor(e.ta.Value(), e.width) }
 
 func (e *Editor) SetMaxRows(n int) {
 	if n < 1 {
@@ -186,7 +186,7 @@ func (e *Editor) cursorVisualRow() int {
 	return row + e.ta.LineInfo().RowOffset
 }
 
-func (e *Editor) Mode() Mode                 { return e.mode }
+func (e *Editor) Mode() Mode { return e.mode }
 func (e *Editor) ShellMode() ShellMode {
 	v := strings.TrimSpace(e.ta.Value())
 	switch {

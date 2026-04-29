@@ -15,8 +15,8 @@ const splashTagline = "✦ speak your incantation ✦"
 // Returns "" when the area is too small to display the art legibly — the
 // viewport then falls back to its natural empty state.
 func renderSplash(width, height int, styles Styles) string {
-	const minWidth = 38  // wordmark is 35 cols; 3 for breathing room
-	const minHeight = 9  // 6 art rows + blank + tagline + breathing room
+	const minWidth = 38 // wordmark is 35 cols; 3 for breathing room
+	const minHeight = 9 // 6 art rows + blank + tagline + breathing room
 	if width < minWidth || height < minHeight {
 		return ""
 	}

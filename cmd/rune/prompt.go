@@ -78,4 +78,3 @@ func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	fmt.Fprintln(w)
 	return sess.Save()
 }
-
