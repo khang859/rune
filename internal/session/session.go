@@ -3,12 +3,15 @@ package session
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"sync"
 	"time"
 
 	"github.com/khang859/rune/internal/ai"
 )
 
 type Session struct {
+	mu sync.RWMutex
+
 	ID      string
 	Name    string
 	Created time.Time
@@ -43,10 +46,25 @@ func New(model string) *Session {
 
 // SetPath assigns the file path used by Save. Callers in cmd/rune use this
 // to place sessions under ~/.rune/sessions; tests use it to point at a temp dir.
-func (s *Session) SetPath(p string) { s.path = p }
-func (s *Session) Path() string     { return s.path }
+func (s *Session) SetPath(p string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.path = p
+}
+
+func (s *Session) Path() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.path
+}
 
 func (s *Session) Append(msg ai.Message) *Node {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.appendLocked(msg)
+}
+
+func (s *Session) appendLocked(msg ai.Message) *Node {
 	n := &Node{
 		ID:      newID(),
 		Parent:  s.Active,
@@ -59,17 +77,24 @@ func (s *Session) Append(msg ai.Message) *Node {
 }
 
 func (s *Session) Fork(target *Node) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.Active = target
 }
 
 func (s *Session) Clone() *Session {
-	nc := New(s.Model)
-	nc.Name = s.Name
-	// Copy the active path: walk up to root, reverse, replay Append.
+	s.mu.RLock()
+	model := s.Model
+	name := s.Name
 	var msgs []ai.Message
 	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
 		msgs = append([]ai.Message{n.Message}, msgs...)
 	}
+	s.mu.RUnlock()
+
+	nc := New(model)
+	nc.Name = name
+	// Copy the active path: walk up to root, reverse, replay Append.
 	for _, m := range msgs {
 		nc.Append(m)
 	}
@@ -78,6 +103,12 @@ func (s *Session) Clone() *Session {
 
 // PathToActive returns the messages from the first child of root down to Active (excluding root).
 func (s *Session) PathToActive() []ai.Message {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pathToActiveLocked()
+}
+
+func (s *Session) pathToActiveLocked() []ai.Message {
 	var msgs []ai.Message
 	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
 		msgs = append([]ai.Message{n.Message}, msgs...)
@@ -89,6 +120,8 @@ func (s *Session) PathToActive() []ai.Message {
 // Active (excluding root). Use when callers need per-node metadata (e.g.
 // CompactedCount) that PathToActive's []ai.Message strips away.
 func (s *Session) PathToActiveNodes() []*Node {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	var nodes []*Node
 	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
 		nodes = append([]*Node{n}, nodes...)

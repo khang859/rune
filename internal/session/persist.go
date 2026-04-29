@@ -31,6 +31,9 @@ type wireNode struct {
 }
 
 func (s *Session) Save() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
 	if s.path == "" {
 		return fmt.Errorf("session path is empty; set with SetPath or Load")
 	}

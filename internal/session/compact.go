@@ -13,7 +13,9 @@ type Summarizer func(ctx context.Context, history []ai.Message, instructions str
 // Compact replaces the active path's prefix up to (but not including) the most recent
 // user message with a single synthetic assistant summary message.
 func (s *Session) Compact(ctx context.Context, instructions string, summarize Summarizer) error {
-	path := s.PathToActive()
+	s.mu.RLock()
+	path := s.pathToActiveLocked()
+	s.mu.RUnlock()
 	if len(path) == 0 {
 		return nil
 	}
@@ -25,6 +27,9 @@ func (s *Session) Compact(ctx context.Context, instructions string, summarize Su
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	// Detach the active branch from Root before grafting the compacted one.
 	// Compact replaces history along the active line; sibling forks under Root
 	// are preserved, but the chain we just summarized is gone. Users who want
@@ -43,13 +48,13 @@ func (s *Session) Compact(ctx context.Context, instructions string, summarize Su
 
 	// Build a new branch off root: [summary, path[cut:]...]
 	s.Active = s.Root
-	sumNode := s.Append(ai.Message{
+	sumNode := s.appendLocked(ai.Message{
 		Role:    ai.RoleAssistant,
 		Content: []ai.ContentBlock{ai.TextBlock{Text: summary}},
 	})
 	sumNode.CompactedCount = cut
 	for _, m := range path[cut:] {
-		n := s.Append(m)
+		n := s.appendLocked(m)
 		n.Created = time.Now()
 	}
 	return nil
