@@ -576,7 +576,9 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.footer.Session = s.Name
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
+	prev := m.agent.ReasoningEffort()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), s, m.agent.System())
+	m.agent.SetReasoningEffort(prev)
 }
 
 // stopActiveTurn cancels any in-flight agent turn, clears streaming state,
