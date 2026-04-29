@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -160,7 +161,7 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		case bkThinking:
 			rendered = renderThinking(s, b, showThinking, now)
 		case bkToolCall:
-			rendered = s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
+			rendered = renderToolCall(s, b)
 		case bkToolResult:
 			rendered = renderToolResult(s, b, showToolResults)
 		case bkError:
@@ -203,6 +204,41 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 		return headerLine
 	}
 	return headerLine + "\n" + s.Thinking.Render(b.text)
+}
+
+func renderToolCall(s Styles, b block) string {
+	if b.meta == "edit" {
+		if rendered, ok := formatEditDiff(s, json.RawMessage(b.text)); ok {
+			return rendered
+		}
+	}
+	return s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
+}
+
+// formatEditDiff renders an edit tool call as a header line plus a unified
+// diff body: "- " for old_string lines, "+ " for new_string lines. Returns
+// false if the args can't be parsed, so the caller can fall back to the
+// generic format.
+func formatEditDiff(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Path      string `json:"path"`
+		OldString string `json:"old_string"`
+		NewString string `json:"new_string"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	var sb strings.Builder
+	sb.WriteString(s.ToolCall.Render(fmt.Sprintf("%s edit %s", iconLabel(s.Icons.Tool, "tool"), a.Path)))
+	for _, line := range strings.Split(a.OldString, "\n") {
+		sb.WriteString("\n")
+		sb.WriteString(s.DiffDel.Render("- " + line))
+	}
+	for _, line := range strings.Split(a.NewString, "\n") {
+		sb.WriteString("\n")
+		sb.WriteString(s.DiffAdd.Render("+ " + line))
+	}
+	return sb.String(), true
 }
 
 func renderToolResult(s Styles, b block, show bool) string {

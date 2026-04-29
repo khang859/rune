@@ -9,6 +9,8 @@ type Styles struct {
 	ToolCall       lipgloss.Style
 	ToolResult     lipgloss.Style
 	ToolError      lipgloss.Style
+	DiffAdd        lipgloss.Style
+	DiffDel        lipgloss.Style
 	Info           lipgloss.Style
 	SummaryHeader  lipgloss.Style
 	ThinkingHeader lipgloss.Style
@@ -38,6 +40,8 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		ToolCall:       lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 		ToolResult:     lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
 		ToolError:      lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
+		DiffAdd:        lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
+		DiffDel:        lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		Info:           lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color("8")),
 		SummaryHeader:  lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
 		ThinkingHeader: lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),

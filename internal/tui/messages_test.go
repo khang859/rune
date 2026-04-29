@@ -80,6 +80,43 @@ func TestMessages_ToolResultExpandedShowsBody(t *testing.T) {
 	}
 }
 
+func TestMessages_EditToolRendersAsDiff(t *testing.T) {
+	m := NewMessages(80)
+	args := []byte(`{"path":"foo.go","old_string":"old1\nold2","new_string":"new1\nnew2"}`)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "edit", Args: args})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	if !strings.Contains(out, "edit foo.go") {
+		t.Fatalf("expected diff header with path, got:\n%s", out)
+	}
+	for _, want := range []string{"- old1", "- old2", "+ new1", "+ new2"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in diff output, got:\n%s", want, out)
+		}
+	}
+	// Raw JSON keys should not leak into the rendered diff.
+	if strings.Contains(out, "old_string") || strings.Contains(out, "new_string") {
+		t.Fatalf("raw JSON leaked into diff output:\n%s", out)
+	}
+}
+
+func TestMessages_EditToolMalformedArgsFallsBack(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "edit", Args: []byte(`not json`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, "edit(not json)") {
+		t.Fatalf("expected fallback to generic format, got:\n%s", out)
+	}
+}
+
+func TestMessages_NonEditToolUsesGenericFormat(t *testing.T) {
+	m := NewMessages(80)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"/x"}`)})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, `read({"path":"/x"})`) {
+		t.Fatalf("expected generic tool call format for read, got:\n%s", out)
+	}
+}
+
 func TestMessages_AssistantDeltaSurvivesIntervening(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hel")
