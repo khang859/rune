@@ -693,12 +693,8 @@ func (m *RootModel) copyToClipboard(text string) {
 func (m *RootModel) refreshSystemPrompt() {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
-	sys := defaultSystemPromptForRoot() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	sys := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	prev := m.agent.ReasoningEffort()
 	m.agent = agent.New(m.agent.Provider(), m.agent.Tools(), m.sess, sys)
 	m.agent.SetReasoningEffort(prev)
-}
-
-func defaultSystemPromptForRoot() string {
-	return "You are rune, a coding agent. Use the available tools."
 }

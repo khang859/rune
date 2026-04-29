@@ -66,7 +66,7 @@ func runInteractive(ctx context.Context, model string) error {
 		},
 	}).Load()
 
-	system := defaultSystemPrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	system := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	a := agent.New(p, reg, sess, system)
 
 	return tui.Run(a, sess, skills)

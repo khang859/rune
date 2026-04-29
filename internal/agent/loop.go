@@ -28,9 +28,13 @@ func (a *Agent) Run(ctx context.Context, userMsg ai.Message) <-chan Event {
 func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	autoCompactRemaining := 1
 	for {
+		sys := a.system
+		if sys != "" {
+			sys += "\n\n" + RuntimeContext()
+		}
 		req := ai.Request{
 			Model:     a.session.Model,
-			System:    a.system,
+			System:    sys,
 			Messages:  a.session.PathToActive(),
 			Tools:     a.tools.Specs(),
 			Reasoning: ai.ReasoningConfig{Effort: a.effort},

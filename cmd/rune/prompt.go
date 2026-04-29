@@ -57,7 +57,7 @@ func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	agentsMD := agent.LoadAgentsMD(cwd, home)
-	system := defaultSystemPrompt()
+	system := agent.BasePrompt()
 	if agentsMD != "" {
 		system += "\n\nProject context:\n" + agentsMD
 	}
@@ -79,6 +79,3 @@ func runPrompt(ctx context.Context, text, model string, w io.Writer) error {
 	return sess.Save()
 }
 
-func defaultSystemPrompt() string {
-	return "You are rune, a coding agent. Use the available tools."
-}

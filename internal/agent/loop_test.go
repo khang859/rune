@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -252,5 +253,28 @@ func TestRun_ThreadsReasoningEffortIntoRequest(t *testing.T) {
 	_ = collect(t, a.Run(context.Background(), userMsg("hi")))
 	if cp.gotReq.Reasoning.Effort != "high" {
 		t.Fatalf("req.Reasoning.Effort = %q, want %q", cp.gotReq.Reasoning.Effort, "high")
+	}
+}
+
+func TestRun_AppendsRuntimeContextWhenSystemSet(t *testing.T) {
+	cp := &captureProvider{}
+	a := New(cp, tools.NewRegistry(), session.New("gpt-5"), "base prompt")
+	_ = collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if !strings.HasPrefix(cp.gotReq.System, "base prompt") {
+		t.Errorf("base lost: %q", cp.gotReq.System)
+	}
+	if !strings.Contains(cp.gotReq.System, "<system-context>") {
+		t.Errorf("runtime context not appended: %q", cp.gotReq.System)
+	}
+}
+
+func TestRun_OmitsRuntimeContextWhenSystemEmpty(t *testing.T) {
+	cp := &captureProvider{}
+	a := New(cp, tools.NewRegistry(), session.New("gpt-5"), "")
+	_ = collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if cp.gotReq.System != "" {
+		t.Errorf("expected empty system, got: %q", cp.gotReq.System)
 	}
 }
