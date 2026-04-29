@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/search"
 )
 
 type Tool interface {
@@ -30,6 +31,29 @@ func NewRegistry() *Registry {
 
 func (r *Registry) Register(t Tool) {
 	r.tools[t.Spec().Name] = t
+}
+
+func (r *Registry) Unregister(name string) { delete(r.tools, name) }
+
+func (r *Registry) Has(name string) bool { _, ok := r.tools[name]; return ok }
+
+type BuiltinOptions struct {
+	WebFetchEnabled      bool
+	WebFetchAllowPrivate bool
+	SearchProvider       search.Provider
+}
+
+func RegisterBuiltins(r *Registry, opts BuiltinOptions) {
+	r.Register(Read{})
+	r.Register(Write{})
+	r.Register(Edit{})
+	r.Register(Bash{})
+	if opts.WebFetchEnabled {
+		r.Register(WebFetch{AllowPrivate: opts.WebFetchAllowPrivate})
+	}
+	if opts.SearchProvider != nil {
+		r.Register(WebSearch{Provider: opts.SearchProvider})
+	}
 }
 
 func (r *Registry) Specs() []ai.ToolSpec {

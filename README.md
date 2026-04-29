@@ -53,6 +53,21 @@ See `docs/keybindings.md` for the full key map and `/hotkeys` for in-app help.
 - **MCP plugins** — configure `~/.rune/mcp.json`. See `docs/mcp.md`.
 - **Project context** — rune walks up from the cwd collecting `AGENTS.md`.
 
+## Web tools
+
+rune can optionally expose web tools to the agent:
+
+- `web_search` — search the web for relevant pages.
+- `web_fetch` — fetch a specific HTTP(S) URL.
+
+`web_fetch` is available when enabled in settings. `web_search` requires a configured search provider. For Brave Search, set:
+
+```sh
+export RUNE_BRAVE_SEARCH_API_KEY="..."
+```
+
+Or configure it interactively with `/settings` and paste the key into the masked popup. See `docs/web.md` for details and security notes.
+
 ## Development
 
 ```bash

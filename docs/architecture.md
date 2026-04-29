@@ -5,7 +5,8 @@ cmd/rune              entrypoint, mode dispatch
 └── internal/tui      Bubble Tea: root model, editor, modals
     └── internal/agent  turn loop: provider → tools → loop
         ├── internal/ai     provider client (codex), oauth, faux
-        ├── internal/tools  read/write/edit/bash + Registry
+        ├── internal/tools  read/write/edit/bash/web_fetch/web_search + Registry
+        ├── internal/search web search providers (Brave; SearXNG planned)
         ├── internal/mcp    stdio JSON-RPC client + manager
         └── internal/session branching tree, persist, compact
 ```

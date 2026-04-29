@@ -1,0 +1,75 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestNormalizeBraveAPIKeyInput(t *testing.T) {
+	cases := map[string]string{
+		" key\n":                               "key",
+		"\"key\"":                              "key",
+		"'key'":                                "key",
+		"export RUNE_BRAVE_SEARCH_API_KEY=key": "key",
+		"RUNE_BRAVE_SEARCH_API_KEY='key'":      "key",
+	}
+	for in, want := range cases {
+		if got := NormalizeBraveAPIKeyInput(in); got != want {
+			t.Fatalf("NormalizeBraveAPIKeyInput(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateBraveAPIKeyRejectsObviousMistakes(t *testing.T) {
+	for _, key := range []string{"", "short", strings.Repeat("x", 513), "abc defghijklmnopqrstuvwxyz", "abc\ndefghijklmnopqrstuvwxyz", "abc{defghijklmnopqrstuvwxyz"} {
+		if err := ValidateBraveAPIKey(key); err == nil {
+			t.Fatalf("ValidateBraveAPIKey(%q) = nil", key)
+		}
+	}
+}
+
+func TestSecretStoreSaveLoadAndEnvPrecedence(t *testing.T) {
+	dir := t.TempDir()
+	store := NewSecretStore(filepath.Join(dir, "secrets.json"))
+	stored := strings.Repeat("a", 24)
+	env := strings.Repeat("b", 24)
+	if err := store.SetBraveSearchAPIKey(stored); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(filepath.Join(dir, "secrets.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("permissions = %v, want 0600", info.Mode().Perm())
+	}
+	key, err := store.BraveSearchAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_BRAVE_SEARCH_API_KEY", env)
+	key, err = store.BraveSearchAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env key = %q, %v", key, err)
+	}
+}
+
+func TestSecretStoreRejectsInvalidWithoutOverwriting(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	valid := strings.Repeat("a", 24)
+	if err := store.SetBraveSearchAPIKey(valid); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetBraveSearchAPIKey("bad key"); err == nil {
+		t.Fatal("expected invalid key error")
+	}
+	sec, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sec.BraveSearchAPIKey != valid {
+		t.Fatalf("key overwritten: %q", sec.BraveSearchAPIKey)
+	}
+}

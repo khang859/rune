@@ -68,10 +68,7 @@ func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) erro
 		sess.SetPath(sc.Session)
 	}
 	reg := tools.NewRegistry()
-	reg.Register(tools.Read{})
-	reg.Register(tools.Write{})
-	reg.Register(tools.Edit{})
-	reg.Register(tools.Bash{})
+	tools.RegisterBuiltins(reg, tools.BuiltinOptions{})
 
 	a := agent.New(f, reg, sess, "")
 	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: sc.UserMessage}}}

@@ -47,6 +47,7 @@ type RootModel struct {
 
 	modal           modal.Modal
 	settings        modal.Settings
+	lastModal       modal.Modal
 	pendingForkMode bool
 	clipboardReady  bool
 	clipboardErr    error
@@ -84,7 +85,11 @@ var baseSlashCmds = []string{
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	realCwd, _ := os.Getwd()
 	iconMode := string(DefaultIconMode())
-	settings := modal.Settings{Effort: a.ReasoningEffort(), IconMode: iconMode, ActivityMode: "arcane"}
+	settings := modalSettingsFromConfig(config.DefaultSettings(), braveKeyConfigured())
+	settings.Effort = a.ReasoningEffort()
+	if settings.IconMode == "" {
+		settings.IconMode = iconMode
+	}
 	displayCwd := realCwd
 	if home, _ := os.UserHomeDir(); home != "" && strings.HasPrefix(realCwd, home) {
 		displayCwd = "~" + strings.TrimPrefix(realCwd, home)
@@ -265,7 +270,11 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case modal.ResultMsg:
 		cur := m.modal
+		if cur == nil {
+			cur = m.lastModal
+		}
 		m.modal = nil
+		m.lastModal = nil
 		if v.Cancel {
 			if _, isTree := cur.(*modal.Tree); isTree {
 				// Cancelling /fork's tree must not leak fork mode into the next /tree.
@@ -471,6 +480,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 // loaders work. Always go through this rather than assigning m.modal directly.
 func (m *RootModel) openModal(md modal.Modal) tea.Cmd {
 	m.modal = md
+	m.lastModal = md
 	return md.Init()
 }
 
@@ -727,16 +737,25 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 		}
 	case *modal.SettingsModal:
-		if s, ok := payload.(modal.Settings); ok {
-			m.settings = s
-			m.styles.Icons = IconSetForMode(s.IconMode)
-			if s.Effort != "" {
-				m.agent.SetReasoningEffort(s.Effort)
+		switch v := payload.(type) {
+		case modal.SettingsAction:
+			m.applySettings(v.Settings)
+			if v.Action == "brave_api_key" {
+				return m.openModal(modal.NewSecretInput("Brave Search API key", "brave_api_key"))
 			}
-			if m.showActivity() {
-				return m.startActivityTick()
+		case modal.Settings:
+			m.applySettings(v)
+		}
+	case *modal.SecretInput:
+		if res, ok := payload.(modal.SecretInputResult); ok && res.Action == "brave_api_key" {
+			if err := config.NewSecretStore(config.SecretsPath()).SetBraveSearchAPIKey(res.Value); err != nil {
+				m.msgs.OnTurnError(err)
+			} else {
+				m.settings.BraveAPIKeyStatus = "configured — Enter to replace"
+				m.reconfigureWebTools()
+				m.msgs.OnInfo("(saved Brave Search API key; web_search enabled if settings allow it)")
 			}
-			m.stopActivityTick()
+			m.refreshViewport()
 		}
 	case *modal.MCPWizard:
 		if res, ok := payload.(modal.MCPWizardResult); ok {

@@ -45,11 +45,10 @@ func runInteractive(ctx context.Context, model string) error {
 	sess := session.New(model)
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
+	settings, _ := config.LoadSettings(config.SettingsPath())
 	reg := tools.NewRegistry()
-	reg.Register(tools.Read{})
-	reg.Register(tools.Write{})
-	reg.Register(tools.Edit{})
-	reg.Register(tools.Bash{})
+	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
+	tools.RegisterBuiltins(reg, opts)
 
 	mgr := mcp.NewManager(config.MCPConfig())
 	if err := mgr.Start(ctx, reg); err != nil {
