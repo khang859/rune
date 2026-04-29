@@ -11,7 +11,10 @@ import (
 // BasePrompt is the default rune system prompt. Centralized here so cmd/rune
 // and internal/tui share one source of truth.
 func BasePrompt() string {
-	return "You are rune, a coding agent. Use the available tools."
+	return strings.Join([]string{
+		"You are rune, a coding agent. Use the available tools.",
+		"When asked to implement a new feature or make a non-trivial change, first explore the codebase to understand the request, present a concise plan, and wait for the user's approval before editing files or running implementation steps.",
+	}, "\n")
 }
 
 // RuntimeContext returns a <system-context> block describing the runtime:

@@ -7,13 +7,15 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/khang859/rune/internal/agent"
+	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
 )
 
-func Run(a *agent.Agent, s *session.Session, skills []skill.Skill) error {
+func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status) error {
 	m := NewRootModel(a, s)
 	m.SetSkills(skills)
+	m.SetMCPStatuses(mcpStatuses)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	_, err := p.Run()
 	fmt.Print(ansi.PopKittyKeyboard(1))

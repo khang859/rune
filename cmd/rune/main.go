@@ -16,7 +16,7 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--script <file>] [--prompt <text>] [--version] | rune login codex")
+		fmt.Fprintln(os.Stderr, "usage: rune [--script <file>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -45,6 +45,14 @@ func main() {
 	ctx := context.Background()
 
 	args := flag.Args()
+	if len(args) >= 1 && args[0] == "mcp" {
+		if err := runMCP(args[1:], os.Stdout, os.Stderr); err != nil {
+			runelog.Error("mcp", "err", err.Error())
+			fmt.Fprintln(os.Stderr, "mcp error:", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(args) >= 2 && args[0] == "login" {
 		if err := runLogin(ctx, args[1]); err != nil {
 			runelog.Error("login", "err", err.Error())

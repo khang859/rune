@@ -69,5 +69,5 @@ func runInteractive(ctx context.Context, model string) error {
 	system := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	a := agent.New(p, reg, sess, system)
 
-	return tui.Run(a, sess, skills)
+	return tui.Run(a, sess, skills, mgr.Statuses())
 }

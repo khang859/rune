@@ -22,7 +22,7 @@ func TestMCPTool_RunsAndStringifies(t *testing.T) {
 		InputSchema: json.RawMessage(`{"type":"object"}`),
 	})
 	spec := tt.Spec()
-	if spec.Name != "stub:echo" {
+	if spec.Name != "stub_echo" {
 		t.Fatalf("spec.Name = %q", spec.Name)
 	}
 	res, err := tt.Run(ctx, json.RawMessage(`{"text":"hello"}`))

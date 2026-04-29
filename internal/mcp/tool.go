@@ -20,7 +20,7 @@ func NewTool(c *Client, t Tool) *MCPTool {
 
 func (m *MCPTool) Spec() ai.ToolSpec {
 	return ai.ToolSpec{
-		Name:        m.client.Name() + ":" + m.tool.Name,
+		Name:        m.client.Name() + "_" + m.tool.Name,
 		Description: m.tool.Description,
 		Schema:      m.tool.InputSchema,
 	}

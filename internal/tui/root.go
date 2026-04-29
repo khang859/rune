@@ -18,6 +18,7 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tui/editor"
@@ -42,7 +43,7 @@ type RootModel struct {
 	eventCh    <-chan agent.Event
 	cancel     context.CancelFunc
 
-	totalTokens int
+	currentTokens int
 
 	modal           modal.Modal
 	settings        modal.Settings
@@ -61,6 +62,7 @@ type RootModel struct {
 
 	skills           map[string]string
 	pendingSkillBody string
+	mcpStatuses      []mcp.Status
 
 	// Ctrl+C requires a double press to exit. The first press clears the
 	// editor (and closes a modal / cancels a streaming turn), primes the
@@ -74,7 +76,7 @@ type RootModel struct {
 const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
-	"/quit", "/model", "/tree", "/resume", "/settings",
+	"/quit", "/model", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/compact", "/reload", "/hotkeys",
 }
@@ -118,6 +120,14 @@ func (m *RootModel) SetSkills(skills []skill.Skill) {
 		cmds = append(cmds, "/skill:"+s.Slug)
 	}
 	m.editor.SetSlashCmds(cmds)
+}
+
+func (m *RootModel) SetMCPStatuses(statuses []mcp.Status) {
+	m.mcpStatuses = make([]mcp.Status, len(statuses))
+	for i, st := range statuses {
+		m.mcpStatuses[i] = st
+		m.mcpStatuses[i].Tools = append([]string(nil), st.Tools...)
+	}
 }
 
 func (m *RootModel) Init() tea.Cmd {
@@ -387,7 +397,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/quit":
 		return tea.Quit
 	case "/model":
-		initCmd = m.openModal(modal.NewModelPicker([]string{"gpt-5", "gpt-5-codex", "gpt-5.1-codex-mini"}, m.sess.Model))
+		initCmd = m.openModal(modal.NewModelPicker(codexModelIDs(), m.sess.Model))
 	case "/tree":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -399,6 +409,10 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewResume(items))
 	case "/settings":
 		initCmd = m.openModal(modal.NewSettings(m.settings))
+	case "/mcp":
+		initCmd = m.openModal(modal.NewMCPWizard())
+	case "/mcp-status":
+		initCmd = m.openModal(modal.NewMCPStatus(m.mcpStatuses))
 	case "/hotkeys":
 		initCmd = m.openModal(modal.NewHotkeys())
 	case "/new":
@@ -657,9 +671,9 @@ func (m *RootModel) handleEvent(e agent.Event) {
 	case agent.ToolFinished:
 		m.msgs.OnToolFinished(v)
 	case agent.TurnUsage:
-		m.totalTokens += v.Usage.Input + v.Usage.Output
-		m.footer.Tokens = m.totalTokens
-		m.footer.ContextPct = ctxPct(m.totalTokens)
+		m.currentTokens = v.Usage.Input + v.Usage.Output
+		m.footer.Tokens = m.currentTokens
+		m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 	case agent.ContextOverflow:
 		m.msgs.OnTurnError(fmt.Errorf("context overflow — manual /compact recommended"))
 	case agent.TurnError:
@@ -671,13 +685,44 @@ func (m *RootModel) handleEvent(e agent.Event) {
 	}
 }
 
-func ctxPct(tokens int) int {
-	const cap = 200000
+func ctxPctForModel(model string, tokens int) int {
+	cap := contextWindowForModel(model)
+	if cap <= 0 || tokens <= 0 {
+		return 0
+	}
 	p := tokens * 100 / cap
 	if p > 100 {
 		return 100
 	}
 	return p
+}
+
+func contextWindowForModel(model string) int {
+	switch strings.ToLower(model) {
+	case "gpt-5.3-codex-spark":
+		return 128_000
+	case "gpt-5.1", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
+		"gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex",
+		"gpt-5.4", "gpt-5.4-mini", "gpt-5.5":
+		return 272_000
+	default:
+		return 272_000
+	}
+}
+
+func codexModelIDs() []string {
+	return []string{
+		"gpt-5.5",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.3-codex",
+		"gpt-5.3-codex-spark",
+		"gpt-5.2",
+		"gpt-5.2-codex",
+		"gpt-5.1",
+		"gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini",
+	}
 }
 
 func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
@@ -686,6 +731,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		if id, ok := payload.(string); ok {
 			m.sess.Model = id
 			m.footer.Model = id
+			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 		}
 	case *modal.SettingsModal:
 		if s, ok := payload.(modal.Settings); ok {
@@ -698,6 +744,15 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				return m.startActivityTick()
 			}
 			m.stopActivityTick()
+		}
+	case *modal.MCPWizard:
+		if res, ok := payload.(modal.MCPWizardResult); ok {
+			if err := mcp.AddServer(config.MCPConfig(), res.Name, res.Config, false); err != nil {
+				m.msgs.OnTurnError(fmt.Errorf("mcp: %v", err))
+			} else {
+				m.msgs.OnInfo(fmt.Sprintf("(added MCP server %q; restart rune to load its tools)", res.Name))
+			}
+			m.refreshViewport()
 		}
 	case *modal.Resume:
 		if sum, ok := payload.(session.Summary); ok {

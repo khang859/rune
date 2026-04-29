@@ -28,6 +28,7 @@ func (Hotkeys) View(width, height int) string {
   Tab             path completion
   @               file picker
   /               command menu
+  /mcp-status     show MCP connection status
   !cmd            run shell, send output
   !!cmd           run shell, do not send
 

@@ -433,6 +433,71 @@ func TestRoot_RendersArcaneActivityLineWhileStreaming(t *testing.T) {
 	}
 }
 
+func TestRoot_TurnUsageShowsCurrentContextTokensNotCumulative(t *testing.T) {
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleEvent(agent.TurnUsage{Usage: ai.Usage{Input: 1_000_000, Output: 100_000}})
+	m.handleEvent(agent.TurnUsage{Usage: ai.Usage{Input: 10_000, Output: 1_000}})
+
+	if got, want := m.footer.Tokens, 11_000; got != want {
+		t.Fatalf("footer tokens = %d, want latest usage %d", got, want)
+	}
+	if got, want := m.footer.ContextPct, 4; got != want {
+		t.Fatalf("gpt-5.5 context pct = %d, want %d", got, want)
+	}
+}
+
+func TestContextWindowForModelMatchesPiCodexList(t *testing.T) {
+	for _, model := range []string{
+		"gpt-5.1",
+		"gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini",
+		"gpt-5.2",
+		"gpt-5.2-codex",
+		"gpt-5.3-codex",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.5",
+	} {
+		if got, want := contextWindowForModel(model), 272_000; got != want {
+			t.Fatalf("contextWindowForModel(%q) = %d, want %d", model, got, want)
+		}
+	}
+	if got, want := contextWindowForModel("gpt-5.3-codex-spark"), 128_000; got != want {
+		t.Fatalf("contextWindowForModel(spark) = %d, want %d", got, want)
+	}
+}
+
+func TestCtxPctForModelUsesCodexWindow(t *testing.T) {
+	if got, want := ctxPctForModel("gpt-5.5", 136_000), 50; got != want {
+		t.Fatalf("ctxPctForModel(gpt-5.5, 136k) = %d, want %d", got, want)
+	}
+	if got, want := ctxPctForModel("gpt-5.5", 300_000), 100; got != want {
+		t.Fatalf("ctxPctForModel caps at %d, want %d", got, want)
+	}
+}
+
+func TestCodexModelIDsMatchesPiCodexList(t *testing.T) {
+	got := strings.Join(codexModelIDs(), ",")
+	want := strings.Join([]string{
+		"gpt-5.5",
+		"gpt-5.4",
+		"gpt-5.4-mini",
+		"gpt-5.3-codex",
+		"gpt-5.3-codex-spark",
+		"gpt-5.2",
+		"gpt-5.2-codex",
+		"gpt-5.1",
+		"gpt-5.1-codex-max",
+		"gpt-5.1-codex-mini",
+	}, ",")
+	if got != want {
+		t.Fatalf("codexModelIDs() = %q, want %q", got, want)
+	}
+}
+
 func TestRoot_RendersSimpleActivityLineWhenConfigured(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

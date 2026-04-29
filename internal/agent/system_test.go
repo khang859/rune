@@ -7,9 +7,19 @@ import (
 	"time"
 )
 
-func TestBasePrompt_NonEmpty(t *testing.T) {
-	if got := BasePrompt(); got == "" {
+func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
+	got := BasePrompt()
+	if got == "" {
 		t.Fatal("BasePrompt() returned empty string")
+	}
+	for _, want := range []string{
+		"You are rune, a coding agent.",
+		"present a concise plan",
+		"wait for the user's approval before editing files",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("BasePrompt() missing %q in: %q", want, got)
+		}
 	}
 }
 
