@@ -16,10 +16,22 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
+	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 	"github.com/khang859/rune/internal/tui/modal"
 )
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "rune-tui-tests-*")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	defer os.RemoveAll(dir)
+	_ = os.Setenv("RUNE_DIR", dir)
+	os.Exit(m.Run())
+}
 
 func TestRoot_SavesOnlyAfterFirstUserMessage(t *testing.T) {
 	dir := t.TempDir()
@@ -47,6 +59,44 @@ func TestRoot_SavesOnlyAfterFirstUserMessage(t *testing.T) {
 	msgs := loaded.PathToActive()
 	if len(msgs) != 1 || msgs[0].Role != ai.RoleUser {
 		t.Fatalf("saved messages after startTurn = %#v, want one user message", msgs)
+	}
+}
+
+func TestRoot_AutoCompactsAtConfiguredContextThreshold(t *testing.T) {
+	s := session.New("gpt-5.5")
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u1"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "a1"}}})
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u2"}}})
+	a := agent.New(faux.New().Reply("summary").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.currentTokens = 272000 * 80 / 100
+	m.footer.Tokens = m.currentTokens
+	m.eventCh = make(chan agent.Event)
+
+	_, cmd := m.Update(AgentChannelDoneMsg{Ch: m.eventCh})
+	if cmd == nil {
+		t.Fatal("expected auto-compact command at threshold")
+	}
+	if !m.compacting {
+		t.Fatal("expected compacting flag after auto-compact trigger")
+	}
+}
+
+func TestRoot_AutoCompactDoesNotRunBeforeFirstCompactableCut(t *testing.T) {
+	s := session.New("gpt-5.5")
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u1"}}})
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.currentTokens = 272000
+	m.eventCh = make(chan agent.Event)
+
+	_, cmd := m.Update(AgentChannelDoneMsg{Ch: m.eventCh})
+	if cmd != nil {
+		t.Fatal("did not expect auto-compact when only one user message exists")
+	}
+	if m.compacting {
+		t.Fatal("compacting flag should remain false")
 	}
 }
 
@@ -663,7 +713,45 @@ func TestRoot_ModelSwitchClampsThinkingEffort(t *testing.T) {
 	}
 }
 
+func TestRoot_LoadsSavedSettingsOnStartup(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	if err := config.SaveSettings(config.SettingsPath(), config.Settings{
+		ReasoningEffort: "high",
+		IconMode:        "ascii",
+		ActivityMode:    "simple",
+		Web: config.WebSettings{
+			FetchEnabled:      false,
+			FetchAllowPrivate: true,
+			SearchEnabled:     "off",
+			SearchProvider:    "brave",
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	if got := a.ReasoningEffort(); got != "high" {
+		t.Fatalf("reasoning effort = %q, want high", got)
+	}
+	if got := m.settings.IconMode; got != "ascii" {
+		t.Fatalf("settings icon mode = %q, want ascii", got)
+	}
+	if got := m.settings.ActivityMode; got != "simple" {
+		t.Fatalf("settings activity mode = %q, want simple", got)
+	}
+	if got := m.settings.WebFetch; got != "off" {
+		t.Fatalf("settings web fetch = %q, want off", got)
+	}
+	if got := m.settings.SearchProvider; got != "brave" {
+		t.Fatalf("settings search provider = %q, want brave", got)
+	}
+}
+
 func TestRoot_SettingsPreserveCurrentEffortByDefault(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)

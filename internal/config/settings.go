@@ -12,6 +12,7 @@ type Settings struct {
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	IconMode        string           `json:"icon_mode,omitempty"`
 	ActivityMode    string           `json:"activity_mode,omitempty"`
+	AutoCompact     AutoCompact      `json:"auto_compact,omitempty"`
 	Web             WebSettings      `json:"web,omitempty"`
 	Subagents       SubagentSettings `json:"subagents,omitempty"`
 }
@@ -30,6 +31,11 @@ type SubagentSettings struct {
 	MaxCompletedRetain int   `json:"max_completed_retain,omitempty"`
 }
 
+type AutoCompact struct {
+	Enabled      *bool `json:"enabled,omitempty"`
+	ThresholdPct int   `json:"threshold_pct,omitempty"`
+}
+
 func boolPtr(v bool) *bool { return &v }
 
 func (s SubagentSettings) EnabledValue() bool {
@@ -39,11 +45,19 @@ func (s SubagentSettings) EnabledValue() bool {
 	return *s.Enabled
 }
 
+func (a AutoCompact) EnabledValue() bool {
+	if a.Enabled == nil {
+		return true
+	}
+	return *a.Enabled
+}
+
 func DefaultSettings() Settings {
 	return Settings{
 		ReasoningEffort: "medium",
 		IconMode:        "unicode",
 		ActivityMode:    "arcane",
+		AutoCompact:     AutoCompact{Enabled: boolPtr(true), ThresholdPct: 80},
 		Web:             WebSettings{FetchEnabled: true, SearchEnabled: "auto", SearchProvider: "auto"},
 		Subagents:       SubagentSettings{Enabled: boolPtr(true), MaxConcurrent: 4, DefaultTimeoutSecs: 600, MaxCompletedRetain: 100},
 	}
@@ -74,6 +88,12 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.ActivityMode == "" {
 		s.ActivityMode = d.ActivityMode
+	}
+	if s.AutoCompact.Enabled == nil {
+		s.AutoCompact.Enabled = d.AutoCompact.Enabled
+	}
+	if s.AutoCompact.ThresholdPct <= 0 || s.AutoCompact.ThresholdPct >= 100 {
+		s.AutoCompact.ThresholdPct = d.AutoCompact.ThresholdPct
 	}
 	if s.Web.SearchEnabled == "" {
 		s.Web.SearchEnabled = d.Web.SearchEnabled

@@ -91,8 +91,15 @@ var baseSlashCmds = []string{
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	realCwd, _ := os.Getwd()
-	iconMode := string(DefaultIconMode())
-	settings := modalSettingsFromConfig(config.DefaultSettings(), braveKeyConfigured())
+	loadedSettings, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		loadedSettings = config.DefaultSettings()
+	}
+	settings := modalSettingsFromConfig(loadedSettings, braveKeyConfigured())
+	iconMode := settings.IconMode
+	if iconMode == "" || iconMode == "auto" {
+		iconMode = string(DefaultIconMode())
+	}
 	if settings.Effort != "" {
 		a.SetReasoningEffort(settings.Effort)
 	}
@@ -270,6 +277,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.saveSessionIfStarted()
+		compactCmd := m.maybeStartAutoCompact()
 		m.streaming = false
 		m.eventCh = nil
 		m.cancel = nil
@@ -280,6 +288,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.editor.Focus()
 		}
 		m.layout()
+		if compactCmd != nil {
+			return m, compactCmd
+		}
 		if item, ok := m.queue.Pop(); ok {
 			m.msgs.AppendUser(item.Text)
 			m.refreshViewport()
@@ -1144,6 +1155,50 @@ func (m *RootModel) rebuildMessagesFromSession() {
 		}
 	}
 	m.refreshViewport()
+}
+
+func (m *RootModel) maybeStartAutoCompact() tea.Cmd {
+	if m.compacting || m.streaming || !m.settingsAutoCompactEnabled() || m.currentTokens <= 0 {
+		return nil
+	}
+	threshold := m.settingsAutoCompactThreshold()
+	if threshold <= 0 {
+		return nil
+	}
+	if ctxPctForModel(m.sess.Model, m.currentTokens) < threshold {
+		return nil
+	}
+	if !sessionCanCompact(m.sess) {
+		return nil
+	}
+	m.compacting = true
+	m.editor.Blur()
+	m.msgs.OnInfo(fmt.Sprintf("(auto-compacting at %d%% context…)", threshold))
+	m.refreshViewport()
+	m.layout()
+	return tea.Batch(m.startCompact(), m.startActivityTick())
+}
+
+func (m *RootModel) settingsAutoCompactEnabled() bool {
+	return m.settings.AutoCompact != "off"
+}
+
+func (m *RootModel) settingsAutoCompactThreshold() int {
+	return parsePercentDefault(m.settings.AutoCompactThreshold, 80)
+}
+
+func sessionCanCompact(s *session.Session) bool {
+	path := s.PathToActive()
+	return lastUserIndex(path) > 0
+}
+
+func lastUserIndex(path []ai.Message) int {
+	for i := len(path) - 1; i >= 0; i-- {
+		if path[i].Role == ai.RoleUser {
+			return i
+		}
+	}
+	return -1
 }
 
 func (m *RootModel) startCompact() tea.Cmd {

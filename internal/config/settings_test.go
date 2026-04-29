@@ -2,6 +2,16 @@ package config
 
 import "testing"
 
+func TestDefaultSettingsIncludesAutoCompact(t *testing.T) {
+	s := DefaultSettings()
+	if !s.AutoCompact.EnabledValue() {
+		t.Fatal("auto compact should be enabled by default")
+	}
+	if s.AutoCompact.ThresholdPct != 80 {
+		t.Fatalf("auto compact threshold = %d, want 80", s.AutoCompact.ThresholdPct)
+	}
+}
+
 func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 	s := DefaultSettings()
 	if !s.Subagents.EnabledValue() {
@@ -15,6 +25,16 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 	}
 	if s.Subagents.MaxCompletedRetain != 100 {
 		t.Fatalf("MaxCompletedRetain = %d, want 100", s.Subagents.MaxCompletedRetain)
+	}
+}
+
+func TestNormalizeSettingsFillsAutoCompactDefaults(t *testing.T) {
+	s := NormalizeSettings(Settings{})
+	if !s.AutoCompact.EnabledValue() {
+		t.Fatal("auto compact should default to enabled")
+	}
+	if s.AutoCompact.ThresholdPct != 80 {
+		t.Fatalf("auto compact threshold = %d, want 80", s.AutoCompact.ThresholdPct)
 	}
 }
 

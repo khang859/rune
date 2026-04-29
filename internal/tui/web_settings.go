@@ -21,6 +21,8 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Sett
 		Effort:                s.ReasoningEffort,
 		IconMode:              s.IconMode,
 		ActivityMode:          s.ActivityMode,
+		AutoCompact:           onOff(s.AutoCompact.EnabledValue()),
+		AutoCompactThreshold:  fmt.Sprintf("%d%%", s.AutoCompact.ThresholdPct),
 		WebFetch:              onOff(s.Web.FetchEnabled),
 		FetchPrivateURLs:      onOff(s.Web.FetchAllowPrivate),
 		WebSearch:             s.Web.SearchEnabled,
@@ -39,6 +41,10 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
 		ActivityMode:    s.ActivityMode,
+		AutoCompact: config.AutoCompact{
+			Enabled:      boolPtr(s.AutoCompact != "off"),
+			ThresholdPct: parsePercentDefault(s.AutoCompactThreshold, 80),
+		},
 		Web: config.WebSettings{
 			FetchEnabled:      s.WebFetch != "off",
 			FetchAllowPrivate: s.FetchPrivateURLs == "on",
@@ -73,6 +79,11 @@ func atoiDefault(s string, fallback int) int {
 
 func parseSecondsDefault(s string, fallback int) int {
 	s = strings.TrimSpace(strings.TrimSuffix(s, "s"))
+	return atoiDefault(s, fallback)
+}
+
+func parsePercentDefault(s string, fallback int) int {
+	s = strings.TrimSpace(strings.TrimSuffix(s, "%"))
 	return atoiDefault(s, fallback)
 }
 
