@@ -425,11 +425,6 @@ func (e *Editor) currentWord() string {
 	return line
 }
 
-func (e *Editor) currentRefQuery() string {
-	w := e.currentWord()
-	return strings.TrimPrefix(w, "@")
-}
-
 func (e *Editor) replaceCurrentRefWith(s string) {
 	val := e.ta.Value()
 	cur := e.currentWord()

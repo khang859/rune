@@ -157,7 +157,7 @@ func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, usage ai.Usag
 		content = append(content, ai.TextBlock{Text: text})
 	}
 	for _, c := range calls {
-		content = append(content, ai.ToolUseBlock{ID: c.ID, Name: c.Name, Args: c.Args})
+		content = append(content, ai.ToolUseBlock(c))
 	}
 	n := a.session.Append(ai.Message{Role: ai.RoleAssistant, Content: content})
 	n.Usage = usage

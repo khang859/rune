@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 )
@@ -124,9 +123,4 @@ func (f *LoginFlow) Close() {
 		defer cancel()
 		_ = f.srv.Shutdown(ctx)
 	})
-}
-
-func openBrowserDefault(u string) error {
-	_, err := url.Parse(u)
-	return err
 }
