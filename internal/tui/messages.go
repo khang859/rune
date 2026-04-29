@@ -43,6 +43,8 @@ func NewMessages(width int) *Messages { return &Messages{width: width, streaming
 
 func (m *Messages) SetWidth(w int) { m.width = w }
 
+func (m *Messages) IsEmpty() bool { return len(m.blocks) == 0 }
+
 func (m *Messages) AppendUser(text string) {
 	m.blocks = append(m.blocks, block{kind: bkUser, text: text})
 	m.streamingAsstIdx = -1
