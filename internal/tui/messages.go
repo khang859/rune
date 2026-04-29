@@ -150,7 +150,8 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		var rendered string
 		switch b.kind {
 		case bkUser:
-			rendered = s.User.Render(iconLabel(s.Icons.User, "you>")+" ") + b.text
+			label := s.User.Render(iconLabel(s.Icons.User, "you>"))
+			rendered = label + "\n" + s.Markdown.Render(b.text)
 		case bkAssistant:
 			label := s.Assistant.Render(iconLabel(s.Icons.Assistant, "rune"))
 			if i == m.streamingAsstIdx {

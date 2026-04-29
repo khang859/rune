@@ -14,8 +14,11 @@ func TestMessages_AppendUser(t *testing.T) {
 	m := NewMessages(80)
 	m.AppendUser("hi there")
 	out := m.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
-	if !strings.Contains(out, " you> hi there") {
-		t.Fatal("user text missing")
+	if !strings.Contains(out, "you>") {
+		t.Fatalf("user label missing:\n%s", out)
+	}
+	if !strings.Contains(out, "hi there") {
+		t.Fatalf("user text missing:\n%s", out)
 	}
 }
 
