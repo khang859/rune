@@ -6,8 +6,6 @@ import (
 	"strings"
 )
 
-var imagePathExts = []string{".jpeg", ".jpg", ".png", ".gif", ".webp"}
-
 type quotedPathSpan struct {
 	text       string
 	start, end int // byte offsets; end is exclusive
