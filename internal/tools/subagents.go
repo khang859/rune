@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -37,7 +38,7 @@ func subagentManagerDisabled(m SubagentManager) bool {
 func (disabledSubagentManager) Spawn(ctx context.Context, req SpawnSubagentRequest) (*SubagentTask, error) {
 	_ = ctx
 	_ = req
-	return nil, fmt.Errorf(subagentsDisabledError)
+	return nil, errors.New(subagentsDisabledError)
 }
 
 func (disabledSubagentManager) List() []SubagentTask { return nil }
@@ -49,7 +50,7 @@ func (disabledSubagentManager) Get(id string) *SubagentTask {
 
 func (disabledSubagentManager) Cancel(id string) error {
 	_ = id
-	return fmt.Errorf(subagentsDisabledError)
+	return errors.New(subagentsDisabledError)
 }
 
 type SpawnSubagentRequest struct {

@@ -14,7 +14,7 @@ import (
 
 func runLogin(ctx context.Context, provider string) error {
 	if provider == "groq" {
-		return fmt.Errorf("Groq uses an API key; set GROQ_API_KEY or RUNE_GROQ_API_KEY, or save it from /settings")
+		return fmt.Errorf("groq uses an API key; set GROQ_API_KEY or RUNE_GROQ_API_KEY, or save it from /settings")
 	}
 	if provider != "codex" {
 		return fmt.Errorf("unknown login provider %q (supported: codex; groq uses API keys)", provider)

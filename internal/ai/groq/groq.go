@@ -41,7 +41,7 @@ func New(endpoint, apiKey string) *Provider {
 
 func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
 	if strings.TrimSpace(p.apiKey) == "" {
-		return nil, fmt.Errorf("Groq API key is required (set GROQ_API_KEY, RUNE_GROQ_API_KEY, or configure it in /settings)")
+		return nil, fmt.Errorf("groq API key is required (set GROQ_API_KEY, RUNE_GROQ_API_KEY, or configure it in /settings)")
 	}
 	body, err := buildPayload(req)
 	if err != nil {

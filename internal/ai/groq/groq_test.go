@@ -67,7 +67,7 @@ func TestStream_RetriesRateLimit(t *testing.T) {
 
 func TestStream_MissingKey(t *testing.T) {
 	_, err := New("http://example.invalid", "").Stream(context.Background(), ai.Request{Model: "m"})
-	if err == nil || !strings.Contains(err.Error(), "Groq API key") {
+	if err == nil || !strings.Contains(err.Error(), "groq API key") {
 		t.Fatalf("err = %v", err)
 	}
 }

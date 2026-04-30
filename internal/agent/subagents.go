@@ -468,7 +468,6 @@ func (s *SubagentSupervisor) resolveBlockedLocked() []string {
 				s.persistLocked()
 				s.publishLocked(t)
 				ready = false
-				break
 			default:
 				ready = false
 			}
