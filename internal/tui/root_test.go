@@ -669,6 +669,31 @@ func TestRoot_SessionSlashCommandIsInfoNotError(t *testing.T) {
 	}
 }
 
+func TestRoot_ClearSlashCommandStartsNewSession(t *testing.T) {
+	s := session.New("gpt-5.5")
+	s.Provider = "groq"
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hello"}}})
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	oldID := m.sess.ID
+
+	m.handleSlashCommand("/clear")
+
+	if m.sess.ID == oldID {
+		t.Fatal("/clear should swap to a new session")
+	}
+	if m.sess.Model != "gpt-5.5" || m.sess.Provider != "groq" {
+		t.Fatalf("/clear should preserve model/provider, got model=%q provider=%q", m.sess.Model, m.sess.Provider)
+	}
+	if len(m.sess.PathToActive()) != 0 {
+		t.Fatalf("/clear should start with an empty session, got %d messages", len(m.sess.PathToActive()))
+	}
+	if len(m.msgs.blocks) != 0 {
+		t.Fatalf("/clear should clear rendered messages, got %d blocks", len(m.msgs.blocks))
+	}
+}
+
 func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
 	s := session.New("gpt-5")
 	// Build a session with a pre-existing summary node so rebuild has work to do.

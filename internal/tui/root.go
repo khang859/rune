@@ -91,7 +91,7 @@ const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
-	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
+	"/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/act", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys",
 }
@@ -575,7 +575,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewMCPStatus(m.mcpStatuses))
 	case "/hotkeys":
 		initCmd = m.openModal(modal.NewHotkeys())
-	case "/new":
+	case "/new", "/clear":
 		m.startNewSession()
 	case "/name":
 		m.msgs.OnTurnError(fmt.Errorf("(use /settings or future inline prompt)"))

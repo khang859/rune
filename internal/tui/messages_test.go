@@ -178,6 +178,88 @@ func TestMessages_SubagentToolCallRendersAsFamiliar(t *testing.T) {
 	}
 }
 
+func TestMessages_GroupsConsecutiveReadCallsAcrossResults(t *testing.T) {
+	m := NewMessages(120)
+	call1 := ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"something.png"}`)}
+	call2 := ai.ToolCall{ID: "t2", Name: "read", Args: []byte(`{"path":"file.go","offset":10,"limit":5}`)}
+	m.OnToolStarted(call1)
+	m.OnToolFinished(agent.ToolFinished{Call: call1, Result: tools.Result{Output: "image-ish"}})
+	m.OnToolStarted(call2)
+	m.OnToolFinished(agent.ToolFinished{Call: call2, Result: tools.Result{Output: "package main"}})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	for _, want := range []string{"read (2)", "something.png", "file.go (lines 10-14)"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in grouped read output, got:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "read (2)") != 1 || strings.Contains(out, "image-ish") || strings.Contains(out, "package main") {
+		t.Fatalf("expected one collapsed grouped read without result bodies, got:\n%s", out)
+	}
+}
+
+func TestMessages_GroupedReadExpandedShowsResults(t *testing.T) {
+	m := NewMessages(120)
+	call1 := ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"a.go"}`)}
+	call2 := ai.ToolCall{ID: "t2", Name: "read", Args: []byte(`{"path":"b.go"}`)}
+	m.OnToolStarted(call1)
+	m.OnToolFinished(agent.ToolFinished{Call: call1, Result: tools.Result{Output: "a body"}})
+	m.OnToolStarted(call2)
+	m.OnToolFinished(agent.ToolFinished{Call: call2, Result: tools.Result{Output: "b body"}})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, true, time.Time{})
+	for _, want := range []string{"read (2)", "a.go", "a body", "b.go", "b body"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in expanded grouped read output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestMessages_DifferentToolsDoNotGroup(t *testing.T) {
+	m := NewMessages(120)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"a.go"}`)})
+	m.OnToolStarted(ai.ToolCall{ID: "t2", Name: "write", Args: []byte(`{"path":"b.go","content":"x"}`)})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	if strings.Contains(out, "read (2)") || strings.Contains(out, "write (2)") {
+		t.Fatalf("different tools should not group, got:\n%s", out)
+	}
+	for _, want := range []string{"read a.go", "write b.go"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestMessages_AssistantTextBreaksToolGrouping(t *testing.T) {
+	m := NewMessages(120)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"a.go"}`)})
+	m.OnAssistantDelta("between")
+	m.OnToolStarted(ai.ToolCall{ID: "t2", Name: "read", Args: []byte(`{"path":"b.go"}`)})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	if strings.Contains(out, "read (2)") {
+		t.Fatalf("assistant text should break grouping, got:\n%s", out)
+	}
+	for _, want := range []string{"read a.go", "between", "read b.go"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestMessages_GroupsOtherCommonToolsWithSummaries(t *testing.T) {
+	m := NewMessages(160)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "bash", Args: []byte(`{"command":"go test ./internal/tui"}`)})
+	m.OnToolFinished(agent.ToolFinished{Call: ai.ToolCall{Name: "bash"}, Result: tools.Result{Output: "ok"}})
+	m.OnToolStarted(ai.ToolCall{ID: "t2", Name: "bash", Args: []byte(`{"command":"go test ./..."}`)})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	for _, want := range []string{"bash (2)", "go test ./internal/tui", "go test ./..."} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in grouped bash output, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "command") || strings.Contains(out, "{") {
+		t.Fatalf("raw bash JSON leaked into grouped output:\n%s", out)
+	}
+}
+
 func TestMessages_AssistantDeltaSurvivesIntervening(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hel")

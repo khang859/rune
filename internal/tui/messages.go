@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
@@ -152,50 +153,69 @@ func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 
 func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {
 	var sb strings.Builder
-	for i, b := range m.blocks {
-		if i > 0 {
-			sb.WriteString("\n\n")
-		}
-		var rendered string
-		switch b.kind {
-		case bkUser:
-			label := s.User.Render(iconLabel(s.Icons.User, "you>"))
-			rendered = label + "\n" + s.Markdown.Render(b.text)
-		case bkAssistant:
-			label := s.Assistant.Render(iconLabel(s.Icons.Assistant, "rune"))
-			if i == m.streamingAsstIdx {
-				rendered = label + "\n" + s.Assistant.Render(b.text)
+	renderedBlocks := 0
+	for i := 0; i < len(m.blocks); {
+		b := m.blocks[i]
+		rendered := ""
+		next := i + 1
+		if b.kind == bkToolCall {
+			interactions, consumed := collectToolRun(m.blocks, i)
+			if len(interactions) > 1 {
+				rendered = renderToolGroup(s, b.meta, interactions, showToolResults)
+				next = i + consumed
 			} else {
-				rendered = label + "\n" + s.Markdown.Render(b.text)
+				rendered = renderToolCall(s, b)
 			}
-		case bkThinking:
-			rendered = renderThinking(s, b, showThinking, now)
-		case bkToolCall:
-			rendered = renderToolCall(s, b)
-		case bkToolResult:
-			rendered = renderToolResult(s, b, showToolResults)
-		case bkError:
-			rendered = s.ToolError.Render(iconLabel(s.Icons.Error, "error") + ": " + b.text)
-		case bkInfo:
-			rendered = s.Info.Render(b.text)
-		case bkSummary:
-			header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
-			rendered = s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
-		case bkSubagent:
-			if b.meta == string(agent.SubagentCompleted) {
-				rendered = s.FamiliarSuccess.Render(b.text)
-			} else if b.meta == string(agent.SubagentFailed) || b.meta == string(agent.SubagentCancelled) {
-				rendered = s.ToolError.Render(b.text)
-			} else {
-				rendered = s.FamiliarActive.Render(b.text)
-			}
+		} else {
+			rendered = renderBlock(s, b, showThinking, showToolResults, now, i == m.streamingAsstIdx)
 		}
 		if m.width > 0 {
 			rendered = ansi.Wrap(rendered, m.width, " \t")
 		}
+		if renderedBlocks > 0 {
+			sb.WriteString("\n\n")
+		}
 		sb.WriteString(rendered)
+		renderedBlocks++
+		i = next
 	}
 	return sb.String()
+}
+
+func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time.Time, streamingAssistant bool) string {
+	switch b.kind {
+	case bkUser:
+		label := s.User.Render(iconLabel(s.Icons.User, "you>"))
+		return label + "\n" + s.Markdown.Render(b.text)
+	case bkAssistant:
+		label := s.Assistant.Render(iconLabel(s.Icons.Assistant, "rune"))
+		if streamingAssistant {
+			return label + "\n" + s.Assistant.Render(b.text)
+		}
+		return label + "\n" + s.Markdown.Render(b.text)
+	case bkThinking:
+		return renderThinking(s, b, showThinking, now)
+	case bkToolCall:
+		return renderToolCall(s, b)
+	case bkToolResult:
+		return renderToolResult(s, b, showToolResults)
+	case bkError:
+		return s.ToolError.Render(iconLabel(s.Icons.Error, "error") + ": " + b.text)
+	case bkInfo:
+		return s.Info.Render(b.text)
+	case bkSummary:
+		header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
+		return s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
+	case bkSubagent:
+		if b.meta == string(agent.SubagentCompleted) {
+			return s.FamiliarSuccess.Render(b.text)
+		}
+		if b.meta == string(agent.SubagentFailed) || b.meta == string(agent.SubagentCancelled) {
+			return s.ToolError.Render(b.text)
+		}
+		return s.FamiliarActive.Render(b.text)
+	}
+	return ""
 }
 
 func renderSubagentEventText(ev agent.SubagentEvent) string {
@@ -307,6 +327,116 @@ func renderToolCall(s Styles, b block) string {
 	return s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
 }
 
+type toolInteraction struct {
+	call   block
+	result *block
+}
+
+func collectToolRun(blocks []block, start int) ([]toolInteraction, int) {
+	if start < 0 || start >= len(blocks) || blocks[start].kind != bkToolCall {
+		return nil, 0
+	}
+	name := blocks[start].meta
+	var interactions []toolInteraction
+	for i := start; i < len(blocks); {
+		b := blocks[i]
+		if b.kind != bkToolCall || b.meta != name {
+			break
+		}
+		interaction := toolInteraction{call: b}
+		i++
+		if i < len(blocks) && isToolOutcomeFor(blocks[i], name) {
+			interaction.result = &blocks[i]
+			i++
+		}
+		interactions = append(interactions, interaction)
+	}
+	return interactions, toolRunBlockCount(interactions)
+}
+
+func toolRunBlockCount(interactions []toolInteraction) int {
+	n := 0
+	for _, interaction := range interactions {
+		n++
+		if interaction.result != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func isToolOutcomeFor(b block, name string) bool {
+	return (b.kind == bkToolResult || b.kind == bkError) && b.meta == name
+}
+
+func renderToolGroup(s Styles, name string, interactions []toolInteraction, showToolResults bool) string {
+	var sb strings.Builder
+	if isFamiliarTool(name) {
+		sb.WriteString(familiarHeader(s, fmt.Sprintf("%s (%d)", groupedToolTitle(name), len(interactions))))
+	} else {
+		sb.WriteString(toolHeader(s, fmt.Sprintf("%s (%d)", groupedToolTitle(name), len(interactions))))
+	}
+	for _, interaction := range interactions {
+		sb.WriteString("\n")
+		sb.WriteString(groupedToolItemStyle(s, name).Render("  " + toolCallSummary(name, json.RawMessage(interaction.call.text))))
+		if interaction.result != nil && (showToolResults || interaction.result.kind == bkError) {
+			for _, line := range strings.Split(renderToolResultInline(*interaction.result), "\n") {
+				sb.WriteString("\n")
+				sb.WriteString(groupedToolResultStyle(s, *interaction.result).Render("    " + line))
+			}
+		}
+	}
+	return sb.String()
+}
+
+func groupedToolTitle(name string) string {
+	switch name {
+	case "spawn_subagent":
+		return "summon familiar"
+	case "list_subagents":
+		return "read familiar ledger"
+	case "get_subagent_result":
+		return "unseal familiar scroll"
+	case "cancel_subagent":
+		return "dismiss familiar"
+	default:
+		return name
+	}
+}
+
+func groupedToolItemStyle(s Styles, name string) lipgloss.Style {
+	if isFamiliarTool(name) {
+		return s.FamiliarCall
+	}
+	return s.ToolCall
+}
+
+func groupedToolResultStyle(s Styles, b block) lipgloss.Style {
+	if b.kind == bkError {
+		return s.ToolError
+	}
+	return s.ToolResult
+}
+
+func renderToolResultInline(b block) string {
+	if b.kind == bkError {
+		return "error: " + b.text
+	}
+	if strings.TrimSpace(b.text) == "" {
+		return "(no output)"
+	}
+	return b.text
+}
+
+func isFamiliarTool(name string) bool {
+	switch name {
+	case "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
+		return true
+	default:
+		return false
+	}
+}
+
 func toolHeader(s Styles, body string) string {
 	return s.ToolCall.Render(iconLabel(s.Icons.Tool, "tool") + " " + body)
 }
@@ -377,27 +507,99 @@ func pluralS(n int) string {
 	return "s"
 }
 
-func formatBashCall(s Styles, args json.RawMessage) (string, bool) {
-	var a struct {
-		Command string `json:"command"`
+func toolCallSummary(name string, args json.RawMessage) string {
+	switch name {
+	case "read":
+		if s, ok := summarizeReadArgs(args); ok {
+			return s
+		}
+	case "write":
+		if s, ok := summarizeWriteArgs(args); ok {
+			return s
+		}
+	case "edit":
+		if s, ok := summarizePathArg(args, "path"); ok {
+			return s
+		}
+	case "bash":
+		if s, ok := summarizeBashArgs(args); ok {
+			return s
+		}
+	case "list_files":
+		if s, ok := summarizeListFilesArgs(args); ok {
+			return s
+		}
+	case "search_files":
+		if s, ok := summarizeSearchFilesArgs(args); ok {
+			return s
+		}
+	case "web_search":
+		if s, ok := summarizeWebSearchArgs(args); ok {
+			return s
+		}
+	case "web_fetch":
+		if s, ok := summarizeWebFetchArgs(args); ok {
+			return s
+		}
+	case "git_status":
+		if s, ok := summarizeGitStatusArgs(args); ok {
+			return s
+		}
+	case "git_diff":
+		if s, ok := summarizeGitDiffArgs(args); ok {
+			return s
+		}
+	case "spawn_subagent":
+		if s, ok := summarizeSpawnSubagentArgs(args); ok {
+			return s
+		}
+	case "list_subagents":
+		return "ledger"
+	case "get_subagent_result", "cancel_subagent":
+		if s, ok := summarizePathArg(args, "task_id"); ok {
+			return s
+		}
 	}
-	if err := json.Unmarshal(args, &a); err != nil {
+	return compactJSON(args)
+}
+
+func formatBashCall(s Styles, args json.RawMessage) (string, bool) {
+	summary, ok := summarizeBashArgs(args)
+	if !ok {
 		return "", false
 	}
 	header := toolHeader(s, "bash")
-	if a.Command == "" {
+	if summary == "" {
 		return header, true
 	}
 	var sb strings.Builder
 	sb.WriteString(header)
-	for _, line := range strings.Split(a.Command, "\n") {
+	for _, line := range strings.Split(summary, "\n") {
 		sb.WriteString("\n")
 		sb.WriteString(s.ToolCall.Render("  " + line))
 	}
 	return sb.String(), true
 }
 
+func summarizeBashArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Command string `json:"command"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	return a.Command, true
+}
+
 func formatWriteCall(s Styles, args json.RawMessage) (string, bool) {
+	summary, ok := summarizeWriteArgs(args)
+	if !ok {
+		return "", false
+	}
+	return toolHeader(s, "write "+summary), true
+}
+
+func summarizeWriteArgs(args json.RawMessage) (string, bool) {
 	var a struct {
 		Path    string `json:"path"`
 		Content string `json:"content"`
@@ -412,10 +614,18 @@ func formatWriteCall(s Styles, args json.RawMessage) (string, bool) {
 			lines++
 		}
 	}
-	return toolHeader(s, fmt.Sprintf("write %s (%d lines, %d bytes)", a.Path, lines, len(a.Content))), true
+	return fmt.Sprintf("%s (%d lines, %d bytes)", a.Path, lines, len(a.Content)), true
 }
 
 func formatReadCall(s Styles, args json.RawMessage) (string, bool) {
+	summary, ok := summarizeReadArgs(args)
+	if !ok {
+		return "", false
+	}
+	return toolHeader(s, "read "+summary), true
+}
+
+func summarizeReadArgs(args json.RawMessage) (string, bool) {
 	var a struct {
 		Path    string `json:"path"`
 		Offset  int    `json:"offset"`
@@ -425,7 +635,7 @@ func formatReadCall(s Styles, args json.RawMessage) (string, bool) {
 	if err := json.Unmarshal(args, &a); err != nil {
 		return "", false
 	}
-	body := "read " + a.Path
+	body := a.Path
 	switch {
 	case a.ReadAll:
 		body += " (all)"
@@ -436,7 +646,161 @@ func formatReadCall(s Styles, args json.RawMessage) (string, bool) {
 	case a.Limit > 0:
 		body += fmt.Sprintf(" (first %d lines)", a.Limit)
 	}
-	return toolHeader(s, body), true
+	return body, true
+}
+
+func summarizePathArg(args json.RawMessage, key string) (string, bool) {
+	var m map[string]any
+	if err := json.Unmarshal(args, &m); err != nil {
+		return "", false
+	}
+	v, ok := m[key]
+	if !ok {
+		return "", true
+	}
+	return strings.TrimSpace(fmt.Sprint(v)), true
+}
+
+func summarizeListFilesArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Path       string `json:"path"`
+		Glob       string `json:"glob"`
+		MaxResults int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	parts := []string{defaultIfBlank(a.Path, ".")}
+	if a.Glob != "" {
+		parts = append(parts, "glob "+a.Glob)
+	}
+	if a.MaxResults > 0 {
+		parts = append(parts, fmt.Sprintf("max %d", a.MaxResults))
+	}
+	return strings.Join(parts, " · "), true
+}
+
+func summarizeSearchFilesArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Query        string `json:"query"`
+		Path         string `json:"path"`
+		Glob         string `json:"glob"`
+		ContextLines int    `json:"context_lines"`
+		MaxResults   int    `json:"max_results"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	parts := []string{fmt.Sprintf("%q in %s", a.Query, defaultIfBlank(a.Path, "."))}
+	if a.Glob != "" {
+		parts = append(parts, "glob "+a.Glob)
+	}
+	if a.ContextLines > 0 {
+		parts = append(parts, fmt.Sprintf("context %d", a.ContextLines))
+	}
+	if a.MaxResults > 0 {
+		parts = append(parts, fmt.Sprintf("max %d", a.MaxResults))
+	}
+	return strings.Join(parts, " · "), true
+}
+
+func summarizeWebSearchArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Query string `json:"query"`
+		Limit int    `json:"limit"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	if a.Limit > 0 {
+		return fmt.Sprintf("%q (limit %d)", a.Query, a.Limit), true
+	}
+	return fmt.Sprintf("%q", a.Query), true
+}
+
+func summarizeWebFetchArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		URL      string `json:"url"`
+		MaxBytes int64  `json:"max_bytes"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	if a.MaxBytes > 0 {
+		return fmt.Sprintf("%s (max %d bytes)", a.URL, a.MaxBytes), true
+	}
+	return a.URL, true
+}
+
+func summarizeGitStatusArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Path string `json:"path"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	return defaultIfBlank(a.Path, "."), true
+}
+
+func summarizeGitDiffArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Repo     string `json:"repo"`
+		Path     string `json:"path"`
+		Staged   bool   `json:"staged"`
+		Stat     bool   `json:"stat"`
+		MaxBytes int    `json:"max_bytes"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	parts := []string{defaultIfBlank(a.Repo, ".")}
+	if a.Path != "" {
+		parts = append(parts, a.Path)
+	}
+	if a.Staged {
+		parts = append(parts, "staged")
+	}
+	if a.Stat {
+		parts = append(parts, "stat")
+	}
+	if a.MaxBytes > 0 {
+		parts = append(parts, fmt.Sprintf("max %d bytes", a.MaxBytes))
+	}
+	return strings.Join(parts, " · "), true
+}
+
+func summarizeSpawnSubagentArgs(args json.RawMessage) (string, bool) {
+	var a struct {
+		Name      string `json:"name"`
+		AgentType string `json:"agent_type"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	name := defaultIfBlank(a.Name, "unnamed task")
+	if a.AgentType != "" && a.AgentType != "general" {
+		return name + " [" + a.AgentType + "]", true
+	}
+	return name, true
+}
+
+func defaultIfBlank(s, def string) string {
+	if strings.TrimSpace(s) == "" {
+		return def
+	}
+	return s
+}
+
+func compactJSON(args json.RawMessage) string {
+	var v any
+	if err := json.Unmarshal(args, &v); err != nil {
+		return string(args)
+	}
+	b, err := json.Marshal(v)
+	if err != nil {
+		return string(args)
+	}
+	return string(b)
 }
 
 // formatEditDiff renders an edit tool call as a header line plus a unified
