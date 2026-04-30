@@ -771,11 +771,11 @@ func TestRun_MixedTurnsDoNotBurnRetryBudget(t *testing.T) {
 // session.
 func TestRun_InvalidThenValidResetsRetryCounter(t *testing.T) {
 	f := faux.New().
-		CallTool("nope", `{}`).Done().                    // invalid (1)
-		CallTool("read", `{"path":"/tmp/x"}`).Done().     // valid → counter resets
-		CallTool("nope", `{}`).Done().                    // invalid (1 again)
-		CallTool("nope", `{}`).Done().                    // invalid (2)
-		Reply("ok").Done()                                // recovers
+		CallTool("nope", `{}`).Done().                // invalid (1)
+		CallTool("read", `{"path":"/tmp/x"}`).Done(). // valid → counter resets
+		CallTool("nope", `{}`).Done().                // invalid (1 again)
+		CallTool("nope", `{}`).Done().                // invalid (2)
+		Reply("ok").Done()                            // recovers
 	s := session.New("gpt-5")
 	reg := tools.NewRegistry()
 	reg.Register(stubReadTool{output: "x"})
