@@ -3,8 +3,9 @@ package tui
 import "github.com/khang859/rune/internal/ai"
 
 type QueueItem struct {
-	Text   string
-	Images []ai.ImageBlock
+	Text        string
+	DisplayText string
+	Images      []ai.ImageBlock
 }
 
 type Queue struct {
@@ -21,3 +22,10 @@ func (q *Queue) Pop() (QueueItem, bool) {
 	return s, true
 }
 func (q *Queue) Len() int { return len(q.items) }
+
+func (i QueueItem) displayText() string {
+	if i.DisplayText != "" {
+		return i.DisplayText
+	}
+	return i.Text
+}

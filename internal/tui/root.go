@@ -231,7 +231,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.refreshViewport()
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(formatUserMessageForDisplay(item.Text, len(item.Images)))
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), len(item.Images)))
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Images)
 		}
@@ -300,7 +300,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, compactCmd
 		}
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(formatUserMessageForDisplay(item.Text, len(item.Images)))
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), len(item.Images)))
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Images)
 		}
@@ -398,18 +398,20 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleShellShortcut(res, cmd)
 	}
 	if res.Send {
-		text := res.Text
+		displayText := res.Text
+		text := expandFileReferences(res.Text, m.editor.Cwd())
 		if m.pendingSkillBody != "" {
 			text = m.pendingSkillBody + "\n\n" + text
+			displayText = m.pendingSkillBody + "\n\n" + displayText
 			m.pendingSkillBody = ""
 		}
 		if m.streaming || m.compacting {
-			m.queue.Push(QueueItem{Text: text, Images: res.Images})
+			m.queue.Push(QueueItem{Text: text, DisplayText: displayText, Images: res.Images})
 			m.msgs.OnInfo(queueMessage(m.queue.Len(), len(res.Images)))
 			m.refreshViewport()
 			return m, cmd
 		}
-		m.msgs.AppendUser(formatUserMessageForDisplay(text, len(res.Images)))
+		m.msgs.AppendUser(formatUserMessageForDisplay(displayText, len(res.Images)))
 		m.refreshViewport()
 		return m, m.startTurn(text, res.Images)
 	}

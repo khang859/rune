@@ -121,6 +121,10 @@ func (e *Editor) SetWidth(w int) {
 func (e *Editor) SetHeight(h int) { e.ta.SetHeight(h) }
 func (e *Editor) Focus()          { e.ta.Focus() }
 func (e *Editor) Blur()           { e.ta.Blur() }
+func (e *Editor) SetValue(s string) {
+	e.ta.SetValue(s)
+	e.updateHeight()
+}
 
 // Reset clears the textarea and any open overlay (file picker, slash menu),
 // and resets history navigation so the next Up arrow starts from the latest
@@ -201,6 +205,7 @@ func (e *Editor) ShellMode() ShellMode {
 func (e *Editor) FilePicker() *FilePicker    { return e.fp }
 func (e *Editor) SlashMenu() *SlashMenu      { return e.slash }
 func (e *Editor) PendingImages() int         { return e.atts.Pending() }
+func (e *Editor) Cwd() string                { return e.cwd }
 func (e *Editor) SetSlashCmds(cmds []string) { e.slashCmds = cmds }
 func (e *Editor) SetHistory(h *History)      { e.hist = h }
 

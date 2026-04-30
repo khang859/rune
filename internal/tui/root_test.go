@@ -100,6 +100,49 @@ func TestRoot_AutoCompactDoesNotRunBeforeFirstCompactableCut(t *testing.T) {
 	}
 }
 
+func TestRoot_ExpandsFileReferenceWhenSendingButDisplaysOriginal(t *testing.T) {
+	dir := t.TempDir()
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("# Project"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.editor.SetValue("review @README.md")
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected turn command")
+	}
+	msgs := s.PathToActive()
+	if len(msgs) == 0 {
+		t.Fatal("expected at least one message")
+	}
+	text, ok := msgs[0].Content[0].(ai.TextBlock)
+	if !ok {
+		t.Fatalf("first block = %#v, want text", msgs[0].Content[0])
+	}
+	if !strings.Contains(text.Text, "<file name=\"") || !strings.Contains(text.Text, filepath.Join(dir, "README.md")) || !strings.Contains(text.Text, ">\n# Project\n</file>") {
+		t.Fatalf("sent text did not include expanded file:\n%s", text.Text)
+	}
+	out := m.msgs.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
+	if !strings.Contains(out, "review @README.md") {
+		t.Fatalf("display should keep original reference, got:\n%s", out)
+	}
+	if strings.Contains(out, "<file name=") {
+		t.Fatalf("display should not show expanded file contents, got:\n%s", out)
+	}
+}
+
 func TestRoot_StartTurnWarnsButSendsImagesForUnsupportedModel(t *testing.T) {
 	s := session.New("llama-3.3-70b-versatile")
 	s.Provider = "groq"
