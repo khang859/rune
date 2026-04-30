@@ -1,15 +1,14 @@
 package editor
 
 import (
-	"bytes"
 	"encoding/base64"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/attachments"
 )
 
 type Attachments struct {
@@ -29,14 +28,14 @@ func (a *Attachments) AddFromPath(p string) error {
 	if !info.Mode().IsRegular() {
 		return fmt.Errorf("not a regular file: %s", p)
 	}
-	if mimeFromExt(filepath.Ext(p)) == "" {
+	if attachments.ImageMimeFromExt(filepath.Ext(p)) == "" {
 		return fmt.Errorf("not an image: %s", p)
 	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return err
 	}
-	mime := sniffImageMime(b)
+	mime := attachments.SniffImageMime(b)
 	if mime == "" {
 		return fmt.Errorf("not a valid image: %s", p)
 	}
@@ -58,7 +57,7 @@ func (a *Attachments) AddFromDataURI(s string) error {
 	if err != nil {
 		return err
 	}
-	mime := sniffImageMime(raw)
+	mime := attachments.SniffImageMime(raw)
 	if mime == "" {
 		return fmt.Errorf("not a valid image")
 	}
@@ -75,41 +74,4 @@ func (a *Attachments) Drain() []ai.ImageBlock {
 	out := a.items
 	a.items = nil
 	return out
-}
-
-func mimeFromExt(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
-		return "image/webp"
-	}
-	return ""
-}
-
-func sniffImageMime(b []byte) string {
-	if bytes.HasPrefix(b, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}) {
-		return "image/png"
-	}
-	if bytes.HasPrefix(b, []byte{0xff, 0xd8, 0xff}) {
-		return "image/jpeg"
-	}
-	if bytes.HasPrefix(b, []byte("GIF87a")) || bytes.HasPrefix(b, []byte("GIF89a")) {
-		return "image/gif"
-	}
-	if len(b) >= 12 && bytes.Equal(b[0:4], []byte("RIFF")) && bytes.Equal(b[8:12], []byte("WEBP")) {
-		return "image/webp"
-	}
-	mime := http.DetectContentType(b)
-	if strings.HasPrefix(mime, "image/") {
-		switch mime {
-		case "image/png", "image/jpeg", "image/gif", "image/webp":
-			return mime
-		}
-	}
-	return ""
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/khang859/rune/internal/attachments"
 )
 
 type quotedPathSpan struct {
@@ -61,7 +63,7 @@ func normalizeImagePathCandidate(raw, cwd string) (string, bool) {
 		raw = filepath.Join(home, raw[2:])
 	}
 
-	if mimeFromExt(filepath.Ext(raw)) == "" {
+	if attachments.ImageMimeFromExt(filepath.Ext(raw)) == "" {
 		return "", false
 	}
 

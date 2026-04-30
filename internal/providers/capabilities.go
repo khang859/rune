@@ -4,11 +4,30 @@ import "strings"
 
 type ImageSupport string
 
+type DocumentSupport string
+
 const (
 	ImageUnsupported ImageSupport = "unsupported"
 	ImageSupported   ImageSupport = "supported"
 	ImageUnknown     ImageSupport = "unknown"
+
+	DocumentUnsupported DocumentSupport = "unsupported"
+	DocumentSupported   DocumentSupport = "supported"
+	DocumentUnknown     DocumentSupport = "unknown"
 )
+
+func PDFInputSupport(provider, model string) DocumentSupport {
+	model = strings.ToLower(strings.TrimSpace(model))
+	switch Normalize(provider) {
+	case Groq, Ollama:
+		return DocumentUnsupported
+	default:
+		if isKnownCodexModel(model) || looksLikeOpenAIFileModel(model) {
+			return DocumentSupported
+		}
+		return DocumentUnknown
+	}
+}
 
 func ImageInputSupport(provider, model string) ImageSupport {
 	model = strings.ToLower(strings.TrimSpace(model))
@@ -42,6 +61,22 @@ func ImageInputSupport(provider, model string) ImageSupport {
 func isKnownCodexModel(model string) bool {
 	for _, m := range CodexModels {
 		if strings.EqualFold(m, model) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeOpenAIFileModel(model string) bool {
+	for _, prefix := range []string{
+		"gpt-5",
+		"gpt-4.1",
+		"gpt-4o",
+		"o3",
+		"o4",
+		"chatgpt-4o",
+	} {
+		if strings.HasPrefix(model, prefix) {
 			return true
 		}
 	}

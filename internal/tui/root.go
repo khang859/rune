@@ -231,9 +231,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.refreshViewport()
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), len(item.Images)))
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), countImages(item.Attachments)))
 			m.refreshViewport()
-			return m, m.startTurn(item.Text, item.Images)
+			return m, m.startTurn(item.Text, item.Attachments)
 		}
 		return m, nil
 
@@ -300,9 +300,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, compactCmd
 		}
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), len(item.Images)))
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.displayText(), countImages(item.Attachments)))
 			m.refreshViewport()
-			return m, m.startTurn(item.Text, item.Images)
+			return m, m.startTurn(item.Text, item.Attachments)
 		}
 		if m.pendingSubagentContinuation {
 			m.pendingSubagentContinuation = false
@@ -398,22 +398,32 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleShellShortcut(res, cmd)
 	}
 	if res.Send {
+		resolved := resolveFileReferences(res.Text, m.editor.Cwd(), m.sess.Provider, m.sess.Model)
 		displayText := res.Text
-		text := expandFileReferences(res.Text, m.editor.Cwd())
+		text := resolved.Text
+		attachments := imageBlocksToContent(res.Images)
+		attachments = append(attachments, resolved.Attachments...)
+		if summary := attachmentSummary(resolved.Attached); summary != "" {
+			m.msgs.OnInfo(summary)
+		}
+		for _, warning := range resolved.Warnings {
+			m.msgs.OnInfo("(" + warning + ")")
+		}
 		if m.pendingSkillBody != "" {
 			text = m.pendingSkillBody + "\n\n" + text
 			displayText = m.pendingSkillBody + "\n\n" + displayText
 			m.pendingSkillBody = ""
 		}
+		imageCount := countImages(attachments)
 		if m.streaming || m.compacting {
-			m.queue.Push(QueueItem{Text: text, DisplayText: displayText, Images: res.Images})
-			m.msgs.OnInfo(queueMessage(m.queue.Len(), len(res.Images)))
+			m.queue.Push(QueueItem{Text: text, DisplayText: displayText, Attachments: attachments})
+			m.msgs.OnInfo(queueMessage(m.queue.Len(), imageCount))
 			m.refreshViewport()
 			return m, cmd
 		}
-		m.msgs.AppendUser(formatUserMessageForDisplay(displayText, len(res.Images)))
+		m.msgs.AppendUser(formatUserMessageForDisplay(displayText, imageCount))
 		m.refreshViewport()
-		return m, m.startTurn(text, res.Images)
+		return m, m.startTurn(text, attachments)
 	}
 	if res.RanCommand != "" {
 		label := fmt.Sprintf("(ran: %s)", res.RanCommand)
@@ -458,15 +468,17 @@ func (m *RootModel) handleShellShortcut(res editor.Result, cmd tea.Cmd) (tea.Mod
 		text = m.pendingSkillBody + "\n\n" + text
 		m.pendingSkillBody = ""
 	}
+	attachments := imageBlocksToContent(res.Images)
+	imageCount := countImages(attachments)
 	if m.streaming || m.compacting {
-		m.queue.Push(QueueItem{Text: text, Images: res.Images})
-		m.msgs.OnInfo(queueMessage(m.queue.Len(), len(res.Images)))
+		m.queue.Push(QueueItem{Text: text, Attachments: attachments})
+		m.msgs.OnInfo(queueMessage(m.queue.Len(), imageCount))
 		m.refreshViewport()
 		return m, cmd
 	}
-	m.msgs.AppendUser(formatUserMessageForDisplay(text, len(res.Images)))
+	m.msgs.AppendUser(formatUserMessageForDisplay(text, imageCount))
 	m.refreshViewport()
-	return m, m.startTurn(text, res.Images)
+	return m, m.startTurn(text, attachments)
 }
 
 func (m *RootModel) warnImageSupport(images []ai.ImageBlock) {
@@ -499,8 +511,8 @@ func formatUserMessageForDisplay(text string, imageCount int) string {
 	return text + "\n" + label
 }
 
-func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
-	m.warnImageSupport(images)
+func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cmd {
+	m.warnImageSupport(imagesFromBlocks(attachments))
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.streaming = true
@@ -508,9 +520,7 @@ func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
 	m.layout()
 	m.viewport.GotoBottom()
 	content := []ai.ContentBlock{ai.TextBlock{Text: text}}
-	for _, im := range images {
-		content = append(content, im)
-	}
+	content = append(content, attachments...)
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	ch := m.agent.Run(ctx, msg)
 	m.saveSessionIfStarted()

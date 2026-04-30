@@ -10,6 +10,7 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/attachments"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
@@ -53,7 +54,16 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
-	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: text}}}
+	resolved := attachments.ResolveUserInput(text, attachments.Options{CWD: cwd, Provider: selection.Provider, Model: selection.Model})
+	if summary := promptAttachmentSummary(resolved.Attached); summary != "" {
+		fmt.Fprintln(w, summary)
+	}
+	for _, warning := range resolved.Warnings {
+		fmt.Fprintf(w, "(%s)\n", warning)
+	}
+	content := []ai.ContentBlock{ai.TextBlock{Text: resolved.Text}}
+	content = append(content, resolved.Attachments...)
+	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {
 		case agent.AssistantText:

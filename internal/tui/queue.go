@@ -5,7 +5,7 @@ import "github.com/khang859/rune/internal/ai"
 type QueueItem struct {
 	Text        string
 	DisplayText string
-	Images      []ai.ImageBlock
+	Attachments []ai.ContentBlock
 }
 
 type Queue struct {

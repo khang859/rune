@@ -2,6 +2,24 @@ package providers
 
 import "testing"
 
+func TestPDFInputSupport(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+		want     DocumentSupport
+	}{
+		{Codex, "gpt-5", DocumentSupported},
+		{Codex, "custom-model", DocumentUnknown},
+		{Groq, "meta-llama/llama-4-scout-17b-16e-instruct", DocumentUnsupported},
+		{Ollama, "qwen3-vl:8b", DocumentUnsupported},
+	}
+	for _, tc := range cases {
+		if got := PDFInputSupport(tc.provider, tc.model); got != tc.want {
+			t.Fatalf("%s/%s PDF support = %s, want %s", tc.provider, tc.model, got, tc.want)
+		}
+	}
+}
+
 func TestImageInputSupport_Groq(t *testing.T) {
 	cases := []struct {
 		model string

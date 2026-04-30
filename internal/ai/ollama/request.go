@@ -157,6 +157,10 @@ func contentParts(blocks []ai.ContentBlock) []contentPart {
 			if len(v.Data) > 0 && v.MimeType != "" {
 				parts = append(parts, contentPart{Type: "image_url", ImageURL: &imageURL{URL: "data:" + v.MimeType + ";base64," + base64.StdEncoding.EncodeToString(v.Data)}})
 			}
+		case ai.DocumentBlock:
+			if v.Text != "" {
+				parts = append(parts, contentPart{Type: "text", Text: v.Text})
+			}
 		}
 	}
 	return parts

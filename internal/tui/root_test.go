@@ -149,7 +149,7 @@ func TestRoot_StartTurnWarnsButSendsImagesForUnsupportedModel(t *testing.T) {
 	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
 
-	cmd := m.startTurn("describe", []ai.ImageBlock{{Data: []byte("x"), MimeType: "image/png"}})
+	cmd := m.startTurn("describe", []ai.ContentBlock{ai.ImageBlock{Data: []byte("x"), MimeType: "image/png"}})
 	if cmd == nil {
 		t.Fatal("expected start turn command")
 	}

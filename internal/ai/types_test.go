@@ -63,6 +63,31 @@ func TestMessage_RoundTripJSONWithImage(t *testing.T) {
 	}
 }
 
+func TestMessage_RoundTripJSONWithDocument(t *testing.T) {
+	m := Message{
+		Role: RoleUser,
+		Content: []ContentBlock{
+			TextBlock{Text: "read"},
+			DocumentBlock{Data: []byte("%PDF"), Text: "fallback", MimeType: "application/pdf", Name: "paper.pdf", Path: "/tmp/paper.pdf"},
+		},
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got Message
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	doc, ok := got.Content[1].(DocumentBlock)
+	if !ok {
+		t.Fatalf("content[1] = %#v", got.Content[1])
+	}
+	if doc.MimeType != "application/pdf" || doc.Name != "paper.pdf" || doc.Path != "/tmp/paper.pdf" || doc.Text != "fallback" || string(doc.Data) != "%PDF" {
+		t.Fatalf("document = %#v", doc)
+	}
+}
+
 func TestToolResultMessage_HasToolCallID(t *testing.T) {
 	m := Message{
 		Role:       RoleToolResult,

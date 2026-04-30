@@ -47,6 +47,16 @@ type ImageBlock struct {
 
 func (ImageBlock) isContentBlock() {}
 
+type DocumentBlock struct {
+	Data     []byte `json:"data,omitempty"`
+	Text     string `json:"text,omitempty"`
+	MimeType string `json:"mime_type"`
+	Name     string `json:"name,omitempty"`
+	Path     string `json:"path,omitempty"`
+}
+
+func (DocumentBlock) isContentBlock() {}
+
 type ToolUseBlock struct {
 	ID   string          `json:"id"`
 	Name string          `json:"name"`
@@ -85,6 +95,7 @@ type contentWire struct {
 	Text       string          `json:"text,omitempty"`
 	Data       []byte          `json:"data,omitempty"`
 	MimeType   string          `json:"mime_type,omitempty"`
+	Path       string          `json:"path,omitempty"`
 	ID         string          `json:"id,omitempty"`
 	Name       string          `json:"name,omitempty"`
 	Args       json.RawMessage `json:"args,omitempty"`
@@ -101,6 +112,8 @@ func (m Message) MarshalJSON() ([]byte, error) {
 			w.Content = append(w.Content, contentWire{Type: "text", Text: v.Text})
 		case ImageBlock:
 			w.Content = append(w.Content, contentWire{Type: "image", Data: v.Data, MimeType: v.MimeType})
+		case DocumentBlock:
+			w.Content = append(w.Content, contentWire{Type: "document", Data: v.Data, Text: v.Text, MimeType: v.MimeType, Name: v.Name, Path: v.Path})
 		case ToolUseBlock:
 			w.Content = append(w.Content, contentWire{Type: "tool_use", ID: v.ID, Name: v.Name, Args: v.Args})
 		case ToolResultBlock:
@@ -126,6 +139,8 @@ func (m *Message) UnmarshalJSON(b []byte) error {
 			m.Content = append(m.Content, TextBlock{Text: c.Text})
 		case "image":
 			m.Content = append(m.Content, ImageBlock{Data: c.Data, MimeType: c.MimeType})
+		case "document":
+			m.Content = append(m.Content, DocumentBlock{Data: c.Data, Text: c.Text, MimeType: c.MimeType, Name: c.Name, Path: c.Path})
 		case "tool_use":
 			m.Content = append(m.Content, ToolUseBlock{ID: c.ID, Name: c.Name, Args: c.Args})
 		case "tool_result":

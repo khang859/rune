@@ -62,6 +62,23 @@ func TestBuildPayload_IncludesUserImages(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesDocumentTextFallback(t *testing.T) {
+	req := ai.Request{
+		Model: "llama3.2",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "summarize"},
+			ai.DocumentBlock{Text: "<document>pdf text</document>", MimeType: "application/pdf", Name: "paper.pdf"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "pdf text") {
+		t.Fatalf("payload missing document fallback text:\n%s", b)
+	}
+}
+
 func TestBuildPayload_ToolCallsAndToolResults(t *testing.T) {
 	req := ai.Request{Model: "m", Messages: []ai.Message{
 		{Role: ai.RoleAssistant, Content: []ai.ContentBlock{

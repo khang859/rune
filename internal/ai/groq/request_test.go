@@ -61,6 +61,23 @@ func TestBuildPayload_IncludesUserImages(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesDocumentTextFallback(t *testing.T) {
+	req := ai.Request{
+		Model: "llama-3.3-70b-versatile",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "summarize"},
+			ai.DocumentBlock{Text: "<document>pdf text</document>", MimeType: "application/pdf", Name: "paper.pdf"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "pdf text") {
+		t.Fatalf("payload missing document fallback text:\n%s", b)
+	}
+}
+
 func TestBuildPayload_OmitsReasoningEffortForUnsupportedModel(t *testing.T) {
 	for _, model := range []string{
 		"llama-3.3-70b-versatile",

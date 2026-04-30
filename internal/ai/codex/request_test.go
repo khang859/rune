@@ -133,6 +133,39 @@ func TestBuildPayload_IncludesUserImages(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesUserPDFDocuments(t *testing.T) {
+	req := ai.Request{
+		Model: "gpt-5",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "summarize"},
+			ai.DocumentBlock{Data: []byte("%PDF"), MimeType: "application/pdf", Name: "paper.pdf"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Input []struct {
+			Content []struct {
+				Type     string `json:"type"`
+				Filename string `json:"filename"`
+				FileData string `json:"file_data"`
+			} `json:"content"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Input) != 1 || len(decoded.Input[0].Content) != 2 {
+		t.Fatalf("unexpected content in payload: %s", b)
+	}
+	doc := decoded.Input[0].Content[1]
+	if doc.Type != "input_file" || doc.Filename != "paper.pdf" || doc.FileData != "data:application/pdf;base64,JVBERg==" {
+		t.Fatalf("document content = %#v; payload: %s", doc, b)
+	}
+}
+
 func TestBuildPayload_IncludesMessagesAndTools(t *testing.T) {
 	req := ai.Request{
 		Model:  "gpt-5",

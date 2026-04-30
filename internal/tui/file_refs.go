@@ -1,206 +1,85 @@
 package tui
 
 import (
-	"bytes"
-	"html"
-	"os"
-	"path/filepath"
+	"strconv"
 	"strings"
-	"unicode/utf8"
+
+	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/attachments"
 )
 
-type fileReferenceSpan struct {
-	start int
-	end   int
-	path  string
+func resolveFileReferences(text, cwd, provider, model string) attachments.ResolvedUserInput {
+	return attachments.ResolveUserInput(text, attachments.Options{CWD: cwd, Provider: provider, Model: model})
 }
 
-// expandFileReferences replaces @path references in user-submitted text with
-// inline <file> blocks for readable UTF-8 text files. References that cannot be
-// resolved, are not regular files, or point at binary/document/image files are
-// left unchanged.
+// expandFileReferences preserves the historical text-only helper for tests and
+// callers that only need inline <file> expansion.
 func expandFileReferences(text, cwd string) string {
-	refs := findFileReferences(text)
-	if len(refs) == 0 {
-		return text
-	}
-
-	var b strings.Builder
-	last := 0
-	changed := false
-	for _, ref := range refs {
-		if ref.start < last {
-			continue
-		}
-		replacement, ok := inlineFileReference(ref.path, cwd)
-		if !ok {
-			continue
-		}
-		b.WriteString(text[last:ref.start])
-		b.WriteString(replacement)
-		last = ref.end
-		changed = true
-	}
-	if !changed {
-		return text
-	}
-	b.WriteString(text[last:])
-	return b.String()
+	return attachments.ResolveUserInput(text, attachments.Options{CWD: cwd}).Text
 }
 
-func findFileReferences(text string) []fileReferenceSpan {
-	var refs []fileReferenceSpan
-	for i := 0; i < len(text); i++ {
-		if text[i] != '@' {
-			continue
-		}
-		if i > 0 && !isFileReferenceBoundary(text[i-1]) {
-			continue
-		}
-		if i+1 >= len(text) {
-			continue
-		}
-
-		next := text[i+1]
-		if next == '\'' || next == '"' || next == '`' {
-			quote := next
-			contentStart := i + 2
-			for j := contentStart; j < len(text); j++ {
-				if text[j] == '\\' {
-					j++
-					continue
-				}
-				if text[j] == quote {
-					path := strings.TrimSpace(text[contentStart:j])
-					if path != "" {
-						refs = append(refs, fileReferenceSpan{start: i, end: j + 1, path: path})
-					}
-					i = j
-					break
-				}
-			}
-			continue
-		}
-
-		if isFileReferenceSeparator(next) {
-			continue
-		}
-		j := i + 1
-		for j < len(text) && !isFileReferenceSeparator(text[j]) {
-			j++
-		}
-		path := strings.TrimSpace(text[i+1 : j])
-		path = trimReferencePathPunctuation(path)
-		if path != "" {
-			refs = append(refs, fileReferenceSpan{start: i, end: j, path: path})
-		}
-		i = j - 1
+func attachmentSummary(files []attachments.AttachedFile) string {
+	if len(files) == 0 {
+		return ""
 	}
-	return refs
-}
-
-func inlineFileReference(rawPath, cwd string) (string, bool) {
-	path, ok := resolveFileReferencePath(rawPath, cwd)
-	if !ok {
-		return "", false
-	}
-	info, err := os.Stat(path)
-	if err != nil || info.IsDir() || !info.Mode().IsRegular() {
-		return "", false
-	}
-	data, err := os.ReadFile(path)
-	if err != nil || !isInlineTextFile(path, data) {
-		return "", false
-	}
-	return "<file name=\"" + html.EscapeString(path) + "\">\n" + string(data) + "\n</file>", true
-}
-
-func resolveFileReferencePath(rawPath, cwd string) (string, bool) {
-	rawPath = strings.TrimSpace(rawPath)
-	rawPath = trimReferencePathPunctuation(rawPath)
-	if rawPath == "" {
-		return "", false
-	}
-	if strings.HasPrefix(rawPath, "~/") || strings.HasPrefix(rawPath, "~"+string(filepath.Separator)) || strings.HasPrefix(rawPath, "~\\") {
-		home, err := os.UserHomeDir()
-		if err != nil || home == "" {
-			return "", false
-		}
-		rawPath = filepath.Join(home, rawPath[2:])
-	}
-	if !filepath.IsAbs(rawPath) && !isWindowsAbsPath(rawPath) {
-		if cwd == "" {
-			if wd, err := os.Getwd(); err == nil {
-				cwd = wd
-			}
-		}
-		if cwd != "" {
-			rawPath = filepath.Join(cwd, rawPath)
+	counts := map[string]int{}
+	for _, f := range files {
+		switch {
+		case strings.HasPrefix(f.MimeType, "image/"):
+			counts["image"]++
+		case f.MimeType == "application/pdf" && f.Mode == "native":
+			counts["pdf-native"]++
+		case f.MimeType == "application/pdf" && f.Mode == "extracted-text":
+			counts["pdf-text"]++
+		case f.Mode == "inlined-text":
+			counts["text"]++
 		}
 	}
-	return filepath.Clean(rawPath), true
-}
-
-func isInlineTextFile(path string, data []byte) bool {
-	ext := strings.ToLower(filepath.Ext(path))
-	if isImageExt(ext) || isKnownBinaryDocumentExt(ext) {
-		return false
+	var parts []string
+	if counts["image"] > 0 {
+		parts = append(parts, plural(counts["image"], "image")+" attached")
 	}
-	if bytes.IndexByte(data, 0) >= 0 {
-		return false
+	if counts["pdf-native"] > 0 {
+		parts = append(parts, plural(counts["pdf-native"], "PDF")+" attached using native provider PDF input")
 	}
-	return utf8.Valid(data)
-}
-
-func isImageExt(ext string) bool {
-	switch ext {
-	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif", ".ico", ".heic", ".heif":
-		return true
-	default:
-		return false
+	if counts["pdf-text"] > 0 {
+		parts = append(parts, plural(counts["pdf-text"], "PDF")+" attached as extracted text")
 	}
-}
-
-func isKnownBinaryDocumentExt(ext string) bool {
-	switch ext {
-	case ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".zip", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".rar", ".dmg", ".iso", ".exe", ".dll", ".so", ".dylib", ".bin", ".wasm", ".class", ".jar", ".pyc":
-		return true
-	default:
-		return false
+	if counts["text"] > 0 {
+		parts = append(parts, plural(counts["text"], "text file")+" inlined")
 	}
-}
-
-func isFileReferenceBoundary(c byte) bool {
-	return isFileReferenceSeparator(c) || c == '(' || c == '[' || c == '{' || c == '<'
-}
-
-func isFileReferenceSeparator(c byte) bool {
-	switch c {
-	case ' ', '\n', '\r', '\t', '\'', '"', '`':
-		return true
-	default:
-		return false
+	if len(parts) == 0 {
+		return ""
 	}
+	return "(" + strings.Join(parts, "; ") + ")"
 }
 
-func trimReferencePathPunctuation(s string) string {
-	s = strings.TrimLeft(s, "([{<")
-	s = strings.TrimRight(s, "\"'`,;!?)>]}")
-	// Strip sentence-ending dots, but keep relative path components like ".." intact.
-	for strings.HasSuffix(s, ".") && s != "." && s != ".." && !strings.HasSuffix(s, string(filepath.Separator)+"..") {
-		s = strings.TrimSuffix(s, ".")
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
 	}
-	return strings.TrimSpace(s)
-}
-
-func isWindowsDriveStart(s string, i int) bool {
-	if i+2 >= len(s) {
-		return false
+	if noun == "PDF" {
+		return strconv.Itoa(n) + " PDFs"
 	}
-	c := s[i]
-	return ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) && s[i+1] == ':' && (s[i+2] == '\\' || s[i+2] == '/')
+	return strconv.Itoa(n) + " " + noun + "s"
 }
 
-func isWindowsAbsPath(s string) bool {
-	return isWindowsDriveStart(s, 0)
+func imageBlocksToContent(images []ai.ImageBlock) []ai.ContentBlock {
+	out := make([]ai.ContentBlock, 0, len(images))
+	for _, img := range images {
+		out = append(out, img)
+	}
+	return out
+}
+
+func countImages(blocks []ai.ContentBlock) int { return len(imagesFromBlocks(blocks)) }
+
+func imagesFromBlocks(blocks []ai.ContentBlock) []ai.ImageBlock {
+	var images []ai.ImageBlock
+	for _, b := range blocks {
+		if img, ok := b.(ai.ImageBlock); ok {
+			images = append(images, img)
+		}
+	}
+	return images
 }

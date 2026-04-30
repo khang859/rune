@@ -34,6 +34,8 @@ type inputContent struct {
 	Text     string `json:"text,omitempty"`
 	ImageURL string `json:"image_url,omitempty"`
 	Detail   string `json:"detail,omitempty"`
+	Filename string `json:"filename,omitempty"`
+	FileData string `json:"file_data,omitempty"`
 }
 
 type payloadTool struct {
@@ -86,7 +88,15 @@ func messageToInputItems(m ai.Message) ([]inputItem, error) {
 				msg.Content = append(msg.Content, inputContent{Type: textTypeFor(m.Role), Text: v.Text})
 			case ai.ImageBlock:
 				if m.Role == ai.RoleUser && len(v.Data) > 0 && v.MimeType != "" {
-					msg.Content = append(msg.Content, inputContent{Type: "input_image", ImageURL: dataURI(v), Detail: "auto"})
+					msg.Content = append(msg.Content, inputContent{Type: "input_image", ImageURL: imageDataURI(v), Detail: "auto"})
+				}
+			case ai.DocumentBlock:
+				if m.Role == ai.RoleUser {
+					if len(v.Data) > 0 && v.MimeType != "" {
+						msg.Content = append(msg.Content, inputContent{Type: "input_file", Filename: documentFilename(v), FileData: documentDataURI(v)})
+					} else if v.Text != "" {
+						msg.Content = append(msg.Content, inputContent{Type: "input_text", Text: v.Text})
+					}
 				}
 			}
 		}
@@ -143,6 +153,20 @@ func textTypeFor(role ai.Role) string {
 	return "input_text"
 }
 
-func dataURI(img ai.ImageBlock) string {
+func imageDataURI(img ai.ImageBlock) string {
 	return "data:" + img.MimeType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
+}
+
+func documentDataURI(doc ai.DocumentBlock) string {
+	return "data:" + doc.MimeType + ";base64," + base64.StdEncoding.EncodeToString(doc.Data)
+}
+
+func documentFilename(doc ai.DocumentBlock) string {
+	if doc.Name != "" {
+		return doc.Name
+	}
+	if doc.Path != "" {
+		return doc.Path
+	}
+	return "document"
 }
