@@ -110,6 +110,15 @@ func (s stubReadTool) Run(ctx context.Context, args json.RawMessage) (tools.Resu
 	return tools.Result{Output: s.output}, nil
 }
 
+type stubTool struct{ name string }
+
+func (s stubTool) Spec() ai.ToolSpec {
+	return ai.ToolSpec{Name: s.name, Schema: json.RawMessage(`{}`)}
+}
+func (s stubTool) Run(ctx context.Context, args json.RawMessage) (tools.Result, error) {
+	return tools.Result{Output: "ran " + s.name}, nil
+}
+
 type slowProvider struct{}
 
 func (slowProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
@@ -277,6 +286,51 @@ func TestRun_OmitsRuntimeContextWhenSystemEmpty(t *testing.T) {
 	if cp.gotReq.System != "" {
 		t.Errorf("expected empty system, got: %q", cp.gotReq.System)
 	}
+}
+
+func TestRun_PlanModeAddsPromptAndFiltersTools(t *testing.T) {
+	cp := &captureProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{})
+	reg.Register(stubTool{name: "write"})
+	a := New(cp, reg, session.New("gpt-5"), "base prompt")
+	a.SetMode(ModePlan)
+
+	_ = collect(t, a.Run(context.Background(), userMsg("plan it")))
+
+	if !strings.Contains(cp.gotReq.System, "You are in PLAN MODE") {
+		t.Fatalf("missing plan prompt: %q", cp.gotReq.System)
+	}
+	for _, spec := range cp.gotReq.Tools {
+		if spec.Name == "write" {
+			t.Fatalf("plan request exposed write tool: %#v", cp.gotReq.Tools)
+		}
+	}
+	if reg.PermissionMode() != tools.PermissionModePlan {
+		t.Fatalf("registry mode=%q, want plan", reg.PermissionMode())
+	}
+}
+
+func TestRun_DeniedPlanToolCallReturnsToolResult(t *testing.T) {
+	f := faux.New().CallTool("write", `{}`).Done().Reply("ok").Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(stubTool{name: "write"})
+	a := New(f, reg, s, "")
+	a.SetMode(ModePlan)
+
+	evs := collect(t, a.Run(context.Background(), userMsg("try write")))
+
+	var sawDenied bool
+	for _, e := range evs {
+		if v, ok := e.(ToolFinished); ok && v.Call.Name == "write" && v.Result.IsError && strings.Contains(v.Result.Output, "disabled in Plan Mode") {
+			sawDenied = true
+		}
+	}
+	if !sawDenied {
+		t.Fatalf("missing denied ToolFinished in %#v", evs)
+	}
+	assertNoOrphans(t, s)
 }
 
 // erroringTool returns a Go error from Run, simulating a tool plugin failure.

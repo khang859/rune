@@ -29,8 +29,12 @@ func (Hotkeys) View(width, height int) string {
   @               file picker
   /               command menu
   /mcp-status     show MCP connection status
-  !cmd            run shell, send output
-  !!cmd           run shell, do not send
+  /plan           enter Plan Mode
+  /act            leave Plan Mode
+  /approve        approve plan, return to Act Mode
+  /cancel-plan    clear pending plan state
+  !cmd            run shell, send output (disabled in Plan Mode)
+  !!cmd           run shell, do not send (disabled in Plan Mode)
 
 (any key to close)`
 }

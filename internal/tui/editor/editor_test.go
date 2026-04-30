@@ -55,7 +55,7 @@ func TestEditor_EmptyEnterDoesNotSend(t *testing.T) {
 	}
 }
 
-func TestEditor_DoubleBangDoesNotSend(t *testing.T) {
+func TestEditor_DoubleBangReportsShellInsert(t *testing.T) {
 	e := New(t.TempDir(), nil)
 	for _, r := range "!!echo rune-bang-test" {
 		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
@@ -64,11 +64,8 @@ func TestEditor_DoubleBangDoesNotSend(t *testing.T) {
 	if res.Send {
 		t.Fatalf("!!cmd must not Send: %#v", res)
 	}
-	if res.RanCommand != "echo rune-bang-test" {
-		t.Fatalf("expected RanCommand=echo rune-bang-test, got %q", res.RanCommand)
-	}
-	if !strings.Contains(res.InsertText, "rune-bang-test") {
-		t.Fatalf("expected InsertText to contain marker, got %q", res.InsertText)
+	if res.ShellCommand != "echo rune-bang-test" || res.ShellMode != ShellModeInsert {
+		t.Fatalf("expected shell insert result, got %#v", res)
 	}
 }
 
@@ -110,17 +107,17 @@ func TestEditor_ShellModeReflectsPrefix(t *testing.T) {
 	}
 }
 
-func TestEditor_BangCommandRunsAndSends(t *testing.T) {
+func TestEditor_BangCommandReportsShellSend(t *testing.T) {
 	e := New(t.TempDir(), nil)
 	for _, r := range "!echo rune-test-marker" {
 		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
 	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if !res.Send {
-		t.Fatalf("expected Send=true, got %#v", res)
+	if res.Send {
+		t.Fatalf("shell shortcut should be handled by root, got %#v", res)
 	}
-	if !strings.Contains(res.Text, "rune-test-marker") {
-		t.Fatalf("expected output to contain marker, got %q", res.Text)
+	if res.ShellCommand != "echo rune-test-marker" || res.ShellMode != ShellModeSend {
+		t.Fatalf("expected shell send result, got %#v", res)
 	}
 }
 

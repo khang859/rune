@@ -33,6 +33,12 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	for {
 		a.injectCompletedSubagentSummaries()
 		sys := a.system
+		if a.Mode() == ModePlan {
+			if sys != "" {
+				sys += "\n\n"
+			}
+			sys += PlanModePrompt()
+		}
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
 		}

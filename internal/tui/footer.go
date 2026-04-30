@@ -14,6 +14,7 @@ type Footer struct {
 	Tokens         int
 	ContextPct     int
 	Width          int
+	Mode           string
 }
 
 func (f Footer) Render(s Styles) string {
@@ -31,6 +32,9 @@ func (f Footer) Render(s Styles) string {
 	)
 	if f.ThinkingEffort != "" {
 		parts = append(parts, s.FooterModel.Render(iconLabel(s.Icons.Thinking, f.ThinkingEffort)))
+	}
+	if f.Mode != "" {
+		parts = append(parts, s.FooterModel.Render(f.Mode))
 	}
 	parts = append(parts,
 		s.FooterTokens.Render(iconLabel(s.Icons.Tokens, fmt.Sprintf("%s tok", compactCount(f.Tokens)))),

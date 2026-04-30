@@ -25,6 +25,15 @@ func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
 	}
 }
 
+func TestPlanModePrompt_IncludesSafetyGuidance(t *testing.T) {
+	got := PlanModePrompt()
+	for _, want := range []string{"You are in PLAN MODE", "Do not edit", "run shell commands", "approve before implementation"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("PlanModePrompt() missing %q in %q", want, got)
+		}
+	}
+}
+
 func TestRuntimeContext_ContainsExpectedFields(t *testing.T) {
 	got := RuntimeContext()
 

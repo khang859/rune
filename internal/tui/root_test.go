@@ -182,6 +182,65 @@ func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 	}
 }
 
+func TestRoot_PlanModeSlashCommands(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/plan")
+	if a.Mode() != agent.ModePlan || a.Tools().PermissionMode() != tools.PermissionModePlan || m.footer.Mode != "plan" || !m.planPending {
+		t.Fatalf("/plan did not enter plan mode: mode=%q toolMode=%q footer=%q pending=%v", a.Mode(), a.Tools().PermissionMode(), m.footer.Mode, m.planPending)
+	}
+
+	m.handleSlashCommand("/cancel-plan")
+	if a.Mode() != agent.ModePlan || m.planPending {
+		t.Fatalf("/cancel-plan should keep plan mode and clear pending: mode=%q pending=%v", a.Mode(), m.planPending)
+	}
+
+	m.handleSlashCommand("/approve")
+	if a.Mode() != agent.ModeAct || a.Tools().PermissionMode() != tools.PermissionModeAct || m.footer.Mode != "" || m.planPending {
+		t.Fatalf("/approve did not switch to act mode: mode=%q toolMode=%q footer=%q pending=%v", a.Mode(), a.Tools().PermissionMode(), m.footer.Mode, m.planPending)
+	}
+
+	m.handleSlashCommand("/plan")
+	m.handleSlashCommand("/act")
+	if a.Mode() != agent.ModeAct || m.footer.Mode != "" || m.planPending {
+		t.Fatalf("/act did not switch to act mode: mode=%q footer=%q pending=%v", a.Mode(), m.footer.Mode, m.planPending)
+	}
+}
+
+func TestRoot_PlanModeSlashCommandsBlockedWhileStreaming(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.streaming = true
+	m.handleSlashCommand("/plan")
+	if a.Mode() != agent.ModeAct {
+		t.Fatalf("/plan while streaming changed mode to %q", a.Mode())
+	}
+}
+
+func TestRoot_PlanModeBlocksShellShortcuts(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.handleSlashCommand("/plan")
+
+	for _, r := range "!echo nope" {
+		m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		t.Fatalf("blocked shell shortcut should not start a command")
+	}
+	if len(s.PathToActive()) != 0 {
+		t.Fatalf("blocked shell shortcut should not append session messages")
+	}
+	if !strings.Contains(m.View(), "shell shortcuts are disabled in Plan Mode") {
+		t.Fatalf("missing shell shortcut block message in view")
+	}
+}
+
 func TestRoot_CtrlCSecondPressQuits(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

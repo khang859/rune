@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"context"
 	"os"
 	"strings"
 
@@ -111,6 +110,8 @@ type Result struct {
 	SlashCommand string
 	InsertText   string
 	RanCommand   string
+	ShellCommand string
+	ShellMode    ShellMode
 }
 
 func (e *Editor) SetWidth(w int) {
@@ -326,13 +327,11 @@ func (e *Editor) submit() Result {
 	}
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
-		out, _ := RunShell(context.Background(), cmd)
-		return Result{RanCommand: cmd, InsertText: out}
+		return Result{ShellCommand: cmd, ShellMode: ShellModeInsert}
 	}
 	if strings.HasPrefix(text, "!") {
 		cmd := strings.TrimPrefix(text, "!")
-		out, _ := RunShell(context.Background(), cmd)
-		text = "I ran `" + cmd + "` and it produced:\n```\n" + out + "\n```"
+		return Result{ShellCommand: cmd, ShellMode: ShellModeSend}
 	}
 	text = e.consumeImagePathsInline(text)
 	return Result{Send: true, Text: text, Images: e.atts.Drain()}

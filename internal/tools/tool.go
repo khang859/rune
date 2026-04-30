@@ -21,12 +21,20 @@ type Result struct {
 	IsError bool
 }
 
+type PermissionMode string
+
+const (
+	PermissionModeAct  PermissionMode = "act"
+	PermissionModePlan PermissionMode = "plan"
+)
+
 type Registry struct {
 	tools map[string]Tool
+	mode  PermissionMode
 }
 
 func NewRegistry() *Registry {
-	return &Registry{tools: map[string]Tool{}}
+	return &Registry{tools: map[string]Tool{}, mode: PermissionModeAct}
 }
 
 func (r *Registry) Register(t Tool) {
@@ -37,8 +45,23 @@ func (r *Registry) Unregister(name string) { delete(r.tools, name) }
 
 func (r *Registry) Has(name string) bool { _, ok := r.tools[name]; return ok }
 
+func (r *Registry) SetPermissionMode(mode PermissionMode) {
+	if mode == "" {
+		mode = PermissionModeAct
+	}
+	r.mode = mode
+}
+
+func (r *Registry) PermissionMode() PermissionMode {
+	if r.mode == "" {
+		return PermissionModeAct
+	}
+	return r.mode
+}
+
 func (r *Registry) Clone() *Registry {
 	cp := NewRegistry()
+	cp.SetPermissionMode(r.PermissionMode())
 	for name, tool := range r.tools {
 		cp.tools[name] = tool
 	}
@@ -47,9 +70,7 @@ func (r *Registry) Clone() *Registry {
 
 func (r *Registry) CloneReadOnly() *Registry {
 	cp := r.Clone()
-	cp.Unregister("write")
-	cp.Unregister("edit")
-	cp.Unregister("bash")
+	cp.SetPermissionMode(PermissionModePlan)
 	cp.Unregister("spawn_subagent")
 	cp.Unregister("list_subagents")
 	cp.Unregister("get_subagent_result")
@@ -79,7 +100,9 @@ func RegisterBuiltins(r *Registry, opts BuiltinOptions) {
 func (r *Registry) Specs() []ai.ToolSpec {
 	var names []string
 	for n := range r.tools {
-		names = append(names, n)
+		if r.toolAllowed(n) {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	out := make([]ai.ToolSpec, 0, len(names))
@@ -91,6 +114,9 @@ func (r *Registry) Specs() []ai.ToolSpec {
 
 func (r *Registry) Run(ctx context.Context, call ai.ToolCall) (Result, error) {
 	t, ok := r.tools[call.Name]
+	if ok && !r.toolAllowed(call.Name) {
+		return Result{Output: fmt.Sprintf("tool %q is disabled in Plan Mode", call.Name), IsError: true}, nil
+	}
 	if !ok {
 		names := make([]string, 0, len(r.tools))
 		for n := range r.tools {
@@ -103,4 +129,16 @@ func (r *Registry) Run(ctx context.Context, call ai.ToolCall) (Result, error) {
 		}, nil
 	}
 	return t.Run(ctx, call.Args)
+}
+
+func (r *Registry) toolAllowed(name string) bool {
+	if r.PermissionMode() != PermissionModePlan {
+		return true
+	}
+	switch name {
+	case "read", "web_search", "web_fetch", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
+		return true
+	default:
+		return false
+	}
 }

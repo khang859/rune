@@ -9,12 +9,20 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
+type Mode string
+
+const (
+	ModeAct  Mode = "act"
+	ModePlan Mode = "plan"
+)
+
 type Agent struct {
 	provider  ai.Provider
 	tools     *tools.Registry
 	session   *session.Session
 	system    string
 	effort    string
+	mode      Mode
 	subagents *SubagentSupervisor
 }
 
@@ -29,7 +37,9 @@ func NewWithSubagentConfig(p ai.Provider, t *tools.Registry, s *session.Session,
 		session:  s,
 		system:   systemPrompt,
 		effort:   "medium",
+		mode:     ModeAct,
 	}
+	t.SetPermissionMode(tools.PermissionModeAct)
 	a.subagents = NewSubagentSupervisor(a, cfg)
 	return a
 }
@@ -61,3 +71,25 @@ func (a *Agent) RegisterSubagentToolsEnabled(enabled bool) {
 
 func (a *Agent) ReasoningEffort() string          { return a.effort }
 func (a *Agent) SetReasoningEffort(effort string) { a.effort = effort }
+
+func (a *Agent) Mode() Mode {
+	if a.mode == "" {
+		return ModeAct
+	}
+	return a.mode
+}
+
+func (a *Agent) SetMode(mode Mode) {
+	if mode == "" {
+		mode = ModeAct
+	}
+	a.mode = mode
+	if a.tools == nil {
+		return
+	}
+	if mode == ModePlan {
+		a.tools.SetPermissionMode(tools.PermissionModePlan)
+		return
+	}
+	a.tools.SetPermissionMode(tools.PermissionModeAct)
+}

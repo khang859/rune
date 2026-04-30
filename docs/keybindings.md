@@ -12,9 +12,13 @@
 | ↑ / ↓ | Navigate overlays / modals |
 | `@` | Open file picker |
 | `/` | Open command menu |
-| `!cmd` | Run shell, send output as message |
-| `!!cmd` | Run shell, do not send |
+| `!cmd` | Run shell, send output as message; disabled in Plan Mode |
+| `!!cmd` | Run shell, do not send; disabled in Plan Mode |
 | Ctrl+V | Paste image (where supported) |
+
+## Plan Mode
+
+Use `/plan` to enter Plan Mode. While active, write/edit/bash, MCP tools, and shell shortcuts are disabled. Use `/approve` or `/act` to return to Act Mode before implementation. See `docs/plan-mode.md`.
 
 ## Copy mode
 

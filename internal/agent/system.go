@@ -20,6 +20,19 @@ func BasePrompt() string {
 	}, "\n")
 }
 
+func PlanModePrompt() string {
+	return strings.Join([]string{
+		"You are in PLAN MODE.",
+		"",
+		"- Do not edit, write, delete, or run shell commands.",
+		"- Use read-only tools and read-only subagents for exploration.",
+		"- Research the codebase before proposing implementation.",
+		"- Ask clarifying questions when needed.",
+		"- Produce a concise, reviewable implementation plan.",
+		"- End by asking the user to approve before implementation.",
+	}, "\n")
+}
+
 // RuntimeContext returns a <system-context> block describing the runtime:
 // date/time, cwd, os/arch, shell, user. Called per turn from loop.go so
 // the date doesn't drift in long sessions.

@@ -24,6 +24,14 @@ func TestFooter_RendersAllFields(t *testing.T) {
 	}
 }
 
+func TestFooter_RendersPlanMode(t *testing.T) {
+	f := Footer{Cwd: "/p", Session: "s", Model: "gpt-5", Mode: "plan", Width: 120}
+	out := f.Render(DefaultStylesWithIconMode("unicode"))
+	if !strings.Contains(out, "plan") {
+		t.Fatalf("footer missing plan mode:\n%s", out)
+	}
+}
+
 func TestFooter_OmitsThinkingWhenEmpty(t *testing.T) {
 	f := Footer{
 		Cwd:        "/home/x/proj",

@@ -60,6 +60,70 @@ func TestRegistry_Specs(t *testing.T) {
 	}
 }
 
+func TestRegistry_PlanModeFiltersAndDeniesTools(t *testing.T) {
+	r := NewRegistry()
+	for _, name := range []string{"read", "write", "edit", "bash", "web_search", "external_tool"} {
+		r.Register(stubTool{name: name})
+	}
+	r.SetPermissionMode(PermissionModePlan)
+
+	for _, spec := range r.Specs() {
+		switch spec.Name {
+		case "write", "edit", "bash", "external_tool":
+			t.Fatalf("plan mode exposed denied tool %q", spec.Name)
+		}
+	}
+	for _, name := range []string{"read", "web_search"} {
+		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
+		if err != nil || res.IsError {
+			t.Fatalf("allowed tool %q result=%#v err=%v", name, res, err)
+		}
+	}
+	for _, name := range []string{"write", "edit", "bash", "external_tool"} {
+		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
+		if err != nil {
+			t.Fatalf("denial should not be go error for %q: %v", name, err)
+		}
+		if !res.IsError || !strings.Contains(res.Output, "disabled in Plan Mode") {
+			t.Fatalf("denied tool %q result=%#v", name, res)
+		}
+	}
+}
+
+func TestRegistry_ActModeExposesAndRunsMutatingTools(t *testing.T) {
+	r := NewRegistry()
+	for _, name := range []string{"write", "edit", "bash"} {
+		r.Register(stubTool{name: name})
+	}
+	if got := len(r.Specs()); got != 3 {
+		t.Fatalf("act specs len=%d, want 3", got)
+	}
+	for _, name := range []string{"write", "edit", "bash"} {
+		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
+		if err != nil || res.IsError || res.Output != "ran "+name {
+			t.Fatalf("act run %q result=%#v err=%v", name, res, err)
+		}
+	}
+}
+
+func TestRegistry_CloneReadOnlyUsesPlanPolicyAndDisablesChildSubagents(t *testing.T) {
+	r := NewRegistry()
+	for _, name := range []string{"read", "write", "edit", "bash", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent"} {
+		r.Register(stubTool{name: name})
+	}
+	cp := r.CloneReadOnly()
+	if got := cp.PermissionMode(); got != PermissionModePlan {
+		t.Fatalf("clone mode=%q, want plan", got)
+	}
+	if cp.Has("spawn_subagent") || cp.Has("list_subagents") || cp.Has("get_subagent_result") || cp.Has("cancel_subagent") {
+		t.Fatal("read-only child registry should not include subagent tools")
+	}
+	res, err := cp.Run(context.Background(), ai.ToolCall{Name: "write", Args: json.RawMessage(`{}`)})
+	if err != nil || !res.IsError {
+		t.Fatalf("write should be denied by read-only clone: result=%#v err=%v", res, err)
+	}
+}
+
 func TestRegistry_DoesNotSwallowToolErrors(t *testing.T) {
 	r := NewRegistry()
 	r.Register(errTool{})

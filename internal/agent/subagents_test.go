@@ -110,9 +110,17 @@ func TestSubagentToolsRegisteredAndHiddenFromChildren(t *testing.T) {
 		}
 	}
 	child := reg.CloneReadOnly()
-	for _, name := range []string{"write", "edit", "bash", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent"} {
+	for _, name := range []string{"spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent"} {
 		if child.Has(name) {
 			t.Fatalf("child read-only registry unexpectedly has %s", name)
+		}
+	}
+	for _, name := range []string{"write", "edit", "bash"} {
+		if child.Has(name) {
+			res, err := child.Run(context.Background(), ai.ToolCall{Name: name})
+			if err != nil || !res.IsError {
+				t.Fatalf("child read-only registry should deny %s at runtime, result=%#v err=%v", name, res, err)
+			}
 		}
 	}
 	if !child.Has("read") {

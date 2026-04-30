@@ -59,6 +59,7 @@ type RootModel struct {
 	clipboardReady  bool
 	clipboardErr    error
 	copyMode        bool
+	planPending     bool
 
 	showThinking    bool
 	showToolResults bool
@@ -86,6 +87,7 @@ const quitPrimeWindow = 2 * time.Second
 var baseSlashCmds = []string{
 	"/quit", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
+	"/plan", "/act", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys",
 }
 
@@ -127,6 +129,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 			Session:        sessionLabel(sess),
 			Model:          sess.Model,
 			ThinkingEffort: footerThinkingEffort(sess.Model, a.ReasoningEffort()),
+			Mode:           footerMode(a.Mode()),
 		},
 		queue:                       &Queue{},
 		settings:                    settings,
@@ -386,6 +389,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	res, cmd := m.editor.Update(msg)
+	if res.ShellCommand != "" {
+		return m.handleShellShortcut(res, cmd)
+	}
 	if res.Send {
 		text := res.Text
 		if m.pendingSkillBody != "" {
@@ -420,6 +426,40 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 	}
 	return m, cmd
+}
+
+func (m *RootModel) handleShellShortcut(res editor.Result, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	if m.agent.Mode() == agent.ModePlan {
+		m.msgs.OnInfo("shell shortcuts are disabled in Plan Mode; use /act to run commands")
+		m.refreshViewport()
+		m.layout()
+		return m, cmd
+	}
+	out, _ := editor.RunShell(context.Background(), res.ShellCommand)
+	if res.ShellMode == editor.ShellModeInsert {
+		label := fmt.Sprintf("(ran: %s)", res.ShellCommand)
+		body := out
+		if body == "" {
+			body = "(no output)"
+		}
+		m.msgs.OnInfo(label + "\n" + body)
+		m.refreshViewport()
+		return m, cmd
+	}
+	text := "I ran `" + res.ShellCommand + "` and it produced:\n```\n" + out + "\n```"
+	if m.pendingSkillBody != "" {
+		text = m.pendingSkillBody + "\n\n" + text
+		m.pendingSkillBody = ""
+	}
+	if m.streaming || m.compacting {
+		m.queue.Push(QueueItem{Text: text, Images: res.Images})
+		m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
+		m.refreshViewport()
+		return m, cmd
+	}
+	m.msgs.AppendUser(text)
+	m.refreshViewport()
+	return m, m.startTurn(text, res.Images)
 }
 
 func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
@@ -527,6 +567,40 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		}
 	case "/copy-mode":
 		initCmd = m.toggleCopyMode()
+	case "/plan":
+		if m.streaming || m.compacting {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		m.agent.SetMode(agent.ModePlan)
+		m.footer.Mode = footerMode(m.agent.Mode())
+		m.planPending = true
+		m.msgs.OnInfo("plan mode: edits, bash, and MCP tools disabled")
+	case "/act":
+		if m.streaming || m.compacting {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		m.agent.SetMode(agent.ModeAct)
+		m.footer.Mode = footerMode(m.agent.Mode())
+		m.planPending = false
+		m.msgs.OnInfo("act mode: implementation tools enabled")
+	case "/approve":
+		if m.streaming || m.compacting {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		m.agent.SetMode(agent.ModeAct)
+		m.footer.Mode = footerMode(m.agent.Mode())
+		m.planPending = false
+		m.msgs.OnInfo("plan approved; act mode enabled — send your next message to implement")
+	case "/cancel-plan":
+		if m.streaming || m.compacting {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			break
+		}
+		m.planPending = false
+		m.msgs.OnInfo("plan cancelled; still in plan mode")
 	case "/compact":
 		if m.streaming || m.compacting {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -559,6 +633,13 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	m.refreshViewport()
 	m.layout()
 	return initCmd
+}
+
+func footerMode(mode agent.Mode) string {
+	if mode == agent.ModePlan {
+		return "plan"
+	}
+	return ""
 }
 
 func (m *RootModel) showSubagentsInfo() {
@@ -1109,8 +1190,11 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
 	prev := m.agent.ReasoningEffort()
+	prevMode := m.agent.Mode()
 	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), s, m.agent.System(), currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
+	m.agent.SetMode(prevMode)
+	m.footer.Mode = footerMode(m.agent.Mode())
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
