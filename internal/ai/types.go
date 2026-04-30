@@ -183,6 +183,12 @@ const (
 	// "missing required parameter: 'input[N].output'"). The agent heals
 	// session state, then retries.
 	ErrOrphanOutput
+	// ErrToolGenerationFailed is a provider rejection caused by the model
+	// producing output that resembles a tool call but cannot be parsed as
+	// one (e.g., Groq's "Failed to call a function. ... failed_generation").
+	// The agent appends a corrective nudge so the model sees its mistake,
+	// then retries the same turn.
+	ErrToolGenerationFailed
 )
 
 type StreamError struct {

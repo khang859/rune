@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ func (a *Agent) Run(ctx context.Context, userMsg ai.Message) <-chan Event {
 func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	autoCompactRemaining := 1
 	streamAttempt := 0
+	invalidToolAttempt := 0
 	for {
 		a.injectCompletedSubagentSummaries()
 		sys := a.system
@@ -56,14 +58,25 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		}
 
 		var (
-			text     strings.Builder
-			calls    []ai.ToolCall
-			usage    ai.Usage
-			doneRsn  string
-			done     bool
-			overflow bool
-			retry    *retryDirective
+			text             strings.Builder
+			calls            []ai.ToolCall
+			invalidCallNames []string
+			usage            ai.Usage
+			doneRsn          string
+			done             bool
+			overflow         bool
+			retry            *retryDirective
+			lastStreamErr    error
 		)
+
+		// Build a set of tool names actually sent to the model. Anything
+		// outside this set is a malformed tool call we must filter out
+		// before persisting the assistant message — otherwise the next
+		// request includes a tool_use the provider will reject.
+		allowed := make(map[string]bool, len(req.Tools))
+		for _, t := range req.Tools {
+			allowed[t.Name] = true
+		}
 
 		for ev := range events {
 			switch v := ev.(type) {
@@ -73,7 +86,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			case ai.Thinking:
 				out <- ThinkingText{Delta: v.Text}
 			case ai.ToolCall:
-				calls = append(calls, v)
+				if allowed[v.Name] {
+					calls = append(calls, v)
+				} else {
+					invalidCallNames = append(invalidCallNames, v.Name)
+				}
 			case ai.Usage:
 				usage = v
 				out <- TurnUsage{Usage: v}
@@ -84,6 +101,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 				}
 				if r := classifyRetry(v.Class, streamAttempt); r != nil {
 					retry = r
+					lastStreamErr = v.Err
 					// Drop any remaining events on this stream — don't
 					// forward them to the UI so a retry doesn't double up.
 					for range events {
@@ -103,6 +121,20 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		}
 
 		if retry != nil {
+			if retry.nudgeToolGenerationFail {
+				invalidToolAttempt++
+				if invalidToolAttempt > maxInvalidToolRetries {
+					out <- TurnError{Err: fmt.Errorf("model produced unparseable tool calls on %d consecutive attempts; last provider error: %w", invalidToolAttempt, lastStreamErr)}
+					return
+				}
+				out <- InvalidToolCallRecovered{Names: []string{"(unparseable)"}}
+				a.session.Append(buildToolGenerationFailedNudge(sortedToolNames(req.Tools)))
+				// Tool-gen failures use their own retry budget — don't bump
+				// streamAttempt or this would race with the transport
+				// retry budget (maxStreamRetries) and surface the raw
+				// provider error before invalidToolAttempt is exhausted.
+				continue
+			}
 			if retry.heal {
 				healOrphans(a.session)
 			}
@@ -146,14 +178,34 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			return
 		}
 
-		a.persistAssistant(text.String(), calls, usage)
-		if len(calls) == 0 {
+		a.persistAssistant(text.String(), calls, invalidCallNames, usage)
+		if len(calls) == 0 && len(invalidCallNames) == 0 {
 			out <- TurnDone{Reason: doneRsn}
 			return
 		}
-		if err := a.runTools(ctx, calls, out); err != nil {
-			sendErrOrAbort(ctx, out, err)
-			return
+		if len(calls) > 0 {
+			if err := a.runTools(ctx, calls, out); err != nil {
+				sendErrOrAbort(ctx, out, err)
+				return
+			}
+		}
+		// Reset the consecutive-invalid counter on any turn that produced
+		// real work — so an occasional malformed call alongside successful
+		// tool calls doesn't burn the budget. The cap exists to stop a
+		// model that's stuck producing nothing but malformed calls.
+		if len(calls) > 0 {
+			invalidToolAttempt = 0
+		}
+		if len(invalidCallNames) > 0 {
+			if len(calls) == 0 {
+				invalidToolAttempt++
+			}
+			if invalidToolAttempt > maxInvalidToolRetries {
+				out <- TurnError{Err: fmt.Errorf("model emitted invalid tool calls on %d consecutive turns with no valid progress: %v", invalidToolAttempt, invalidCallNames)}
+				return
+			}
+			out <- InvalidToolCallRecovered{Names: append([]string(nil), invalidCallNames...)}
+			a.session.Append(buildInvalidToolNudge(invalidCallNames, sortedToolNames(req.Tools)))
 		}
 	}
 }
@@ -168,10 +220,19 @@ func (a *Agent) injectCompletedSubagentSummaries() {
 	}
 }
 
-func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, usage ai.Usage) {
+func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, invalidNames []string, usage ai.Usage) {
+	body := text
+	if len(invalidNames) > 0 {
+		note := formatInvalidCallsNote(invalidNames)
+		if body != "" {
+			body += "\n\n" + note
+		} else {
+			body = note
+		}
+	}
 	var content []ai.ContentBlock
-	if text != "" {
-		content = append(content, ai.TextBlock{Text: text})
+	if body != "" {
+		content = append(content, ai.TextBlock{Text: body})
 	}
 	for _, c := range calls {
 		content = append(content, ai.ToolUseBlock(c))

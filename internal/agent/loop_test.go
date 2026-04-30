@@ -311,7 +311,13 @@ func TestRun_PlanModeAddsPromptAndFiltersTools(t *testing.T) {
 	}
 }
 
-func TestRun_DeniedPlanToolCallReturnsToolResult(t *testing.T) {
+// TestRun_DeniedPlanToolCallIsFilteredAsInvalid verifies that calling a tool
+// disabled in plan mode (and therefore not in the request's Tools list) is
+// treated as an invalid tool call: the bad ToolUseBlock is filtered out of
+// session history, a nudge is appended, and the loop continues. Without this,
+// providers that validate tool names against the request (e.g. Groq) would
+// reject every subsequent turn.
+func TestRun_DeniedPlanToolCallIsFilteredAsInvalid(t *testing.T) {
 	f := faux.New().CallTool("write", `{}`).Done().Reply("ok").Done()
 	s := session.New("gpt-5")
 	reg := tools.NewRegistry()
@@ -321,16 +327,36 @@ func TestRun_DeniedPlanToolCallReturnsToolResult(t *testing.T) {
 
 	evs := collect(t, a.Run(context.Background(), userMsg("try write")))
 
-	var sawDenied bool
+	var sawRecovered bool
 	for _, e := range evs {
-		if v, ok := e.(ToolFinished); ok && v.Call.Name == "write" && v.Result.IsError && strings.Contains(v.Result.Output, "disabled in Plan Mode") {
-			sawDenied = true
+		if v, ok := e.(InvalidToolCallRecovered); ok {
+			for _, n := range v.Names {
+				if n == "write" {
+					sawRecovered = true
+				}
+			}
+		}
+		if _, ok := e.(ToolFinished); ok {
+			t.Fatalf("unexpected ToolFinished — disabled tool should be filtered, not run: %#v", e)
 		}
 	}
-	if !sawDenied {
-		t.Fatalf("missing denied ToolFinished in %#v", evs)
+	if !sawRecovered {
+		t.Fatalf("missing InvalidToolCallRecovered for 'write' in %#v", evs)
 	}
 	assertNoOrphans(t, s)
+
+	// The persisted assistant message must not contain a ToolUseBlock for
+	// the bad call — that's the bug we're preventing.
+	for _, m := range s.PathToActive() {
+		if m.Role != ai.RoleAssistant {
+			continue
+		}
+		for _, c := range m.Content {
+			if u, ok := c.(ai.ToolUseBlock); ok && u.Name == "write" {
+				t.Fatalf("invalid tool_use leaked into session: %+v", u)
+			}
+		}
+	}
 }
 
 // erroringTool returns a Go error from Run, simulating a tool plugin failure.
@@ -397,6 +423,89 @@ func TestRun_StreamFatalErrorHealsOrphans(t *testing.T) {
 	}
 	if !sawErr {
 		t.Fatal("expected TurnError")
+	}
+}
+
+// toolGenFailThenSucceedProvider emits ErrToolGenerationFailed on the first
+// call (Groq's tool_use_failed 400), then a successful response on the second.
+type toolGenFailThenSucceedProvider struct {
+	calls       int
+	gotMessages [][]ai.Message
+	gotTools    [][]ai.ToolSpec
+}
+
+func (p *toolGenFailThenSucceedProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	p.calls++
+	p.gotMessages = append(p.gotMessages, append([]ai.Message(nil), req.Messages...))
+	p.gotTools = append(p.gotTools, append([]ai.ToolSpec(nil), req.Tools...))
+	out := make(chan ai.Event, 4)
+	if p.calls == 1 {
+		out <- ai.StreamError{Err: errStr("status 400: Failed to call a function. Please adjust your prompt. See 'failed_generation' for more details."), Class: ai.ErrToolGenerationFailed}
+		close(out)
+		return out, nil
+	}
+	out <- ai.TextDelta{Text: "ok now"}
+	out <- ai.Usage{Input: 1, Output: 1}
+	out <- ai.Done{Reason: "stop"}
+	close(out)
+	return out, nil
+}
+
+// TestRun_ToolGenerationFailedNudgesAndRetries verifies that a Groq
+// tool_use_failed response triggers a nudge appended to the session and
+// one automatic retry — instead of killing the conversation.
+func TestRun_ToolGenerationFailedNudgesAndRetries(t *testing.T) {
+	p := &toolGenFailThenSucceedProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+	s := session.New("gpt-5")
+	a := New(p, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("do something")))
+
+	if p.calls != 2 {
+		t.Fatalf("expected 2 provider calls (1 fail + 1 retry), got %d", p.calls)
+	}
+	var sawRecovered, sawDone, sawError bool
+	for _, e := range evs {
+		switch e.(type) {
+		case InvalidToolCallRecovered:
+			sawRecovered = true
+		case TurnDone:
+			sawDone = true
+		case TurnError:
+			sawError = true
+		}
+	}
+	if sawError {
+		t.Fatalf("unexpected TurnError; events=%#v", evs)
+	}
+	if !sawRecovered {
+		t.Fatal("expected InvalidToolCallRecovered event")
+	}
+	if !sawDone {
+		t.Fatal("expected TurnDone after retry")
+	}
+
+	// The retry's request must include the nudge user message that was
+	// appended to the session.
+	if len(p.gotMessages) < 2 {
+		t.Fatalf("expected 2 captured requests, got %d", len(p.gotMessages))
+	}
+	retried := p.gotMessages[1]
+	var nudgeFound bool
+	for _, m := range retried {
+		if m.Role != ai.RoleUser {
+			continue
+		}
+		for _, c := range m.Content {
+			if t, ok := c.(ai.TextBlock); ok && strings.Contains(t.Text, "could not be parsed as a valid tool call") {
+				nudgeFound = true
+			}
+		}
+	}
+	if !nudgeFound {
+		t.Fatalf("retry did not include the recovery nudge; messages=%#v", retried)
 	}
 }
 
@@ -467,6 +576,233 @@ func TestRun_OrphanOutputHealsAndRetries(t *testing.T) {
 	}
 	if !foundHeal {
 		t.Fatal("expected synthetic error tool_result for healed orphan")
+	}
+}
+
+// TestRun_InvalidToolCallOnlyNudgesAndContinues simulates a model (e.g. Llama
+// on Groq) emitting a malformed tool name. The bad call must be filtered out
+// of the assistant message, a nudge appended, and the loop continues so the
+// model can retry — instead of crashing the turn.
+func TestRun_InvalidToolCallOnlyNudgesAndContinues(t *testing.T) {
+	f := faux.New().
+		CallTool(`bash{"command":"git log"}`, `{}`).Done(). // malformed tool name
+		Reply("recovered").Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(stubTool{name: "bash"})
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("do something")))
+
+	var sawRecovered, sawDone bool
+	for _, e := range evs {
+		switch v := e.(type) {
+		case InvalidToolCallRecovered:
+			if len(v.Names) == 1 && v.Names[0] == `bash{"command":"git log"}` {
+				sawRecovered = true
+			}
+		case TurnDone:
+			if v.Reason == "stop" {
+				sawDone = true
+			}
+		case ToolFinished:
+			t.Fatalf("unexpected ToolFinished — invalid call should be filtered: %#v", v)
+		}
+	}
+	if !sawRecovered {
+		t.Fatalf("missing InvalidToolCallRecovered in %#v", evs)
+	}
+	if !sawDone {
+		t.Fatalf("missing TurnDone after recovery in %#v", evs)
+	}
+
+	// Session must not contain the malformed ToolUseBlock — that's what
+	// causes providers to reject every subsequent request.
+	for _, m := range s.PathToActive() {
+		for _, c := range m.Content {
+			if u, ok := c.(ai.ToolUseBlock); ok && u.Name == `bash{"command":"git log"}` {
+				t.Fatalf("malformed tool_use leaked into session: %+v", u)
+			}
+		}
+	}
+
+	// A user nudge must be appended before the second turn so the model
+	// sees the available tool list.
+	path := s.PathToActive()
+	var sawNudge bool
+	for _, m := range path {
+		if m.Role != ai.RoleUser {
+			continue
+		}
+		for _, c := range m.Content {
+			if t, ok := c.(ai.TextBlock); ok && strings.Contains(t.Text, "Available tools") && strings.Contains(t.Text, "bash") {
+				sawNudge = true
+			}
+		}
+	}
+	if !sawNudge {
+		t.Fatalf("missing nudge user message listing valid tools; path=%#v", path)
+	}
+	assertNoOrphans(t, s)
+}
+
+// TestRun_InvalidAndValidToolCallsMixed verifies that valid tool calls in the
+// same assistant turn still execute, while invalid ones are filtered. This
+// matters because some streams emit several tool calls in parallel.
+func TestRun_InvalidAndValidToolCallsMixed(t *testing.T) {
+	f := faux.New().
+		CallTool("read", `{"path":"/tmp/x"}`).
+		CallTool("list_subagents,null", `{}`). // malformed
+		Done().
+		Reply("done").Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "hello"})
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("read it")))
+
+	var sawReadFinished, sawRecovered, sawDone bool
+	for _, e := range evs {
+		switch v := e.(type) {
+		case ToolFinished:
+			if v.Call.Name == "read" && v.Result.Output == "hello" {
+				sawReadFinished = true
+			}
+			if v.Call.Name == "list_subagents,null" {
+				t.Fatalf("invalid tool 'list_subagents,null' should not have been dispatched")
+			}
+		case InvalidToolCallRecovered:
+			for _, n := range v.Names {
+				if n == "list_subagents,null" {
+					sawRecovered = true
+				}
+			}
+		case TurnDone:
+			if v.Reason == "stop" {
+				sawDone = true
+			}
+		}
+	}
+	if !sawReadFinished {
+		t.Fatal("expected valid 'read' tool to run")
+	}
+	if !sawRecovered {
+		t.Fatal("expected InvalidToolCallRecovered for malformed name")
+	}
+	if !sawDone {
+		t.Fatal("expected TurnDone after mixed turn")
+	}
+	assertNoOrphans(t, s)
+}
+
+// TestRun_RepeatedInvalidToolCallsHitRetryBudget verifies that a model stuck
+// in a loop emitting invalid tool calls eventually surfaces a TurnError
+// rather than nudging forever.
+func TestRun_RepeatedInvalidToolCallsHitRetryBudget(t *testing.T) {
+	f := faux.New().
+		CallTool("not_a_tool", `{}`).Done().
+		CallTool("not_a_tool", `{}`).Done().
+		CallTool("not_a_tool", `{}`).Done().
+		CallTool("not_a_tool", `{}`).Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("go")))
+
+	var recoveredCount int
+	var sawError bool
+	for _, e := range evs {
+		switch e.(type) {
+		case InvalidToolCallRecovered:
+			recoveredCount++
+		case TurnError:
+			sawError = true
+		case TurnDone:
+			t.Fatalf("expected TurnError, got TurnDone")
+		}
+	}
+	if !sawError {
+		t.Fatal("expected TurnError after exceeding retry budget")
+	}
+	if recoveredCount != maxInvalidToolRetries {
+		t.Fatalf("recoveredCount=%d, want %d", recoveredCount, maxInvalidToolRetries)
+	}
+}
+
+// TestRun_MixedTurnsDoNotBurnRetryBudget verifies that a model emitting one
+// bad call alongside a valid call on every turn does not exhaust the retry
+// budget — valid work always resets the counter. The budget exists only to
+// stop a model that's stuck producing nothing but malformed calls.
+func TestRun_MixedTurnsDoNotBurnRetryBudget(t *testing.T) {
+	f := faux.New().
+		CallTool("read", `{"path":"/tmp/x"}`).CallTool("nope", `{}`).Done(). // mixed (1)
+		CallTool("read", `{"path":"/tmp/x"}`).CallTool("nope", `{}`).Done(). // mixed (2)
+		CallTool("read", `{"path":"/tmp/x"}`).CallTool("nope", `{}`).Done(). // mixed (3) — would exceed budget if mixed turns counted
+		Reply("done").Done()
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("go")))
+
+	var sawError, sawDone bool
+	for _, e := range evs {
+		switch e.(type) {
+		case TurnError:
+			sawError = true
+		case TurnDone:
+			sawDone = true
+		}
+	}
+	if sawError {
+		t.Fatalf("unexpected TurnError on mixed turns; events=%#v", evs)
+	}
+	if !sawDone {
+		t.Fatal("expected TurnDone after recovery")
+	}
+}
+
+// TestRun_InvalidThenValidResetsRetryCounter verifies the budget only counts
+// *consecutive* invalid turns. A successful valid turn in between resets the
+// counter, so an occasional malformed call doesn't permanently poison a
+// session.
+func TestRun_InvalidThenValidResetsRetryCounter(t *testing.T) {
+	f := faux.New().
+		CallTool("nope", `{}`).Done().                    // invalid (1)
+		CallTool("read", `{"path":"/tmp/x"}`).Done().     // valid → counter resets
+		CallTool("nope", `{}`).Done().                    // invalid (1 again)
+		CallTool("nope", `{}`).Done().                    // invalid (2)
+		Reply("ok").Done()                                // recovers
+	s := session.New("gpt-5")
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+	a := New(f, reg, s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("go")))
+
+	var sawError, sawDone bool
+	var recovered int
+	for _, e := range evs {
+		switch e.(type) {
+		case InvalidToolCallRecovered:
+			recovered++
+		case TurnError:
+			sawError = true
+		case TurnDone:
+			sawDone = true
+		}
+	}
+	if sawError {
+		t.Fatalf("unexpected TurnError — counter should reset between invalid runs; events=%#v", evs)
+	}
+	if !sawDone {
+		t.Fatal("expected TurnDone after recovery")
+	}
+	if recovered != 3 {
+		t.Fatalf("recovered=%d, want 3", recovered)
 	}
 }
 

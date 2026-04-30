@@ -172,7 +172,18 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		if msg == "" {
 			msg = "stream error"
 		}
-		return false, send(ctx, out, ai.StreamError{Err: errString(msg), Class: ai.ErrFatal})
+		code := ""
+		switch t := ch.Error.Code.(type) {
+		case string:
+			code = t
+		case float64:
+			code = fmt.Sprintf("%v", t)
+		}
+		class := ai.ErrFatal
+		if (errorDetails{Message: msg, Code: code}).isToolGenerationFailed() {
+			class = ai.ErrToolGenerationFailed
+		}
+		return false, send(ctx, out, ai.StreamError{Err: errString(msg), Class: class})
 	}
 	if ch.Usage != nil {
 		if err := send(ctx, out, ai.Usage{Input: ch.Usage.PromptTokens, Output: ch.Usage.CompletionTokens, CacheRead: ch.Usage.PromptTokensDetails.CachedTokens}); err != nil {

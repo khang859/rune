@@ -127,7 +127,8 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(resp.Body)
-		msg := extractErrorMessage(b)
+		details := parseErrorBody(b)
+		msg := details.formatted()
 		if msg == "" {
 			msg = string(b)
 		}
@@ -137,6 +138,8 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 			return classifiedErr{err: err, class: ai.ErrRateLimit}
 		case resp.StatusCode >= 500 || resp.StatusCode == 498:
 			return classifiedErr{err: err, class: ai.ErrServer}
+		case details.isToolGenerationFailed():
+			return classifiedErr{err: err, class: ai.ErrToolGenerationFailed}
 		default:
 			return classifiedErr{err: err, class: ai.ErrFatal}
 		}
@@ -144,21 +147,56 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	return parseSSE(ctx, resp.Body, out)
 }
 
-func extractErrorMessage(b []byte) string {
+// errorDetails captures fields Groq attaches to a 4xx response.
+type errorDetails struct {
+	Message string
+	Type    string
+	Code    string
+}
+
+func parseErrorBody(b []byte) errorDetails {
 	var env struct {
 		Error struct {
 			Message string `json:"message"`
 			Type    string `json:"type"`
+			Code    any    `json:"code"`
 		} `json:"error"`
 	}
 	if err := json.Unmarshal(b, &env); err != nil {
+		return errorDetails{}
+	}
+	code := ""
+	switch t := env.Error.Code.(type) {
+	case string:
+		code = t
+	case float64:
+		code = fmt.Sprintf("%v", t)
+	}
+	return errorDetails{
+		Message: env.Error.Message,
+		Type:    env.Error.Type,
+		Code:    code,
+	}
+}
+
+func (d errorDetails) formatted() string {
+	if d.Message == "" {
 		return ""
 	}
-	if env.Error.Message == "" {
-		return ""
+	if d.Type != "" {
+		return d.Message + " (" + d.Type + ")"
 	}
-	if env.Error.Type != "" {
-		return env.Error.Message + " (" + env.Error.Type + ")"
+	return d.Message
+}
+
+// isToolGenerationFailed matches Groq's "tool_use_failed" rejection, where
+// the model produced text that looked like a tool call but could not be
+// parsed. We match on code first (canonical), and fall back to a substring
+// check on the message in case Groq alters the code string.
+func (d errorDetails) isToolGenerationFailed() bool {
+	if d.Code == "tool_use_failed" {
+		return true
 	}
-	return env.Error.Message
+	return strings.Contains(d.Message, "Failed to call a function") &&
+		strings.Contains(d.Message, "failed_generation")
 }

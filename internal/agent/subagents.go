@@ -28,7 +28,7 @@ const (
 type SubagentTask struct {
 	ID           string         `json:"task_id"`
 	Name         string         `json:"name"`
-	FamiliarName string         `json:"familiar_name,omitempty"`
+	FamiliarName string         `json:"name,omitempty"`
 	AgentType    string         `json:"agent_type"`
 	Prompt       string         `json:"-"`
 	TimeoutSecs  int            `json:"-"`

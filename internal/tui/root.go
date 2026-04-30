@@ -929,6 +929,9 @@ func (m *RootModel) handleEvent(e agent.Event) {
 		m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 	case agent.ContextOverflow:
 		m.msgs.OnTurnError(fmt.Errorf("context overflow — manual /compact recommended"))
+	case agent.InvalidToolCallRecovered:
+		names := strings.Join(v.Names, ", ")
+		m.msgs.OnInfo(fmt.Sprintf("model emitted invalid tool call(s): %s — recovering with a nudge", names))
 	case agent.TurnError:
 		m.msgs.OnTurnError(v.Err)
 	case agent.TurnAborted:
