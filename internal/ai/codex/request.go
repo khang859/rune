@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"encoding/base64"
 	"encoding/json"
 
 	"github.com/khang859/rune/internal/ai"
@@ -29,8 +30,10 @@ type inputItem struct {
 }
 
 type inputContent struct {
-	Type string `json:"type"`
-	Text string `json:"text,omitempty"`
+	Type     string `json:"type"`
+	Text     string `json:"text,omitempty"`
+	ImageURL string `json:"image_url,omitempty"`
+	Detail   string `json:"detail,omitempty"`
 }
 
 type payloadTool struct {
@@ -78,8 +81,13 @@ func messageToInputItems(m ai.Message) ([]inputItem, error) {
 		}
 		var items []inputItem
 		for _, c := range m.Content {
-			if v, ok := c.(ai.TextBlock); ok {
+			switch v := c.(type) {
+			case ai.TextBlock:
 				msg.Content = append(msg.Content, inputContent{Type: textTypeFor(m.Role), Text: v.Text})
+			case ai.ImageBlock:
+				if m.Role == ai.RoleUser && len(v.Data) > 0 && v.MimeType != "" {
+					msg.Content = append(msg.Content, inputContent{Type: "input_image", ImageURL: dataURI(v), Detail: "auto"})
+				}
 			}
 		}
 		if len(msg.Content) > 0 {
@@ -133,4 +141,8 @@ func textTypeFor(role ai.Role) string {
 		return "output_text"
 	}
 	return "input_text"
+}
+
+func dataURI(img ai.ImageBlock) string {
+	return "data:" + img.MimeType + ";base64," + base64.StdEncoding.EncodeToString(img.Data)
 }

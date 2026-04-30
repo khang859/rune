@@ -99,6 +99,40 @@ func TestBuildPayload_IncludesReasoningNone(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesUserImages(t *testing.T) {
+	req := ai.Request{
+		Model: "gpt-5",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "what is this?"},
+			ai.ImageBlock{Data: []byte("png"), MimeType: "image/png"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded struct {
+		Input []struct {
+			Content []struct {
+				Type     string `json:"type"`
+				Text     string `json:"text"`
+				ImageURL string `json:"image_url"`
+				Detail   string `json:"detail"`
+			} `json:"content"`
+		} `json:"input"`
+	}
+	if err := json.Unmarshal(b, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded.Input) != 1 || len(decoded.Input[0].Content) != 2 {
+		t.Fatalf("unexpected content in payload: %s", b)
+	}
+	img := decoded.Input[0].Content[1]
+	if img.Type != "input_image" || img.ImageURL != "data:image/png;base64,cG5n" || img.Detail != "auto" {
+		t.Fatalf("image content = %#v; payload: %s", img, b)
+	}
+}
+
 func TestBuildPayload_IncludesMessagesAndTools(t *testing.T) {
 	req := ai.Request{
 		Model:  "gpt-5",

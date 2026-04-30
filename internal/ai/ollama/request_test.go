@@ -40,6 +40,28 @@ func TestBuildPayload_IncludesMessagesAndToolsButOmitsToolChoice(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesUserImages(t *testing.T) {
+	req := ai.Request{
+		Model: "qwen3-vl:8b",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "what is this?"},
+			ai.ImageBlock{Data: []byte("gif"), MimeType: "image/gif"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"type":"image_url"`,
+		`"url":"data:image/gif;base64,Z2lm"`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("payload missing %q:\n%s", want, b)
+		}
+	}
+}
+
 func TestBuildPayload_ToolCallsAndToolResults(t *testing.T) {
 	req := ai.Request{Model: "m", Messages: []ai.Message{
 		{Role: ai.RoleAssistant, Content: []ai.ContentBlock{

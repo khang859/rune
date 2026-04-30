@@ -231,7 +231,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.layout()
 		m.refreshViewport()
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(item.Text)
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.Text, len(item.Images)))
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Images)
 		}
@@ -300,7 +300,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, compactCmd
 		}
 		if item, ok := m.queue.Pop(); ok {
-			m.msgs.AppendUser(item.Text)
+			m.msgs.AppendUser(formatUserMessageForDisplay(item.Text, len(item.Images)))
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Images)
 		}
@@ -405,11 +405,11 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.streaming || m.compacting {
 			m.queue.Push(QueueItem{Text: text, Images: res.Images})
-			m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
+			m.msgs.OnInfo(queueMessage(m.queue.Len(), len(res.Images)))
 			m.refreshViewport()
 			return m, cmd
 		}
-		m.msgs.AppendUser(text)
+		m.msgs.AppendUser(formatUserMessageForDisplay(text, len(res.Images)))
 		m.refreshViewport()
 		return m, m.startTurn(text, res.Images)
 	}
@@ -458,16 +458,47 @@ func (m *RootModel) handleShellShortcut(res editor.Result, cmd tea.Cmd) (tea.Mod
 	}
 	if m.streaming || m.compacting {
 		m.queue.Push(QueueItem{Text: text, Images: res.Images})
-		m.msgs.OnInfo(fmt.Sprintf("queued (%d in queue)", m.queue.Len()))
+		m.msgs.OnInfo(queueMessage(m.queue.Len(), len(res.Images)))
 		m.refreshViewport()
 		return m, cmd
 	}
-	m.msgs.AppendUser(text)
+	m.msgs.AppendUser(formatUserMessageForDisplay(text, len(res.Images)))
 	m.refreshViewport()
 	return m, m.startTurn(text, res.Images)
 }
 
+func (m *RootModel) warnImageSupport(images []ai.ImageBlock) {
+	if len(images) == 0 {
+		return
+	}
+	switch providers.ImageInputSupport(m.sess.Provider, m.sess.Model) {
+	case providers.ImageUnsupported:
+		m.msgs.OnInfo(fmt.Sprintf("(%d image(s) attached; %s/%s is not documented as image-capable, so the provider may reject or ignore them)", len(images), m.sess.Provider, m.sess.Model))
+	case providers.ImageUnknown:
+		m.msgs.OnInfo(fmt.Sprintf("(%d image(s) attached; image support for %s/%s is unknown, sending anyway)", len(images), m.sess.Provider, m.sess.Model))
+	}
+}
+
+func queueMessage(n, images int) string {
+	if images > 0 {
+		return fmt.Sprintf("queued (%d in queue, %d image(s) attached)", n, images)
+	}
+	return fmt.Sprintf("queued (%d in queue)", n)
+}
+
+func formatUserMessageForDisplay(text string, imageCount int) string {
+	if imageCount == 0 {
+		return text
+	}
+	label := fmt.Sprintf("[%d image(s) attached]", imageCount)
+	if strings.TrimSpace(text) == "" {
+		return label
+	}
+	return text + "\n" + label
+}
+
 func (m *RootModel) startTurn(text string, images []ai.ImageBlock) tea.Cmd {
+	m.warnImageSupport(images)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
 	m.streaming = true
@@ -1422,11 +1453,17 @@ func (m *RootModel) rebuildMessagesFromSession() {
 		msg := n.Message
 		switch msg.Role {
 		case ai.RoleUser:
+			var text string
+			images := 0
 			for _, c := range msg.Content {
-				if t, ok := c.(ai.TextBlock); ok {
-					m.msgs.AppendUser(t.Text)
+				switch v := c.(type) {
+				case ai.TextBlock:
+					text += v.Text
+				case ai.ImageBlock:
+					images++
 				}
 			}
+			m.msgs.AppendUser(formatUserMessageForDisplay(text, images))
 		case ai.RoleAssistant:
 			if n.CompactedCount > 0 {
 				var text string

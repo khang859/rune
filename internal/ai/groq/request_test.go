@@ -39,6 +39,28 @@ func TestBuildPayload_IncludesMessagesAndTools(t *testing.T) {
 	}
 }
 
+func TestBuildPayload_IncludesUserImages(t *testing.T) {
+	req := ai.Request{
+		Model: "meta-llama/llama-4-scout-17b-16e-instruct",
+		Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{
+			ai.TextBlock{Text: "what is this?"},
+			ai.ImageBlock{Data: []byte("jpg"), MimeType: "image/jpeg"},
+		}}},
+	}
+	b, err := buildPayload(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`"type":"image_url"`,
+		`"url":"data:image/jpeg;base64,anBn"`,
+	} {
+		if !strings.Contains(string(b), want) {
+			t.Fatalf("payload missing %q:\n%s", want, b)
+		}
+	}
+}
+
 func TestBuildPayload_OmitsReasoningEffortForUnsupportedModel(t *testing.T) {
 	for _, model := range []string{
 		"llama-3.3-70b-versatile",

@@ -100,6 +100,41 @@ func TestRoot_AutoCompactDoesNotRunBeforeFirstCompactableCut(t *testing.T) {
 	}
 }
 
+func TestRoot_StartTurnWarnsButSendsImagesForUnsupportedModel(t *testing.T) {
+	s := session.New("llama-3.3-70b-versatile")
+	s.Provider = "groq"
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	cmd := m.startTurn("describe", []ai.ImageBlock{{Data: []byte("x"), MimeType: "image/png"}})
+	if cmd == nil {
+		t.Fatal("expected start turn command")
+	}
+	msgs := s.PathToActive()
+	if len(msgs) != 1 {
+		t.Fatalf("messages len = %d, want 1", len(msgs))
+	}
+	if len(msgs[0].Content) != 2 {
+		t.Fatalf("content len = %d, want text + image", len(msgs[0].Content))
+	}
+	if _, ok := msgs[0].Content[1].(ai.ImageBlock); !ok {
+		t.Fatalf("image was not sent: %#v", msgs[0].Content[1])
+	}
+	out := m.msgs.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
+	if !strings.Contains(out, "not documented") {
+		t.Fatalf("expected unsupported model warning in messages, got:\n%s", out)
+	}
+}
+
+func TestFormatUserMessageForDisplayIncludesImageCount(t *testing.T) {
+	if got := formatUserMessageForDisplay("hi", 2); got != "hi\n[2 image(s) attached]" {
+		t.Fatalf("display = %q", got)
+	}
+	if got := formatUserMessageForDisplay("", 1); got != "[1 image(s) attached]" {
+		t.Fatalf("display = %q", got)
+	}
+}
+
 func TestRoot_SavesAssistantMessageWhenTurnCompletes(t *testing.T) {
 	dir := t.TempDir()
 	s := session.New("gpt-5")
