@@ -84,10 +84,27 @@ Implemented in the third MVP pass:
 - Interactive mode and one-shot `rune prompt` mode construct subagent supervisors from settings.
 - When subagents are disabled, parent-facing subagent tools return clear disabled errors instead of starting tasks.
 
+Implemented in the fourth MVP pass:
+
+- Dependency-aware subagent orchestration.
+- `dependencies` support on `spawn_subagent`.
+- `blocked` task state for tasks waiting on dependencies.
+- Automatic unblocking when dependencies complete.
+- Dependent task failure when dependencies fail or are cancelled.
+- Dependency summaries injected into downstream subagent prompts.
+- Cancellation support for blocked tasks.
+
+Implemented in the fifth MVP pass:
+
+- Durable subagent task metadata in session files.
+- Save/load of subagent task ID, name, type, status, dependencies, timestamps, summary, and error.
+- Loaded session history is seeded into the subagent supervisor and appears in `list_subagents` / `/subagents`.
+- Stale non-terminal tasks from prior processes are restored as cancelled with a session-restore error.
+- Full prompts/transcripts are intentionally not persisted yet.
+
 Not yet implemented:
 
-- Durable subagent persistence in session files.
-- Dependency handling / `blocked` tasks.
+- Subagent transcript/artifact persistence beyond durable task metadata.
 - Per-subagent model selection.
 - Custom user-defined subagent type registry.
 - File scopes and file locks.
@@ -147,19 +164,16 @@ max_tokens_per_subagent = 80000
 
 Every subagent should have a task record with a clear lifecycle.
 
-Implemented v1 lifecycle:
+Implemented lifecycle:
 
 ```text
 pending -> running -> completed
 pending -> running -> failed
 pending -> running -> cancelled
 pending -> cancelled
-```
-
-Planned dependency-aware lifecycle:
-
-```text
 blocked -> pending -> running -> completed
+blocked -> failed
+blocked -> cancelled
 ```
 
 ### Return structured results
@@ -228,15 +242,16 @@ SubagentSupervisor / TaskManager
   ├── task registry
   ├── bounded worker pool
   ├── cancellation and timeouts
+  ├── durable task metadata persistence
   ├── transcript/artifact persistence (planned)
-  └── progress events (planned)
+  └── lifecycle progress events
         │
         ├── subagent A isolated context
         ├── subagent B isolated context
         └── subagent C isolated context
 ```
 
-The `SubagentSupervisor` owns subagent lifecycle, concurrency limits, cancellation, and result storage.
+The `SubagentSupervisor` owns subagent lifecycle, concurrency limits, cancellation, durable task metadata, and result storage.
 
 ## Core data model
 
@@ -285,18 +300,13 @@ Task statuses:
 type SubagentStatus string
 
 const (
+    SubagentBlocked   SubagentStatus = "blocked"
     SubagentPending   SubagentStatus = "pending"
     SubagentRunning   SubagentStatus = "running"
     SubagentCompleted SubagentStatus = "completed"
     SubagentFailed    SubagentStatus = "failed"
     SubagentCancelled SubagentStatus = "cancelled"
 )
-```
-
-Planned future status:
-
-```go
-const SubagentBlocked SubagentStatus = "blocked"
 ```
 
 Result shape:
@@ -319,7 +329,7 @@ type SubagentResult struct {
 
 Purpose: start a specialized subagent with isolated context.
 
-Implemented v1 schema:
+Implemented schema:
 
 ```json
 {
@@ -327,22 +337,17 @@ Implemented v1 schema:
   "prompt": "string",
   "agent_type": "general",
   "background": true,
+  "dependencies": ["task_id"],
   "timeout_secs": 600
 }
 ```
 
-Planned future schema:
+Planned future schema additions:
 
 ```json
 {
-  "name": "string",
-  "prompt": "string",
-  "agent_type": "string",
-  "background": true,
-  "dependencies": ["task_id"],
   "allowed_tools": ["read", "grep", "web_search"],
-  "file_scope": ["internal/agent/**", "docs/**"],
-  "timeout_secs": 600
+  "file_scope": ["internal/agent/**", "docs/**"]
 }
 ```
 
@@ -355,11 +360,13 @@ Implemented v1 behavior:
 - Child agents receive a conservative read-only tool registry.
 - `timeout_secs` can reduce the default timeout, but cannot raise it above the configured/default cap.
 - If concurrency is saturated, the task remains `pending` until capacity is available.
+- If dependencies are incomplete, the task remains `blocked` until they complete.
+- If a dependency fails or is cancelled, dependent blocked tasks fail with a dependency error.
+- Dependency summaries are included in downstream subagent context.
 
 Planned future behavior:
 
 - Configurable allowed tools per subagent.
-- Dependency handling with `blocked` tasks.
 - Explicit file scopes.
 - User-defined subagent types.
 
@@ -462,20 +469,19 @@ Behavior:
 4. If runnable and capacity is available, supervisor starts the subagent in a goroutine.
 5. Subagent receives a fresh conversation/context with specialized system instructions.
 6. Subagent runs using a read-only cloned tool registry.
-7. Supervisor stores final summary/error in memory.
+7. Supervisor stores final summary/error in memory and mirrors durable task metadata into the session.
 8. Main agent calls `get_subagent_result` to retrieve status or result.
 
 Planned future additions:
 
-- Progress event emission.
-- Transcript/artifact persistence.
-- Event-driven result notifications.
+- Transcript/artifact persistence for child sessions and outputs.
+- More granular progress events beyond lifecycle transitions.
 
 ## Events
 
-Not implemented in v1. The supervisor should eventually emit events to the existing agent/TUI event stream where practical.
+Lifecycle events are implemented and emitted to subscribers, including the TUI. Finer-grained progress events may be added later.
 
-Potential events:
+Implemented lifecycle events:
 
 ```text
 subagent_started
@@ -633,16 +639,33 @@ Still to improve within Phase 2:
 - Durable task history in session view backed by persisted task metadata.
 - More granular progress events beyond lifecycle transitions.
 
-### Phase 3: dependency-aware orchestration
+### Phase 3: dependency-aware orchestration — implemented
 
-Add:
+Implemented:
 
 - `dependencies` field support.
 - `blocked` task state.
 - Automatic unblock when dependencies complete.
 - Passing dependency summaries into downstream subagent context.
+- Failing dependent blocked tasks when dependencies fail or are cancelled.
+- Cancellation of blocked tasks.
 
-### Phase 4: controlled implementation subagents
+### Phase 4: durable subagent task history/session persistence — partially implemented
+
+Implemented:
+
+- Session-level persisted subagent task metadata.
+- Session save/load round-trip for subagent task history.
+- Supervisor hydration from loaded session metadata.
+- Stale pending/running/blocked tasks restored as cancelled because no child process survives across process restarts.
+
+Still to improve:
+
+- Transcript/artifact references for child sessions.
+- More detailed result objects beyond the final summary string.
+- Optional TUI affordances for browsing persisted subagent history separately from active tasks.
+
+### Phase 5: controlled implementation subagents
 
 Add:
 
@@ -651,7 +674,7 @@ Add:
 - File locks or patch-only mode.
 - Diff review before final application.
 
-### Phase 5: agent-team mode
+### Phase 6: agent-team mode
 
 Add higher-level coordination primitives:
 
@@ -674,7 +697,7 @@ Add higher-level coordination primitives:
 
 ## MVP status
 
-The first implementation is complete and intentionally conservative:
+The implementation remains intentionally conservative:
 
 1. Read-only subagents only.
 2. Bounded parallelism.
@@ -684,7 +707,11 @@ The first implementation is complete and intentionally conservative:
 6. Explicit task listing and retrieval.
 7. Cancellation and timeout support.
 8. Enabled in both interactive and one-shot prompt modes.
+9. Settings-backed configuration.
+10. TUI visibility for active/completed subagents.
+11. Dependency-aware blocked tasks.
+12. Durable session-backed subagent task metadata and restore of stale non-terminal tasks as cancelled.
 
 This captures the highest-value part of Claude Code-style subagents: isolated parallel work that returns concise results to the main loop, while avoiding the hardest risks of concurrent code mutation.
 
-Next recommended step: add settings-backed configuration plus basic TUI visibility for active/completed subagents.
+Next recommended step: add transcript/artifact references for child sessions, then proceed to controlled implementation subagents with explicit file scopes and patch/worktree safety.

@@ -12,13 +12,14 @@ import (
 type Session struct {
 	mu sync.RWMutex
 
-	ID      string
-	Name    string
-	Created time.Time
-	Model   string
-	Root    *Node
-	Active  *Node
-	path    string
+	ID        string
+	Name      string
+	Created   time.Time
+	Model     string
+	Root      *Node
+	Active    *Node
+	Subagents []SubagentTask
+	path      string
 }
 
 type Node struct {

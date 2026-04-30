@@ -17,14 +17,27 @@ type SubagentManager interface {
 	Cancel(id string) error
 }
 
+const subagentsDisabledError = "subagents are disabled in settings"
+
 type disabledSubagentManager struct{}
 
+type disabledSubagentMarker interface {
+	subagentsDisabled() bool
+}
+
 func DisabledSubagentManager() SubagentManager { return disabledSubagentManager{} }
+
+func (disabledSubagentManager) subagentsDisabled() bool { return true }
+
+func subagentManagerDisabled(m SubagentManager) bool {
+	d, ok := m.(disabledSubagentMarker)
+	return ok && d.subagentsDisabled()
+}
 
 func (disabledSubagentManager) Spawn(ctx context.Context, req SpawnSubagentRequest) (*SubagentTask, error) {
 	_ = ctx
 	_ = req
-	return nil, fmt.Errorf("subagents are disabled in settings")
+	return nil, fmt.Errorf(subagentsDisabledError)
 }
 
 func (disabledSubagentManager) List() []SubagentTask { return nil }
@@ -36,27 +49,30 @@ func (disabledSubagentManager) Get(id string) *SubagentTask {
 
 func (disabledSubagentManager) Cancel(id string) error {
 	_ = id
-	return fmt.Errorf("subagents are disabled in settings")
+	return fmt.Errorf(subagentsDisabledError)
 }
 
 type SpawnSubagentRequest struct {
-	Name        string
-	Prompt      string
-	AgentType   string
-	Background  bool
-	TimeoutSecs int
+	Name         string
+	Prompt       string
+	AgentType    string
+	Background   bool
+	Dependencies []string
+	TimeoutSecs  int
 }
 
 type SubagentTask struct {
-	ID          string     `json:"task_id"`
-	Name        string     `json:"name"`
-	AgentType   string     `json:"agent_type"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	Summary     string     `json:"summary,omitempty"`
-	Error       string     `json:"error,omitempty"`
+	ID           string     `json:"task_id"`
+	Name         string     `json:"name"`
+	FamiliarName string     `json:"familiar_name,omitempty"`
+	AgentType    string     `json:"agent_type"`
+	Status       string     `json:"status"`
+	Dependencies []string   `json:"dependencies,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	StartedAt    *time.Time `json:"started_at,omitempty"`
+	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	Summary      string     `json:"summary,omitempty"`
+	Error        string     `json:"error,omitempty"`
 }
 
 type SpawnSubagent struct{ Manager SubagentManager }
@@ -78,16 +94,17 @@ func RegisterSubagentTools(r *Registry, m SubagentManager) {
 }
 
 func (SpawnSubagent) Spec() ai.ToolSpec {
-	return ai.ToolSpec{Name: "spawn_subagent", Description: "Start a specialized subagent with isolated context. V1 supports read-only General subagents and can run them in the background.", Schema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"prompt":{"type":"string"},"agent_type":{"type":"string","default":"general","description":"Subagent type/name. Available: general."},"background":{"type":"boolean","default":true},"timeout_secs":{"type":"integer","default":600}},"required":["name","prompt"]}`)}
+	return ai.ToolSpec{Name: "spawn_subagent", Description: "Start a specialized subagent with isolated context. V1 supports read-only General subagents and can run them in the background.", Schema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"prompt":{"type":"string"},"agent_type":{"type":"string","default":"general","description":"Subagent type/name. Available: general."},"background":{"type":"boolean","default":true},"dependencies":{"type":"array","items":{"type":"string"},"description":"Optional subagent task IDs that must complete before this task starts."},"timeout_secs":{"type":"integer","default":600}},"required":["name","prompt"]}`)}
 }
 
 func (t SpawnSubagent) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 	var in struct {
-		Name        string `json:"name"`
-		Prompt      string `json:"prompt"`
-		AgentType   string `json:"agent_type"`
-		Background  *bool  `json:"background"`
-		TimeoutSecs int    `json:"timeout_secs"`
+		Name         string   `json:"name"`
+		Prompt       string   `json:"prompt"`
+		AgentType    string   `json:"agent_type"`
+		Background   *bool    `json:"background"`
+		Dependencies []string `json:"dependencies"`
+		TimeoutSecs  int      `json:"timeout_secs"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
 		return Result{Output: "invalid JSON: " + err.Error(), IsError: true}, nil
@@ -96,7 +113,7 @@ func (t SpawnSubagent) Run(ctx context.Context, args json.RawMessage) (Result, e
 	if in.Background != nil {
 		bg = *in.Background
 	}
-	task, err := t.Manager.Spawn(ctx, SpawnSubagentRequest{Name: in.Name, Prompt: in.Prompt, AgentType: in.AgentType, Background: bg, TimeoutSecs: in.TimeoutSecs})
+	task, err := t.Manager.Spawn(ctx, SpawnSubagentRequest{Name: in.Name, Prompt: in.Prompt, AgentType: in.AgentType, Background: bg, Dependencies: in.Dependencies, TimeoutSecs: in.TimeoutSecs})
 	if err != nil {
 		return Result{Output: err.Error(), IsError: true}, nil
 	}
@@ -114,6 +131,9 @@ func (t ListSubagents) Run(ctx context.Context, args json.RawMessage) (Result, e
 		if err := json.Unmarshal(args, &discard); err != nil {
 			return Result{Output: "invalid JSON: " + err.Error(), IsError: true}, nil
 		}
+	}
+	if subagentManagerDisabled(t.Manager) {
+		return Result{Output: subagentsDisabledError, IsError: true}, nil
 	}
 	return jsonResult(map[string]any{"tasks": t.Manager.List()})
 }
@@ -133,6 +153,9 @@ func (t GetSubagentResult) Run(ctx context.Context, args json.RawMessage) (Resul
 	if strings.TrimSpace(in.TaskID) == "" {
 		return Result{Output: "task_id is required", IsError: true}, nil
 	}
+	if subagentManagerDisabled(t.Manager) {
+		return Result{Output: subagentsDisabledError, IsError: true}, nil
+	}
 	task := t.Manager.Get(in.TaskID)
 	if task == nil {
 		return Result{Output: fmt.Sprintf("unknown subagent task %q", in.TaskID), IsError: true}, nil
@@ -141,7 +164,7 @@ func (t GetSubagentResult) Run(ctx context.Context, args json.RawMessage) (Resul
 }
 
 func (CancelSubagent) Spec() ai.ToolSpec {
-	return ai.ToolSpec{Name: "cancel_subagent", Description: "Cancel a pending or running subagent task.", Schema: json.RawMessage(`{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}`)}
+	return ai.ToolSpec{Name: "cancel_subagent", Description: "Cancel a pending, blocked, or running subagent task.", Schema: json.RawMessage(`{"type":"object","properties":{"task_id":{"type":"string"}},"required":["task_id"]}`)}
 }
 
 func (t CancelSubagent) Run(ctx context.Context, args json.RawMessage) (Result, error) {

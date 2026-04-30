@@ -27,6 +27,7 @@ type IconSet struct {
 	Context   string
 	Summary   string
 	Invoke    string
+	Familiar  string
 }
 
 func DefaultIconMode() IconMode {
@@ -63,6 +64,7 @@ func IconSetForMode(mode string) IconSet {
 			Context:   "󰊚",
 			Summary:   "",
 			Invoke:    "",
+			Familiar:  "󰛢",
 		}
 	case IconModeASCII:
 		return IconSet{
@@ -81,6 +83,7 @@ func IconSetForMode(mode string) IconSet {
 			Context:   "ctx",
 			Summary:   "book",
 			Invoke:    "*",
+			Familiar:  "fam",
 		}
 	case IconModeAuto, IconModeUnicode, "":
 		fallthrough
@@ -101,6 +104,7 @@ func IconSetForMode(mode string) IconSet {
 			Context:   "◷",
 			Summary:   "◇",
 			Invoke:    "✦",
+			Familiar:  "✧",
 		}
 	}
 }

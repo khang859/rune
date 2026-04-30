@@ -183,11 +183,11 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 			rendered = s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
 		case bkSubagent:
 			if b.meta == string(agent.SubagentCompleted) {
-				rendered = s.ToolResult.Render(b.text)
+				rendered = s.FamiliarSuccess.Render(b.text)
 			} else if b.meta == string(agent.SubagentFailed) || b.meta == string(agent.SubagentCancelled) {
 				rendered = s.ToolError.Render(b.text)
 			} else {
-				rendered = s.Info.Render(b.text)
+				rendered = s.FamiliarActive.Render(b.text)
 			}
 		}
 		if m.width > 0 {
@@ -200,31 +200,48 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 
 func renderSubagentEventText(ev agent.SubagentEvent) string {
 	t := ev.Task
-	label := fmt.Sprintf("subagent %s", t.Name)
+	label := familiarLabel(t.FamiliarName, t.Name)
 	if t.ID != "" {
 		label += fmt.Sprintf(" (%s)", t.ID)
 	}
 	switch ev.Status {
+	case agent.SubagentBlocked:
+		return fmt.Sprintf("◌ %s waits within the summoning circle", label)
 	case agent.SubagentPending:
-		return fmt.Sprintf("◌ %s queued", label)
+		return fmt.Sprintf("◌ %s is being summoned", label)
 	case agent.SubagentRunning:
-		return fmt.Sprintf("◐ %s working…", label)
+		return fmt.Sprintf("◐ %s is scrying through the task…", label)
 	case agent.SubagentCompleted:
 		if strings.TrimSpace(t.Summary) == "" {
-			return fmt.Sprintf("✓ %s completed", label)
+			return fmt.Sprintf("✓ %s returned from the veil", label)
 		}
 		lines := strings.Count(strings.TrimSpace(t.Summary), "\n") + 1
-		return fmt.Sprintf("✓ %s completed — %d result lines added to context", label, lines)
+		return fmt.Sprintf("✓ %s returned with %d lines of findings added to context", label, lines)
 	case agent.SubagentFailed:
 		if strings.TrimSpace(t.Error) == "" {
-			return fmt.Sprintf("✗ %s failed", label)
+			return fmt.Sprintf("✗ %s lost the thread", label)
 		}
-		return fmt.Sprintf("✗ %s failed: %s", label, strings.TrimSpace(t.Error))
+		return fmt.Sprintf("✗ %s lost the thread: %s", label, strings.TrimSpace(t.Error))
 	case agent.SubagentCancelled:
-		return fmt.Sprintf("⊘ %s cancelled", label)
+		return fmt.Sprintf("⊘ %s was dismissed", label)
 	default:
 		return fmt.Sprintf("%s %s", label, ev.Status)
 	}
+}
+
+func familiarLabel(familiar, task string) string {
+	familiar = strings.TrimSpace(familiar)
+	task = strings.TrimSpace(task)
+	if familiar == "" {
+		if task == "" {
+			return "a familiar"
+		}
+		return "familiar of " + task
+	}
+	if task == "" {
+		return familiar
+	}
+	return familiar + ", familiar of " + task
 }
 
 func renderThinking(s Styles, b block, showThinking bool, now time.Time) string {
@@ -272,12 +289,92 @@ func renderToolCall(s Styles, b block) string {
 		if r, ok := formatReadCall(s, args); ok {
 			return r
 		}
+	case "spawn_subagent":
+		if r, ok := formatSpawnSubagentCall(s, args); ok {
+			return r
+		}
+	case "list_subagents":
+		return familiarHeader(s, "read the familiar ledger")
+	case "get_subagent_result":
+		if r, ok := formatGetSubagentCall(s, args); ok {
+			return r
+		}
+	case "cancel_subagent":
+		if r, ok := formatCancelSubagentCall(s, args); ok {
+			return r
+		}
 	}
 	return s.ToolCall.Render(fmt.Sprintf("%s %s(%s)", iconLabel(s.Icons.Tool, "tool"), b.meta, b.text))
 }
 
 func toolHeader(s Styles, body string) string {
 	return s.ToolCall.Render(iconLabel(s.Icons.Tool, "tool") + " " + body)
+}
+
+func familiarHeader(s Styles, body string) string {
+	return s.FamiliarCall.Render(iconLabel(s.Icons.Familiar, "familiar") + " " + body)
+}
+
+func formatSpawnSubagentCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Name         string   `json:"name"`
+		AgentType    string   `json:"agent_type"`
+		Background   *bool    `json:"background"`
+		Dependencies []string `json:"dependencies"`
+		TimeoutSecs  int      `json:"timeout_secs"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	name := strings.TrimSpace(a.Name)
+	if name == "" {
+		name = "unnamed task"
+	}
+	body := "summon a familiar for " + name
+	if a.AgentType != "" && a.AgentType != "general" {
+		body += " [" + a.AgentType + "]"
+	}
+	var details []string
+	if len(a.Dependencies) > 0 {
+		details = append(details, fmt.Sprintf("after %d omen%s", len(a.Dependencies), pluralS(len(a.Dependencies))))
+	}
+	if a.Background != nil && !*a.Background {
+		details = append(details, "awaiting return")
+	}
+	if a.TimeoutSecs > 0 {
+		details = append(details, fmt.Sprintf("%ds ward", a.TimeoutSecs))
+	}
+	if len(details) > 0 {
+		body += " (" + strings.Join(details, ", ") + ")"
+	}
+	return familiarHeader(s, body), true
+}
+
+func formatGetSubagentCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	return familiarHeader(s, "unseal familiar scroll "+strings.TrimSpace(a.TaskID)), true
+}
+
+func formatCancelSubagentCall(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		TaskID string `json:"task_id"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	return familiarHeader(s, "dismiss familiar "+strings.TrimSpace(a.TaskID)), true
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 func formatBashCall(s Styles, args json.RawMessage) (string, bool) {

@@ -14,6 +14,9 @@ type Styles struct {
 	Info                 lipgloss.Style
 	SummaryHeader        lipgloss.Style
 	ThinkingHeader       lipgloss.Style
+	FamiliarCall         lipgloss.Style
+	FamiliarActive       lipgloss.Style
+	FamiliarSuccess      lipgloss.Style
 	Footer               lipgloss.Style
 	FooterApp            lipgloss.Style
 	FooterCwd            lipgloss.Style
@@ -50,6 +53,9 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		Info:                 lipgloss.NewStyle().Faint(true).Italic(true).Foreground(lipgloss.Color("8")),
 		SummaryHeader:        lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
 		ThinkingHeader:       lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
+		FamiliarCall:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
+		FamiliarActive:       lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
+		FamiliarSuccess:      lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
 		Footer:               lipgloss.NewStyle().Padding(0, 1),
 		FooterApp:            lipgloss.NewStyle().Foreground(lipgloss.Color("13")),
 		FooterCwd:            lipgloss.NewStyle().Foreground(lipgloss.Color("12")),

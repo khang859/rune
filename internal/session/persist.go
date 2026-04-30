@@ -10,13 +10,14 @@ import (
 )
 
 type wireSession struct {
-	ID       string     `json:"id"`
-	Name     string     `json:"name,omitempty"`
-	Created  string     `json:"created"`
-	Model    string     `json:"model"`
-	RootID   string     `json:"root_id"`
-	ActiveID string     `json:"active_id"`
-	Nodes    []wireNode `json:"nodes"`
+	ID        string         `json:"id"`
+	Name      string         `json:"name,omitempty"`
+	Created   string         `json:"created"`
+	Model     string         `json:"model"`
+	RootID    string         `json:"root_id"`
+	ActiveID  string         `json:"active_id"`
+	Nodes     []wireNode     `json:"nodes"`
+	Subagents []SubagentTask `json:"subagents,omitempty"`
 }
 
 type wireNode struct {
@@ -41,12 +42,13 @@ func (s *Session) Save() error {
 		return err
 	}
 	w := wireSession{
-		ID:       s.ID,
-		Name:     s.Name,
-		Created:  s.Created.Format("2006-01-02T15:04:05Z07:00"),
-		Model:    s.Model,
-		RootID:   s.Root.ID,
-		ActiveID: s.Active.ID,
+		ID:        s.ID,
+		Name:      s.Name,
+		Created:   s.Created.Format("2006-01-02T15:04:05Z07:00"),
+		Model:     s.Model,
+		RootID:    s.Root.ID,
+		ActiveID:  s.Active.ID,
+		Subagents: cloneSubagentTasks(s.Subagents),
 	}
 	walk(s.Root, func(n *Node) {
 		wn := wireNode{
@@ -120,12 +122,13 @@ func Load(path string) (*Session, error) {
 		}
 	}
 	return &Session{
-		ID:     w.ID,
-		Name:   w.Name,
-		Model:  w.Model,
-		Root:   nodes[w.RootID],
-		Active: nodes[w.ActiveID],
-		path:   path,
+		ID:        w.ID,
+		Name:      w.Name,
+		Model:     w.Model,
+		Root:      nodes[w.RootID],
+		Active:    nodes[w.ActiveID],
+		Subagents: cloneSubagentTasks(w.Subagents),
+		path:      path,
 	}, nil
 }
 

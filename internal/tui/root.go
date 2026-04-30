@@ -572,8 +572,12 @@ func (m *RootModel) showSubagentsInfo() {
 	for _, task := range tasks {
 		b.WriteString("\n- ")
 		b.WriteString(task.ID)
-		if task.Name != "" {
+		if task.FamiliarName != "" {
 			b.WriteString(" ")
+			b.WriteString(task.FamiliarName)
+		}
+		if task.Name != "" {
+			b.WriteString(" — ")
 			b.WriteString(task.Name)
 		}
 		b.WriteString(" ")
@@ -803,12 +807,17 @@ func (m *RootModel) handleSubagentEvent(e agent.SubagentEvent) {
 	if m.autoContinueSubagentResults == nil {
 		m.autoContinueSubagentResults = map[string]bool{}
 	}
+	wasShowingActivity := m.showActivity()
 	m.subagents[e.Task.ID] = e
 	m.msgs.OnSubagentEvent(e)
-	if e.Status == agent.SubagentRunning || e.Status == agent.SubagentPending {
+	isActive := isActiveSubagentStatus(string(e.Status))
+	if isActive {
 		m.pendingTickCmd = m.startActivityTick()
 	} else if !m.showActivity() {
 		m.stopActivityTick()
+	}
+	if wasShowingActivity != m.showActivity() {
+		m.layout()
 	}
 	if e.Status == agent.SubagentCompleted && strings.TrimSpace(e.Task.Summary) != "" && !m.autoContinueSubagentResults[e.Task.ID] {
 		m.autoContinueSubagentResults[e.Task.ID] = true
@@ -1301,7 +1310,7 @@ func (m *RootModel) showActivity() bool {
 func (m *RootModel) activeSubagentCount() int {
 	count := 0
 	for _, ev := range m.subagents {
-		if ev.Status == agent.SubagentPending || ev.Status == agent.SubagentRunning {
+		if isActiveSubagentStatus(string(ev.Status)) {
 			count++
 		}
 	}
@@ -1309,7 +1318,7 @@ func (m *RootModel) activeSubagentCount() int {
 }
 
 func isActiveSubagentStatus(status string) bool {
-	return status == string(agent.SubagentPending) || status == string(agent.SubagentRunning)
+	return status == string(agent.SubagentBlocked) || status == string(agent.SubagentPending) || status == string(agent.SubagentRunning)
 }
 
 func (m *RootModel) renderActivityLine() string {
@@ -1331,11 +1340,11 @@ func (m *RootModel) renderSubagentActivityIndicator() string {
 	if n == 0 {
 		return ""
 	}
-	label := "subagent"
+	label := "familiar"
 	if n != 1 {
-		label = "subagents"
+		label = "familiars"
 	}
-	return subagentSpinnerText(fmt.Sprintf("%d %s working", n, label), m.activityFrame)
+	return subagentSpinnerText(fmt.Sprintf("%d %s scrying", n, label), m.activityFrame)
 }
 
 func composeActivityLine(left, right string, width int) string {

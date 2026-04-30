@@ -164,6 +164,20 @@ func TestMessages_ReadToolWithReadAll(t *testing.T) {
 	}
 }
 
+func TestMessages_SubagentToolCallRendersAsFamiliar(t *testing.T) {
+	m := NewMessages(120)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "spawn_subagent", Args: []byte(`{"name":"repo-plan","prompt":"secret prompt text","dependencies":["subagent_1"],"background":false,"timeout_secs":30}`)})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	for _, want := range []string{"familiar", "summon a familiar for repo-plan", "after 1 omen", "awaiting return", "30s ward"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in familiar call, got:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "secret prompt text") || strings.Contains(out, "prompt") || strings.Contains(out, "{") {
+		t.Fatalf("raw spawn_subagent JSON leaked into output:\n%s", out)
+	}
+}
+
 func TestMessages_AssistantDeltaSurvivesIntervening(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hel")

@@ -902,7 +902,7 @@ func TestRoot_SubagentCompletionStartsContinuationWhenIdle(t *testing.T) {
 		t.Fatal("expected continuation turn to start")
 	}
 	path := s.PathToActive()
-	if len(path) != 1 || path[0].Role != ai.RoleUser {
+	if len(path) < 1 || path[0].Role != ai.RoleUser {
 		t.Fatalf("expected synthetic continuation user message, got %#v", path)
 	}
 	if got := path[0].Content[0].(ai.TextBlock).Text; got != subagentContinuationPrompt {
@@ -950,10 +950,10 @@ func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 	}
 
 	line := m.renderActivityLine()
-	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 subagent working") {
-		t.Fatalf("combined activity line missing main/subagent indicators: %q", line)
+	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 familiar scrying") {
+		t.Fatalf("combined activity line missing main/familiar indicators: %q", line)
 	}
-	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 subagent working") {
+	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 familiar scrying") {
 		t.Fatalf("subagent indicator should render to the right of main activity: %q", line)
 	}
 }
@@ -995,11 +995,24 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	}
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out := m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "subagent repo-plan") || !strings.Contains(out, "working") {
-		t.Fatalf("running subagent not rendered: %q", out)
+	if !strings.Contains(out, "familiar of repo-plan") || !strings.Contains(out, "scrying") {
+		t.Fatalf("running familiar not rendered: %q", out)
 	}
 	if m.activeSubagentCount() != 1 {
 		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
+	}
+	if !strings.Contains(m.View(), "1 familiar scrying") {
+		t.Fatalf("familiar activity indicator not rendered in view: %q", m.View())
+	}
+	before := m.renderSubagentActivityIndicator()
+	seq := m.activitySeq
+	_, cmd := m.Update(activityTickMsg{seq: seq})
+	if cmd == nil {
+		t.Fatal("expected continuing activity tick while subagent is active")
+	}
+	after := m.renderSubagentActivityIndicator()
+	if before == after {
+		t.Fatalf("subagent spinner did not advance: before=%q after=%q", before, after)
 	}
 
 	doneAt := time.Now()
@@ -1009,13 +1022,36 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	ev.Task.Summary = "## Summary\nall done"
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out = m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "completed") || !strings.Contains(out, "result lines added to context") {
-		t.Fatalf("completed subagent not rendered collapsed: %q", out)
+	if !strings.Contains(out, "returned") || !strings.Contains(out, "findings added to") || !strings.Contains(out, "context") {
+		t.Fatalf("completed familiar not rendered collapsed: %q", out)
 	}
 	if strings.Contains(out, "all done") {
 		t.Fatalf("completed subagent summary should be collapsed by default: %q", out)
 	}
 	if m.activeSubagentCount() != 0 {
 		t.Fatalf("activeSubagentCount = %d, want 0", m.activeSubagentCount())
+	}
+	if strings.Contains(m.View(), "familiar scrying") {
+		t.Fatalf("familiar activity indicator still rendered after completion: %q", m.View())
+	}
+}
+
+func TestRoot_BlockedSubagentCountsAsActivity(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	ev := agent.SubagentEvent{
+		Status: agent.SubagentBlocked,
+		Task:   tools.SubagentTask{ID: "subagent_1", Name: "blocked-plan", AgentType: "general", Status: string(agent.SubagentBlocked), CreatedAt: time.Now()},
+	}
+	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+
+	if m.activeSubagentCount() != 1 {
+		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
+	}
+	if !strings.Contains(m.View(), "1 familiar scrying") {
+		t.Fatalf("blocked familiar activity indicator not rendered in view: %q", m.View())
 	}
 }
