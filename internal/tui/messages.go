@@ -330,7 +330,7 @@ func formatSpawnSubagentCall(s Styles, args json.RawMessage) (string, bool) {
 	if name == "" {
 		name = "unnamed task"
 	}
-	body := "summon a familiar for " + name
+	body := "open a summoning circle for " + name
 	if a.AgentType != "" && a.AgentType != "general" {
 		body += " [" + a.AgentType + "]"
 	}

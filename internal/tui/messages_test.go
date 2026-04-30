@@ -168,7 +168,7 @@ func TestMessages_SubagentToolCallRendersAsFamiliar(t *testing.T) {
 	m := NewMessages(120)
 	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "spawn_subagent", Args: []byte(`{"name":"repo-plan","prompt":"secret prompt text","dependencies":["subagent_1"],"background":false,"timeout_secs":30}`)})
 	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
-	for _, want := range []string{"familiar", "summon a familiar for repo-plan", "after 1 omen", "awaiting return", "30s ward"} {
+	for _, want := range []string{"familiar", "open a summoning circle for repo-plan", "after 1 omen", "awaiting return", "30s ward"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in familiar call, got:\n%s", want, out)
 		}
