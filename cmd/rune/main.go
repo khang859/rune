@@ -16,13 +16,13 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq] [--model <id>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama] [--model <id>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	script := flag.String("script", "", "run a JSON script (headless smoke runner)")
 	prompt := flag.String("prompt", "", "run a single turn against the configured provider and exit")
-	provider := flag.String("provider", "", "provider id (codex or groq; overrides RUNE_PROVIDER and settings)")
+	provider := flag.String("provider", "", "provider id (codex, groq, or ollama; overrides RUNE_PROVIDER and settings)")
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
 	flag.Parse()
 

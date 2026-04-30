@@ -20,6 +20,17 @@ func TestSettings_CyclesSelectedRow(t *testing.T) {
 	}
 }
 
+func TestSettings_CanSelectOllamaProvider(t *testing.T) {
+	s := NewSettings(Settings{Provider: "codex"}).(*SettingsModal)
+	s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(Settings)
+	if res.Provider != "ollama" {
+		t.Fatalf("provider = %q, want ollama", res.Provider)
+	}
+}
+
 func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "unicode", ActivityMode: "arcane"}).(*SettingsModal)
 	s.Update(tea.KeyMsg{Type: tea.KeyDown})

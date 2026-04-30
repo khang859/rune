@@ -3,11 +3,13 @@ package providers
 import "strings"
 
 const (
-	Codex = "codex"
-	Groq  = "groq"
+	Codex  = "codex"
+	Groq   = "groq"
+	Ollama = "ollama"
 
-	DefaultCodexModel = "gpt-5.5"
-	DefaultGroqModel  = "llama-3.3-70b-versatile"
+	DefaultCodexModel  = "gpt-5.5"
+	DefaultGroqModel   = "llama-3.3-70b-versatile"
+	DefaultOllamaModel = "llama3.2"
 )
 
 type Info struct {
@@ -41,10 +43,24 @@ var GroqModels = []string{
 	"deepseek-r1-distill-llama-70b",
 }
 
+// OllamaModels is a fallback/suggestion list only. Ollama model names are local
+// tags controlled by the user, so callers must accept arbitrary model IDs.
+var OllamaModels = []string{
+	"llama3.2",
+	"qwen3:4b",
+	"qwen3:8b",
+	"qwen2.5-coder:7b",
+	"qwen2.5-coder:14b",
+	"deepseek-r1:8b",
+	"gpt-oss:20b",
+}
+
 func Normalize(id string) string {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case Groq:
 		return Groq
+	case Ollama:
+		return Ollama
 	default:
 		return Codex
 	}
@@ -54,23 +70,32 @@ func All() []Info {
 	return []Info{
 		{ID: Codex, Display: "Codex", DefaultModel: DefaultCodexModel, Models: CodexModels},
 		{ID: Groq, Display: "Groq", DefaultModel: DefaultGroqModel, Models: GroqModels},
+		{ID: Ollama, Display: "Ollama", DefaultModel: DefaultOllamaModel, Models: OllamaModels},
 	}
 }
 
-func IDs() []string { return []string{Codex, Groq} }
+func IDs() []string { return []string{Codex, Groq, Ollama} }
 
 func Models(provider string) []string {
-	if Normalize(provider) == Groq {
+	switch Normalize(provider) {
+	case Groq:
 		return append([]string(nil), GroqModels...)
+	case Ollama:
+		return append([]string(nil), OllamaModels...)
+	default:
+		return append([]string(nil), CodexModels...)
 	}
-	return append([]string(nil), CodexModels...)
 }
 
 func DefaultModel(provider string) string {
-	if Normalize(provider) == Groq {
+	switch Normalize(provider) {
+	case Groq:
 		return DefaultGroqModel
+	case Ollama:
+		return DefaultOllamaModel
+	default:
+		return DefaultCodexModel
 	}
-	return DefaultCodexModel
 }
 
 func IsKnownModel(provider, model string) bool {

@@ -13,6 +13,12 @@ func TestDefaultSettingsIncludesProvider(t *testing.T) {
 	if s.GroqModel != "llama-3.3-70b-versatile" {
 		t.Fatalf("groq model = %q", s.GroqModel)
 	}
+	if s.OllamaModel != "llama3.2" {
+		t.Fatalf("ollama model = %q", s.OllamaModel)
+	}
+	if s.OllamaEndpoint == "" {
+		t.Fatal("ollama endpoint should be set")
+	}
 }
 
 func TestDefaultSettingsIncludesAutoCompact(t *testing.T) {
@@ -43,7 +49,14 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 
 func TestNormalizeSettingsFillsProviderDefaults(t *testing.T) {
 	s := NormalizeSettings(Settings{})
-	if s.Provider != "codex" || s.CodexModel == "" || s.GroqModel == "" {
+	if s.Provider != "codex" || s.CodexModel == "" || s.GroqModel == "" || s.OllamaModel == "" || s.OllamaEndpoint == "" {
+		t.Fatalf("settings = %+v", s)
+	}
+}
+
+func TestNormalizeSettingsPreservesOllama(t *testing.T) {
+	s := NormalizeSettings(Settings{Provider: "ollama", OllamaModel: "custom:latest", OllamaEndpoint: "http://127.0.0.1:11434/v1/chat/completions"})
+	if s.Provider != "ollama" || s.OllamaModel != "custom:latest" || s.OllamaEndpoint != "http://127.0.0.1:11434/v1/chat/completions" {
 		t.Fatalf("settings = %+v", s)
 	}
 }

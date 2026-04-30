@@ -20,6 +20,7 @@ import (
 	"github.com/khang859/rune/internal/ai/codex"
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
+	"github.com/khang859/rune/internal/ai/ollama"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/providers"
@@ -516,7 +517,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/providers":
 		initCmd = m.openModal(modal.NewProviderPicker(providers.IDs(), m.sess.Provider))
 	case "/model":
-		initCmd = m.openModal(modal.NewModelPicker(providers.Models(m.sess.Provider), m.sess.Model))
+		initCmd = m.openModelPicker()
 	case "/thinking":
 		levels := thinkingLevelsForModel(m.sess.Model)
 		if len(levels) == 0 {
@@ -637,6 +638,28 @@ func footerMode(mode agent.Mode) string {
 		return "plan"
 	}
 	return ""
+}
+
+func (m *RootModel) openModelPicker() tea.Cmd {
+	if providers.Normalize(m.sess.Provider) != providers.Ollama {
+		return m.openModal(modal.NewModelPicker(providers.Models(m.sess.Provider), m.sess.Model))
+	}
+	items := providers.Models(providers.Ollama)
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	endpoint := settings.OllamaEndpoint
+	if endpoint == "" {
+		endpoint = ollama.DefaultEndpoint
+	}
+	if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
+		endpoint = v
+	}
+	if models, err := ollama.ListModels(context.Background(), endpoint); err == nil && len(models) > 0 {
+		items = models
+	} else if err != nil {
+		m.msgs.OnInfo(fmt.Sprintf("(could not list Ollama models: %v; choose custom or run `ollama pull <model>`)", err))
+		m.refreshViewport()
+	}
+	return m.openModal(modal.NewOllamaModelPicker(items, m.sess.Model))
 }
 
 func (m *RootModel) showSubagentsInfo() {
@@ -955,6 +978,8 @@ func ctxPctForModel(model string, tokens int) int {
 
 func contextWindowForModel(model string) int {
 	switch strings.ToLower(model) {
+	case "llama3.2", "qwen3:4b", "qwen3:8b", "qwen2.5-coder:7b", "qwen2.5-coder:14b", "deepseek-r1:8b", "gpt-oss:20b":
+		return 128_000
 	case "gpt-5.3-codex-spark":
 		return 128_000
 	case "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b", "groq/compound", "groq/compound-mini", "deepseek-r1-distill-llama-70b", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct":
@@ -1049,6 +1074,9 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 	case *modal.ModelPicker:
 		if id, ok := payload.(string); ok {
+			if id == modal.ModelPickerCustom {
+				return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
+			}
 			m.sess.Model = id
 			m.footer.Model = id
 			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
@@ -1082,6 +1110,21 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				return m.switchProvider(v.Provider)
 			}
 			m.applySettings(v)
+		}
+	case *modal.TextInput:
+		if res, ok := payload.(modal.TextInputResult); ok {
+			if res.Action == "ollama_model" && strings.TrimSpace(res.Value) != "" {
+				id := strings.TrimSpace(res.Value)
+				m.sess.Model = id
+				m.footer.Model = id
+				m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+				m.clampThinkingForCurrentModel()
+				m.refreshFooterThinkingEffort()
+				m.saveProviderSettings()
+				m.saveSessionIfStarted()
+				m.msgs.OnInfo(fmt.Sprintf("(ollama model: %s)", id))
+				m.refreshViewport()
+			}
 		}
 	case *modal.SecretInput:
 		if res, ok := payload.(modal.SecretInputResult); ok {
@@ -1196,8 +1239,11 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	loadedSettings, _ := config.LoadSettings(config.SettingsPath())
 	loadedSettings = config.NormalizeSettings(loadedSettings)
 	model := loadedSettings.CodexModel
-	if provider == providers.Groq {
+	switch provider {
+	case providers.Groq:
 		model = loadedSettings.GroqModel
+	case providers.Ollama:
+		model = loadedSettings.OllamaModel
 	}
 	if model == "" {
 		model = providers.DefaultModel(provider)
@@ -1251,6 +1297,16 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 			return nil, err
 		}
 		return groq.New(endpoint, key), nil
+	case providers.Ollama:
+		settings, _ := config.LoadSettings(config.SettingsPath())
+		endpoint := settings.OllamaEndpoint
+		if endpoint == "" {
+			endpoint = ollama.DefaultEndpoint
+		}
+		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		return ollama.New(endpoint), nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -1271,9 +1327,12 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 func (m *RootModel) saveProviderSettings() {
 	s := configFromModalSettings(m.settings)
 	s.Provider = m.sess.Provider
-	if m.sess.Provider == providers.Groq {
+	switch m.sess.Provider {
+	case providers.Groq:
 		s.GroqModel = m.sess.Model
-	} else {
+	case providers.Ollama:
+		s.OllamaModel = m.sess.Model
+	default:
 		s.CodexModel = m.sess.Model
 	}
 	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {

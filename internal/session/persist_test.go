@@ -43,6 +43,24 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	}
 }
 
+func TestSave_AndLoad_PreservesOllamaProvider(t *testing.T) {
+	dir := t.TempDir()
+	s := New("qwen3:4b")
+	s.Provider = "ollama"
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.Append(userMsg("hi"))
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Provider != "ollama" || loaded.Model != "qwen3:4b" {
+		t.Fatalf("loaded provider/model = %s/%s", loaded.Provider, loaded.Model)
+	}
+}
+
 func TestSave_AndLoad_PreservesCompactedCount(t *testing.T) {
 	dir := t.TempDir()
 	s := New("gpt-5")

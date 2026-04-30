@@ -13,6 +13,7 @@ curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh
 
 rune login codex          # opens a browser to auth via your ChatGPT account
 # or: export GROQ_API_KEY=... && rune --provider groq
+# or: ollama pull llama3.2 && rune --provider ollama --model llama3.2
 rune                      # interactive mode
 ```
 
@@ -61,7 +62,7 @@ See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mod
 
 ## Providers
 
-Codex remains the default provider. Groq can be selected with `--provider groq`, `RUNE_PROVIDER=groq`, or `/providers` in the TUI. Groq keys are read from `RUNE_GROQ_API_KEY`, `GROQ_API_KEY`, or can be stored via `/settings`. See `docs/providers.md`.
+Codex remains the default provider. Groq can be selected with `--provider groq`, `RUNE_PROVIDER=groq`, or `/providers` in the TUI. Ollama can be selected with `--provider ollama` after pulling a local model, e.g. `ollama pull llama3.2`. Groq keys are read from `RUNE_GROQ_API_KEY`, `GROQ_API_KEY`, or can be stored via `/settings`. See `docs/providers.md`.
 
 ## Web tools
 

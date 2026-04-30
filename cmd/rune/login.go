@@ -16,8 +16,11 @@ func runLogin(ctx context.Context, provider string) error {
 	if provider == "groq" {
 		return fmt.Errorf("groq uses an API key; set GROQ_API_KEY or RUNE_GROQ_API_KEY, or save it from /settings")
 	}
+	if provider == "ollama" {
+		return fmt.Errorf("ollama runs locally and does not use login; run `ollama serve` and `ollama pull <model>`, then use `rune --provider ollama --model <model>`")
+	}
 	if provider != "codex" {
-		return fmt.Errorf("unknown login provider %q (supported: codex; groq uses API keys)", provider)
+		return fmt.Errorf("unknown login provider %q (supported: codex; groq uses API keys; ollama uses local models)", provider)
 	}
 	if err := config.EnsureRuneDir(); err != nil {
 		return err

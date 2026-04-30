@@ -143,8 +143,10 @@ func walk(n *Node, fn func(*Node)) {
 }
 
 func normalizeProvider(provider string) string {
-	if provider == "groq" {
-		return "groq"
+	switch provider {
+	case "groq", "ollama":
+		return provider
+	default:
+		return "codex"
 	}
-	return "codex"
 }

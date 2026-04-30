@@ -79,7 +79,7 @@ const (
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
 	return &SettingsModal{cur: cur, rows: []settingsRow{
-		newSettingsRow("Provider", "provider", []string{"codex", "groq"}, cur.Provider),
+		newSettingsRow("Provider", "provider", []string{"codex", "groq", "ollama"}, cur.Provider),
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),

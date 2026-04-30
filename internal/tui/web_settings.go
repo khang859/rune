@@ -56,6 +56,8 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		Provider:        s.Provider,
 		CodexModel:      loaded.CodexModel,
 		GroqModel:       loaded.GroqModel,
+		OllamaModel:     loaded.OllamaModel,
+		OllamaEndpoint:  loaded.OllamaEndpoint,
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
 		ActivityMode:    s.ActivityMode,

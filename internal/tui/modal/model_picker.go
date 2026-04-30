@@ -3,6 +3,8 @@ package modal
 
 import tea "github.com/charmbracelet/bubbletea"
 
+const ModelPickerCustom = "custom…"
+
 type ModelPicker struct {
 	items []string
 	sel   int
@@ -17,6 +19,23 @@ func NewModelPicker(items []string, current string) Modal {
 		}
 	}
 	return &ModelPicker{items: items, sel: sel}
+}
+
+func NewOllamaModelPicker(items []string, current string) Modal {
+	seen := map[string]bool{}
+	var out []string
+	for _, it := range items {
+		if it != "" && !seen[it] {
+			seen[it] = true
+			out = append(out, it)
+		}
+	}
+	if current != "" && !seen[current] {
+		out = append([]string{current}, out...)
+		seen[current] = true
+	}
+	out = append(out, ModelPickerCustom)
+	return NewModelPicker(out, current)
 }
 
 func (m *ModelPicker) Init() tea.Cmd { return nil }

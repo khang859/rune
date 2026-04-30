@@ -75,6 +75,29 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("auth = %q, want empty", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ollama\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "ollama") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
 func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("g", 24) {

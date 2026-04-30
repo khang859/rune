@@ -23,6 +23,17 @@ func TestModalSettingsFromConfigIncludesSubagents(t *testing.T) {
 	}
 }
 
+func TestConfigFromModalSettingsPreservesOllamaFields(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	if err := config.SaveSettings(config.SettingsPath(), config.Settings{OllamaModel: "custom:latest", OllamaEndpoint: "http://127.0.0.1:11434/v1/chat/completions"}); err != nil {
+		t.Fatal(err)
+	}
+	s := configFromModalSettings(modal.Settings{Provider: "ollama"})
+	if s.Provider != "ollama" || s.OllamaModel != "custom:latest" || s.OllamaEndpoint != "http://127.0.0.1:11434/v1/chat/completions" {
+		t.Fatalf("settings = %+v", s)
+	}
+}
+
 func TestConfigFromModalSettingsIncludesSubagents(t *testing.T) {
 	s := configFromModalSettings(modal.Settings{Subagents: "off", SubagentMaxConcurrent: "8", SubagentTimeout: "300s", SubagentRetain: "250"})
 	if s.Subagents.EnabledValue() {

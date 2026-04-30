@@ -9,6 +9,7 @@ import (
 	"github.com/khang859/rune/internal/ai/codex"
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
+	"github.com/khang859/rune/internal/ai/ollama"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/providers"
 )
@@ -35,6 +36,8 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		switch provider {
 		case providers.Groq:
 			model = os.Getenv("RUNE_GROQ_MODEL")
+		case providers.Ollama:
+			model = os.Getenv("RUNE_OLLAMA_MODEL")
 		default:
 			model = os.Getenv("RUNE_CODEX_MODEL")
 		}
@@ -43,6 +46,8 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		switch provider {
 		case providers.Groq:
 			model = settings.GroqModel
+		case providers.Ollama:
+			model = settings.OllamaModel
 		default:
 			model = settings.CodexModel
 		}
@@ -62,6 +67,15 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 			return providerSelection{}, err
 		}
 		return providerSelection{Provider: provider, Model: model, AI: groq.New(endpoint, key)}, nil
+	case providers.Ollama:
+		endpoint := settings.OllamaEndpoint
+		if endpoint == "" {
+			endpoint = ollama.DefaultEndpoint
+		}
+		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		return providerSelection{Provider: provider, Model: model, AI: ollama.New(endpoint)}, nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {

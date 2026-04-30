@@ -5,13 +5,14 @@ rune supports multiple LLM providers. Select one with:
 ```bash
 rune --provider codex
 rune --provider groq
+rune --provider ollama --model llama3.2
 ```
 
-or persist/select it from the TUI with `/providers` or `/settings`.
+or persist/select it from the TUI with `/providers` or `/settings`. Use `/model` to select a model for the active provider; for Ollama, local models are discovered from the running Ollama instance when possible.
 
 Environment override:
 
-- `RUNE_PROVIDER=codex|groq`
+- `RUNE_PROVIDER=codex|groq|ollama`
 
 ## Codex (ChatGPT Pro/Plus)
 
@@ -108,6 +109,31 @@ Available from `/model` when the active provider is Groq:
 - `RUNE_GROQ_MODEL` — model default for Groq.
 - `RUNE_GROQ_ENDPOINT` — override the chat completions endpoint. Defaults to `https://api.groq.com/openai/v1/chat/completions`.
 - `RUNE_GROQ_API_KEY` / `GROQ_API_KEY` — API key.
+
+## Ollama
+
+Ollama runs models locally. Install/pull models with Ollama first, then point rune at the local model tag.
+
+```bash
+ollama serve
+ollama pull llama3.2
+rune --provider ollama --model llama3.2
+```
+
+Ollama model names are local/user-controlled tags, so rune accepts arbitrary model IDs such as `qwen3:4b`, `qwen2.5-coder:14b`, or a custom model you created with Ollama. In the TUI, `/model` lists installed local models from Ollama's `/api/tags` endpoint when available and also offers a `custom…` entry for typing any model name.
+
+`rune login ollama` is not required; local Ollama does not use OAuth or API keys.
+
+### Env overrides
+
+- `RUNE_OLLAMA_MODEL` — model default for Ollama.
+- `RUNE_OLLAMA_ENDPOINT` — override the OpenAI-compatible chat completions endpoint. Defaults to `http://localhost:11434/v1/chat/completions`.
+
+If a selected model is not installed, run:
+
+```bash
+ollama pull <model>
+```
 
 ## Shared env
 
