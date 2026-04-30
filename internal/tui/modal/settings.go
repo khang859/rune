@@ -24,6 +24,7 @@ type Settings struct {
 	SubagentTimeout       string
 	SubagentRetain        string
 	BraveAPIKeyStatus     string
+	TavilyAPIKeyStatus    string
 	GroqAPIKeyStatus      string
 }
 
@@ -67,6 +68,7 @@ const (
 	settingsRowWebSearch
 	settingsRowSearchProvider
 	settingsRowBraveAPIKey
+	settingsRowTavilyAPIKey
 	settingsRowGroqAPIKey
 	settingsRowSubagents
 	settingsRowSubagentMaxConcurrent
@@ -86,8 +88,9 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Web Scrying", "web fetch", []string{"off", "on"}, cur.WebFetch),
 		newSettingsRow("Web Scrying", "fetch private urls", []string{"off", "on"}, cur.FetchPrivateURLs),
 		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
-		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "searxng"}, cur.SearchProvider),
+		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "tavily", "searxng"}, cur.SearchProvider),
 		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
+		{kind: settingsRowAction, section: "Web Scrying", label: "tavily api key", action: "tavily_api_key", status: cur.TavilyAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
 		newSettingsRow("Subagents", "subagents", []string{"off", "on"}, cur.Subagents),
 		newSettingsRow("Subagents", "max concurrent", []string{"1", "2", "4", "8"}, cur.SubagentMaxConcurrent),
@@ -141,6 +144,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.BraveAPIKeyStatus == "" {
 		s.BraveAPIKeyStatus = "missing — Enter to set"
+	}
+	if s.TavilyAPIKeyStatus == "" {
+		s.TavilyAPIKeyStatus = "missing — Enter to set"
 	}
 	if s.GroqAPIKeyStatus == "" {
 		s.GroqAPIKeyStatus = "missing — Enter to set"
@@ -214,6 +220,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		SubagentTimeout:       s.rows[settingsRowSubagentTimeout].options[s.rows[settingsRowSubagentTimeout].value],
 		SubagentRetain:        s.rows[settingsRowSubagentRetain].options[s.rows[settingsRowSubagentRetain].value],
 		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
+		TavilyAPIKeyStatus:    s.cur.TavilyAPIKeyStatus,
 		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
 	}
 }

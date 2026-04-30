@@ -101,7 +101,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	if err != nil {
 		loadedSettings = config.DefaultSettings()
 	}
-	settings := modalSettingsFromConfig(loadedSettings, braveKeyConfigured())
+	settings := modalSettingsFromConfig(loadedSettings, braveKeyConfigured(), tavilyKeyConfigured())
 	iconMode := settings.IconMode
 	if iconMode == "" || iconMode == "auto" {
 		iconMode = string(DefaultIconMode())
@@ -1071,6 +1071,9 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "brave_api_key" {
 				return m.openModal(modal.NewSecretInput("Brave Search API key", "brave_api_key"))
 			}
+			if v.Action == "tavily_api_key" {
+				return m.openModal(modal.NewSecretInput("Tavily API key", "tavily_api_key"))
+			}
 			if v.Action == "groq_api_key" {
 				return m.openModal(modal.NewSecretInput("Groq API key", "groq_api_key"))
 			}
@@ -1090,6 +1093,14 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 					m.settings.BraveAPIKeyStatus = "configured — Enter to replace"
 					m.reconfigureWebTools()
 					m.msgs.OnInfo("(saved Brave Search API key; web_search enabled if settings allow it)")
+				}
+			case "tavily_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetTavilyAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.TavilyAPIKeyStatus = "configured — Enter to replace"
+					m.reconfigureWebTools()
+					m.msgs.OnInfo("(saved Tavily API key; web_search enabled if settings allow it)")
 				}
 			case "groq_api_key":
 				if err := config.NewSecretStore(config.SecretsPath()).SetGroqAPIKey(res.Value); err != nil {

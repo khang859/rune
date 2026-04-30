@@ -70,10 +70,13 @@ rune can optionally expose web tools to the agent:
 - `web_search` — search the web for relevant pages.
 - `web_fetch` — fetch a specific HTTP(S) URL.
 
-`web_fetch` is available when enabled in settings. `web_search` requires a configured search provider. For Brave Search, set:
+`web_fetch` is available when enabled in settings. `web_search` requires a configured search provider. For Brave Search or Tavily, set:
 
 ```sh
 export RUNE_BRAVE_SEARCH_API_KEY="..."
+# or
+export RUNE_TAVILY_API_KEY="tvly-..."
+export RUNE_WEB_SEARCH_PROVIDER="tavily"
 ```
 
 Or configure it interactively with `/settings` and paste the key into the masked popup. See `docs/web.md` for details and security notes.

@@ -11,11 +11,15 @@ import (
 	"github.com/khang859/rune/internal/tui/modal"
 )
 
-func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Settings {
+func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConfigured bool) modal.Settings {
 	s = config.NormalizeSettings(s)
 	status := "missing — Enter to set"
 	if braveConfigured {
 		status = "configured — Enter to replace"
+	}
+	tavilyStatus := "missing — Enter to set"
+	if tavilyConfigured {
+		tavilyStatus = "configured — Enter to replace"
 	}
 	groqStatus := "missing — Enter to set"
 	if groqKeyConfigured() {
@@ -37,6 +41,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Sett
 		SubagentTimeout:       fmt.Sprintf("%ds", s.Subagents.DefaultTimeoutSecs),
 		SubagentRetain:        strconv.Itoa(s.Subagents.MaxCompletedRetain),
 		BraveAPIKeyStatus:     status,
+		TavilyAPIKeyStatus:    tavilyStatus,
 		GroqAPIKeyStatus:      groqStatus,
 	}
 }
@@ -103,6 +108,11 @@ func parsePercentDefault(s string, fallback int) int {
 
 func braveKeyConfigured() bool {
 	key, err := config.NewSecretStore(config.SecretsPath()).BraveSearchAPIKey()
+	return err == nil && key != ""
+}
+
+func tavilyKeyConfigured() bool {
+	key, err := config.NewSecretStore(config.SecretsPath()).TavilyAPIKey()
 	return err == nil && key != ""
 }
 

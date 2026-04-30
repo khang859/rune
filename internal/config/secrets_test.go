@@ -74,6 +74,24 @@ func TestSecretStoreRejectsInvalidWithoutOverwriting(t *testing.T) {
 	}
 }
 
+func TestTavilyAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	stored := "tvly-" + strings.Repeat("a", 24)
+	env := "tvly-" + strings.Repeat("b", 24)
+	if err := store.SetTavilyAPIKey("export RUNE_TAVILY_API_KEY='" + stored + "'"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.TavilyAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored tavily key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_TAVILY_API_KEY", env)
+	key, err = store.TavilyAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env tavily key = %q, %v", key, err)
+	}
+}
+
 func TestGroqAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
 	stored := strings.Repeat("g", 24)

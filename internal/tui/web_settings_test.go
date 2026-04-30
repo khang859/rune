@@ -8,7 +8,7 @@ import (
 )
 
 func TestModalSettingsFromConfigIncludesSubagents(t *testing.T) {
-	s := modalSettingsFromConfig(config.Settings{Subagents: config.SubagentSettings{Enabled: boolPtr(false), MaxConcurrent: 2, DefaultTimeoutSecs: 120, MaxCompletedRetain: 50}}, false)
+	s := modalSettingsFromConfig(config.Settings{Subagents: config.SubagentSettings{Enabled: boolPtr(false), MaxConcurrent: 2, DefaultTimeoutSecs: 120, MaxCompletedRetain: 50}}, false, false)
 	if s.Subagents != "off" {
 		t.Fatalf("Subagents = %q, want off", s.Subagents)
 	}
