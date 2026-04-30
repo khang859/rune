@@ -10,6 +10,7 @@ import (
 
 func TestSettings_CyclesSelectedRow(t *testing.T) {
 	s := NewSettings(Settings{Effort: "low"}).(*SettingsModal)
+	s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -21,6 +22,7 @@ func TestSettings_CyclesSelectedRow(t *testing.T) {
 
 func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "unicode", ActivityMode: "arcane"}).(*SettingsModal)
+	s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	s.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -38,7 +40,7 @@ func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 
 func TestSettings_CanChangeSubagentSettings(t *testing.T) {
 	s := NewSettings(Settings{Subagents: "on", SubagentMaxConcurrent: "4", SubagentTimeout: "600s", SubagentRetain: "100"}).(*SettingsModal)
-	for range 10 {
+	for range 12 {
 		s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	s.Update(tea.KeyMsg{Type: tea.KeyLeft}) // subagents: on -> off
@@ -70,6 +72,9 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 	out := s.View(80, 24)
 	for _, want := range []string{
 		"Grimoire of Settings",
+		"✧ Provider",
+		"provider",
+		"groq api key",
 		"✧ Mind",
 		"thinking effort",
 		"medium",

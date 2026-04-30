@@ -4,7 +4,7 @@ A minimal terminal coding agent in Go. Inspired by [pi-mono](https://github.com/
 
 rune ships with read/write/edit/bash tools, branching sessions with compaction,
 markdown skills, and MCP plugin support. It runs against ChatGPT Pro/Plus
-subscriptions via OAuth.
+subscriptions via OAuth, and Groq via API key.
 
 ## Quick start
 
@@ -12,6 +12,7 @@ subscriptions via OAuth.
 curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh
 
 rune login codex          # opens a browser to auth via your ChatGPT account
+# or: export GROQ_API_KEY=... && rune --provider groq
 rune                      # interactive mode
 ```
 
@@ -37,7 +38,8 @@ go install github.com/khang859/rune/cmd/rune@latest
 
 Type `/` in the editor to see all commands. Highlights:
 
-- `/model` — switch model
+- `/providers` — switch provider, e.g. Codex or Groq
+- `/model` — switch model for the active provider
 - `/tree` — jump to any point in the session
 - `/resume` — pick a previous session
 - `/compact` — summarize history
@@ -56,6 +58,10 @@ See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mod
   See `docs/skills.md`.
 - **MCP plugins** — configure `~/.rune/mcp.json`. See `docs/mcp.md`.
 - **Project context** — rune walks up from the cwd collecting `AGENTS.md`.
+
+## Providers
+
+Codex remains the default provider. Groq can be selected with `--provider groq`, `RUNE_PROVIDER=groq`, or `/providers` in the TUI. Groq keys are read from `RUNE_GROQ_API_KEY`, `GROQ_API_KEY`, or can be stored via `/settings`. See `docs/providers.md`.
 
 ## Web tools
 

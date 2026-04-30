@@ -1,8 +1,21 @@
 # Providers
 
+rune supports multiple LLM providers. Select one with:
+
+```bash
+rune --provider codex
+rune --provider groq
+```
+
+or persist/select it from the TUI with `/providers` or `/settings`.
+
+Environment override:
+
+- `RUNE_PROVIDER=codex|groq`
+
 ## Codex (ChatGPT Pro/Plus)
 
-The only built-in provider in v1.
+Codex uses ChatGPT OAuth and the OpenAI Responses-style Codex endpoint.
 
 ### Login
 
@@ -14,36 +27,88 @@ Opens your default browser to OpenAI's auth page. After approval, the local
 callback at `http://localhost:1455/auth/callback` exchanges the code for an
 access + refresh token. Tokens are stored in `~/.rune/auth.json` (chmod 0600).
 
-### Refresh
+### Models
 
-rune refreshes the access token automatically when it has less than 5 minutes
-remaining. Concurrent rune processes coordinate via a file lock on
-`~/.rune/auth.json.lock`, so a single refresh applies to both.
+Default: `gpt-5.5`
+
+Available from `/model` when the active provider is Codex:
+
+- `gpt-5.5`
+- `gpt-5.4`
+- `gpt-5.4-mini`
+- `gpt-5.3-codex`
+- `gpt-5.3-codex-spark`
+- `gpt-5.2`
+- `gpt-5.2-codex`
+- `gpt-5.1`
+- `gpt-5.1-codex-max`
+- `gpt-5.1-codex-mini`
+
+### Env overrides
+
+- `RUNE_CODEX_MODEL` — model default for Codex.
+- `RUNE_CODEX_ENDPOINT` — override the Responses URL.
+- `RUNE_OAUTH_TOKEN_URL` — override the token endpoint.
+
+## Groq
+
+Groq uses an API key and an OpenAI-compatible Chat Completions API.
+
+### API key
+
+Use either environment variable:
+
+```bash
+export GROQ_API_KEY=...
+# or
+export RUNE_GROQ_API_KEY=...
+```
+
+You can also save/replace the key in the TUI:
+
+1. Open `/settings`
+2. Select `groq api key`
+3. Paste the key
+
+Stored keys are written to `~/.rune/secrets.json` as `groq_api_key` with chmod
+`0600`. Environment variables take precedence over the stored key.
+
+`rune login groq` is not required; Groq does not use OAuth.
+
+### Usage
+
+```bash
+rune --provider groq --model llama-3.3-70b-versatile
+```
+
+or in interactive mode:
+
+```text
+/providers
+/model
+```
 
 ### Models
 
-- `gpt-5` (default)
-- `gpt-5-codex`
-- `gpt-5.1-codex-mini`
+Default: `llama-3.3-70b-versatile`
 
-Switch with `/model` or Ctrl+L.
+Available from `/model` when the active provider is Groq:
 
-### Reasoning effort
+- `llama-3.3-70b-versatile`
+- `openai/gpt-oss-120b`
+- `openai/gpt-oss-20b`
+- `llama-3.1-8b-instant`
+- `meta-llama/llama-4-maverick-17b-128e-instruct`
+- `meta-llama/llama-4-scout-17b-16e-instruct`
+- `qwen/qwen3-32b`
+- `deepseek-r1-distill-llama-70b`
 
-`/settings` exposes `minimal` / `low` / `medium` / `high`. Higher = more
-thinking, more cost-equivalent (subscription is unmetered, but slower).
+### Env overrides
 
-### Troubleshooting
+- `RUNE_GROQ_MODEL` — model default for Groq.
+- `RUNE_GROQ_ENDPOINT` — override the chat completions endpoint. Defaults to `https://api.groq.com/openai/v1/chat/completions`.
+- `RUNE_GROQ_API_KEY` / `GROQ_API_KEY` — API key.
 
-| Symptom | Fix |
-|---|---|
-| `not logged in` | `rune login codex` |
-| `login expired, run /login` | `rune login codex` (refresh token revoked) |
-| `429` | rune retries automatically (3 attempts, exp backoff) |
-| `context_length_exceeded` | rune auto-compacts and retries once |
+## Shared env
 
-### Env overrides (testing)
-
-- `RUNE_CODEX_ENDPOINT` — override the Responses URL.
-- `RUNE_OAUTH_TOKEN_URL` — override the token endpoint.
 - `RUNE_DIR` — override `~/.rune`.

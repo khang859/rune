@@ -17,8 +17,12 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/ai/codex"
+	"github.com/khang859/rune/internal/ai/groq"
+	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
+	"github.com/khang859/rune/internal/providers"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tui/editor"
@@ -85,7 +89,7 @@ type RootModel struct {
 const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
-	"/quit", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
+	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/new", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/act", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys",
@@ -509,8 +513,10 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	switch cmd {
 	case "/quit":
 		return tea.Quit
+	case "/providers":
+		initCmd = m.openModal(modal.NewProviderPicker(providers.IDs(), m.sess.Provider))
 	case "/model":
-		initCmd = m.openModal(modal.NewModelPicker(codexModelIDs(), m.sess.Model))
+		initCmd = m.openModal(modal.NewModelPicker(providers.Models(m.sess.Provider), m.sess.Model))
 	case "/thinking":
 		levels := thinkingLevelsForModel(m.sess.Model)
 		if len(levels) == 0 {
@@ -540,7 +546,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/name":
 		m.msgs.OnTurnError(fmt.Errorf("(use /settings or future inline prompt)"))
 	case "/session":
-		m.msgs.OnInfo(fmt.Sprintf("session id=%s name=%q model=%s", m.sess.ID, m.sess.Name, m.sess.Model))
+		m.msgs.OnInfo(fmt.Sprintf("session id=%s name=%q provider=%s model=%s", m.sess.ID, m.sess.Name, m.sess.Provider, m.sess.Model))
 	case "/fork":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -948,6 +954,12 @@ func contextWindowForModel(model string) int {
 	switch strings.ToLower(model) {
 	case "gpt-5.3-codex-spark":
 		return 128_000
+	case "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "openai/gpt-oss-120b", "groq/compound", "groq/compound-mini", "deepseek-r1-distill-llama-70b", "meta-llama/llama-4-maverick-17b-128e-instruct", "meta-llama/llama-4-scout-17b-16e-instruct":
+		return 131_072
+	case "qwen/qwen3-32b":
+		return 131_000
+	case "openai/gpt-oss-20b":
+		return 131_072
 	case "gpt-5.1", "gpt-5.1-codex-max", "gpt-5.1-codex-mini",
 		"gpt-5.2", "gpt-5.2-codex", "gpt-5.3-codex",
 		"gpt-5.4", "gpt-5.4-mini", "gpt-5.5":
@@ -957,20 +969,7 @@ func contextWindowForModel(model string) int {
 	}
 }
 
-func codexModelIDs() []string {
-	return []string{
-		"gpt-5.5",
-		"gpt-5.4",
-		"gpt-5.4-mini",
-		"gpt-5.3-codex",
-		"gpt-5.3-codex-spark",
-		"gpt-5.2",
-		"gpt-5.2-codex",
-		"gpt-5.1",
-		"gpt-5.1-codex-max",
-		"gpt-5.1-codex-mini",
-	}
-}
+func codexModelIDs() []string { return providers.Models(providers.Codex) }
 
 func thinkingLevelsForModel(model string) []string {
 	switch strings.ToLower(model) {
@@ -980,9 +979,11 @@ func thinkingLevelsForModel(model string) []string {
 		return []string{"low", "medium", "high", "xhigh"}
 	case "gpt-5.1":
 		return []string{"none", "low", "medium", "high"}
-	default:
-		return nil
 	}
+	if levels := providers.GroqThinkingLevels(strings.ToLower(model)); levels != nil {
+		return levels
+	}
+	return nil
 }
 
 func supportedThinkingEffort(model, effort string) bool {
@@ -1039,6 +1040,10 @@ func (m *RootModel) applyThinkingEffort(effort string) {
 
 func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	switch cur.(type) {
+	case *modal.ProviderPicker:
+		if id, ok := payload.(string); ok {
+			return m.switchProvider(id)
+		}
 	case *modal.ModelPicker:
 		if id, ok := payload.(string); ok {
 			m.sess.Model = id
@@ -1046,6 +1051,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 			m.clampThinkingForCurrentModel()
 			m.refreshFooterThinkingEffort()
+			m.saveProviderSettings()
 			m.saveSessionIfStarted()
 		}
 	case *modal.ThinkingPicker:
@@ -1055,21 +1061,40 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.SettingsModal:
 		switch v := payload.(type) {
 		case modal.SettingsAction:
+			if providers.Normalize(v.Settings.Provider) != m.sess.Provider {
+				return m.switchProvider(v.Settings.Provider)
+			}
 			m.applySettings(v.Settings)
 			if v.Action == "brave_api_key" {
 				return m.openModal(modal.NewSecretInput("Brave Search API key", "brave_api_key"))
 			}
+			if v.Action == "groq_api_key" {
+				return m.openModal(modal.NewSecretInput("Groq API key", "groq_api_key"))
+			}
 		case modal.Settings:
+			if providers.Normalize(v.Provider) != m.sess.Provider {
+				return m.switchProvider(v.Provider)
+			}
 			m.applySettings(v)
 		}
 	case *modal.SecretInput:
-		if res, ok := payload.(modal.SecretInputResult); ok && res.Action == "brave_api_key" {
-			if err := config.NewSecretStore(config.SecretsPath()).SetBraveSearchAPIKey(res.Value); err != nil {
-				m.msgs.OnTurnError(err)
-			} else {
-				m.settings.BraveAPIKeyStatus = "configured — Enter to replace"
-				m.reconfigureWebTools()
-				m.msgs.OnInfo("(saved Brave Search API key; web_search enabled if settings allow it)")
+		if res, ok := payload.(modal.SecretInputResult); ok {
+			switch res.Action {
+			case "brave_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetBraveSearchAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.BraveAPIKeyStatus = "configured — Enter to replace"
+					m.reconfigureWebTools()
+					m.msgs.OnInfo("(saved Brave Search API key; web_search enabled if settings allow it)")
+				}
+			case "groq_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetGroqAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
+					m.msgs.OnInfo("(saved Groq API key)")
+				}
 			}
 			m.refreshViewport()
 		}
@@ -1137,6 +1162,7 @@ func lastAssistantText(s *session.Session) string {
 
 func (m *RootModel) startNewSession() {
 	nc := session.New(m.sess.Model)
+	nc.Provider = m.sess.Provider
 	nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
 	m.swapSession(nc)
 }
@@ -1146,6 +1172,99 @@ func (m *RootModel) saveSessionIfStarted() {
 		return
 	}
 	_ = m.sess.Save()
+}
+
+func (m *RootModel) switchProvider(provider string) tea.Cmd {
+	provider = providers.Normalize(provider)
+	if provider == m.sess.Provider {
+		return nil
+	}
+	loadedSettings, _ := config.LoadSettings(config.SettingsPath())
+	loadedSettings = config.NormalizeSettings(loadedSettings)
+	model := loadedSettings.CodexModel
+	if provider == providers.Groq {
+		model = loadedSettings.GroqModel
+	}
+	if model == "" {
+		model = providers.DefaultModel(provider)
+	}
+	p, err := buildTUIProvider(provider)
+	if err != nil {
+		m.msgs.OnTurnError(err)
+		m.refreshViewport()
+		return nil
+	}
+	m.stopActiveTurn()
+	m.sess.Provider = provider
+	m.sess.Model = model
+	m.footer.Model = model
+	m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+	prev := m.agent.ReasoningEffort()
+	prevMode := m.agent.Mode()
+	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
+	m.agent.SetReasoningEffort(prev)
+	m.agent.SetMode(prevMode)
+	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
+	m.subagents = map[string]agent.SubagentEvent{}
+	m.autoContinueSubagentResults = map[string]bool{}
+	m.pendingSubagentContinuation = false
+	_ = m.startSubagentListener()
+	m.settings.Provider = provider
+	if provider == providers.Groq {
+		m.settings.GroqAPIKeyStatus = "missing — Enter to set"
+		if groqKeyConfigured() {
+			m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
+		}
+	}
+	m.clampThinkingForCurrentModel()
+	m.refreshFooterThinkingEffort()
+	m.saveProviderSettings()
+	m.saveSessionIfStarted()
+	m.msgs.OnInfo(fmt.Sprintf("(provider: %s, model: %s)", provider, model))
+	m.refreshViewport()
+	return nil
+}
+
+func buildTUIProvider(provider string) (ai.Provider, error) {
+	switch providers.Normalize(provider) {
+	case providers.Groq:
+		endpoint := groq.DefaultEndpoint
+		if v := os.Getenv("RUNE_GROQ_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
+		if err != nil {
+			return nil, err
+		}
+		return groq.New(endpoint, key), nil
+	default:
+		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
+		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		tokenURL := oauth.CodexTokenURL
+		if v := os.Getenv("RUNE_OAUTH_TOKEN_URL"); v != "" {
+			tokenURL = v
+		}
+		src := &oauth.CodexSource{Store: oauth.NewStore(config.AuthPath()), TokenURL: tokenURL}
+		if _, err := src.Token(context.Background()); err != nil {
+			return nil, fmt.Errorf("not logged in: %w (run `rune login codex`)", err)
+		}
+		return codex.New(endpoint, src), nil
+	}
+}
+
+func (m *RootModel) saveProviderSettings() {
+	s := configFromModalSettings(m.settings)
+	s.Provider = m.sess.Provider
+	if m.sess.Provider == providers.Groq {
+		s.GroqModel = m.sess.Model
+	} else {
+		s.CodexModel = m.sess.Model
+	}
+	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+	}
 }
 
 func sessionLabel(s *session.Session) string {
@@ -1178,13 +1297,22 @@ func (m *RootModel) swapSession(s *session.Session) {
 	// the new session's UI, and a queued message could pop into the
 	// wrong session after AgentChannelDoneMsg fires.
 	m.stopActiveTurn()
+	oldProvider := m.sess.Provider
 	m.sess = s
 	m.footer.Session = sessionLabel(s)
 	m.footer.Model = s.Model
 	m.rebuildMessagesFromSession()
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
-	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), s, m.agent.System(), currentSubagentConfig())
+	p := m.agent.Provider()
+	if providers.Normalize(s.Provider) != providers.Normalize(oldProvider) {
+		if np, err := buildTUIProvider(s.Provider); err == nil {
+			p = np
+		} else {
+			m.msgs.OnTurnError(err)
+		}
+	}
+	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), s, m.agent.System(), currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
 	m.footer.Mode = footerMode(m.agent.Mode())

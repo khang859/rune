@@ -73,3 +73,21 @@ func TestSecretStoreRejectsInvalidWithoutOverwriting(t *testing.T) {
 		t.Fatalf("key overwritten: %q", sec.BraveSearchAPIKey)
 	}
 }
+
+func TestGroqAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	stored := strings.Repeat("g", 24)
+	env := strings.Repeat("h", 24)
+	if err := store.SetGroqAPIKey("export GROQ_API_KEY='" + stored + "'"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.GroqAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored groq key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_GROQ_API_KEY", env)
+	key, err = store.GroqAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env groq key = %q, %v", key, err)
+	}
+}

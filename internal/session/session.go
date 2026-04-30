@@ -15,6 +15,7 @@ type Session struct {
 	ID        string
 	Name      string
 	Created   time.Time
+	Provider  string
 	Model     string
 	Root      *Node
 	Active    *Node
@@ -37,11 +38,12 @@ type Node struct {
 func New(model string) *Session {
 	root := &Node{ID: newID(), Created: time.Now()}
 	return &Session{
-		ID:      newID(),
-		Created: time.Now(),
-		Model:   model,
-		Root:    root,
-		Active:  root,
+		ID:       newID(),
+		Created:  time.Now(),
+		Provider: "codex",
+		Model:    model,
+		Root:     root,
+		Active:   root,
 	}
 }
 
@@ -85,6 +87,7 @@ func (s *Session) Fork(target *Node) {
 
 func (s *Session) Clone() *Session {
 	s.mu.RLock()
+	provider := s.Provider
 	model := s.Model
 	name := s.Name
 	var msgs []ai.Message
@@ -94,6 +97,7 @@ func (s *Session) Clone() *Session {
 	s.mu.RUnlock()
 
 	nc := New(model)
+	nc.Provider = provider
 	nc.Name = name
 	// Copy the active path: walk up to root, reverse, replay Append.
 	for _, m := range msgs {

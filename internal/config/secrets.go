@@ -11,6 +11,7 @@ import (
 
 type Secrets struct {
 	BraveSearchAPIKey string `json:"brave_search_api_key,omitempty"`
+	GroqAPIKey        string `json:"groq_api_key,omitempty"`
 }
 
 type SecretStore struct{ path string }
@@ -30,6 +31,7 @@ func (s *SecretStore) Load() (Secrets, error) {
 		return sec, err
 	}
 	sec.BraveSearchAPIKey = NormalizeBraveAPIKeyInput(sec.BraveSearchAPIKey)
+	sec.GroqAPIKey = NormalizeGroqAPIKeyInput(sec.GroqAPIKey)
 	return sec, nil
 }
 func (s *SecretStore) Save(sec Secrets) error {
@@ -89,6 +91,42 @@ func (s *SecretStore) DeleteBraveSearchAPIKey() error {
 	return s.Save(sec)
 }
 
+func (s *SecretStore) GroqAPIKey() (string, error) {
+	for _, env := range []string{"RUNE_GROQ_API_KEY", "GROQ_API_KEY"} {
+		if v := NormalizeGroqAPIKeyInput(os.Getenv(env)); v != "" {
+			return v, ValidateGroqAPIKey(v)
+		}
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return "", err
+	}
+	if sec.GroqAPIKey == "" {
+		return "", nil
+	}
+	return sec.GroqAPIKey, ValidateGroqAPIKey(sec.GroqAPIKey)
+}
+func (s *SecretStore) SetGroqAPIKey(key string) error {
+	key = NormalizeGroqAPIKeyInput(key)
+	if err := ValidateGroqAPIKey(key); err != nil {
+		return fmt.Errorf("invalid Groq API key: %w", err)
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.GroqAPIKey = key
+	return s.Save(sec)
+}
+func (s *SecretStore) DeleteGroqAPIKey() error {
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.GroqAPIKey = ""
+	return s.Save(sec)
+}
+
 func NormalizeBraveAPIKeyInput(raw string) string {
 	s := strings.TrimSpace(raw)
 	for _, p := range []string{"export RUNE_BRAVE_SEARCH_API_KEY=", "RUNE_BRAVE_SEARCH_API_KEY="} {
@@ -106,6 +144,39 @@ func NormalizeBraveAPIKeyInput(raw string) string {
 	return strings.TrimSpace(s)
 }
 func ValidateBraveAPIKey(key string) error {
+	switch {
+	case key == "":
+		return errors.New("empty")
+	case len(key) < 20:
+		return errors.New("too short")
+	case len(key) > 512:
+		return errors.New("too long")
+	case strings.ContainsAny(key, " \t\r\n"):
+		return errors.New("contains whitespace")
+	case strings.ContainsAny(key, "<>{}[]()"):
+		return errors.New("contains unexpected characters")
+	}
+	return nil
+}
+
+func NormalizeGroqAPIKeyInput(raw string) string {
+	s := strings.TrimSpace(raw)
+	for _, p := range []string{"export RUNE_GROQ_API_KEY=", "RUNE_GROQ_API_KEY=", "export GROQ_API_KEY=", "GROQ_API_KEY="} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, p))
+			break
+		}
+	}
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			s = s[1 : len(s)-1]
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+func ValidateGroqAPIKey(key string) error {
 	switch {
 	case key == "":
 		return errors.New("empty")

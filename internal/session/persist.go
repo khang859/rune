@@ -13,6 +13,7 @@ type wireSession struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name,omitempty"`
 	Created   string         `json:"created"`
+	Provider  string         `json:"provider,omitempty"`
 	Model     string         `json:"model"`
 	RootID    string         `json:"root_id"`
 	ActiveID  string         `json:"active_id"`
@@ -45,6 +46,7 @@ func (s *Session) Save() error {
 		ID:        s.ID,
 		Name:      s.Name,
 		Created:   s.Created.Format("2006-01-02T15:04:05Z07:00"),
+		Provider:  normalizeProvider(s.Provider),
 		Model:     s.Model,
 		RootID:    s.Root.ID,
 		ActiveID:  s.Active.ID,
@@ -124,6 +126,7 @@ func Load(path string) (*Session, error) {
 	return &Session{
 		ID:        w.ID,
 		Name:      w.Name,
+		Provider:  normalizeProvider(w.Provider),
 		Model:     w.Model,
 		Root:      nodes[w.RootID],
 		Active:    nodes[w.ActiveID],
@@ -137,4 +140,11 @@ func walk(n *Node, fn func(*Node)) {
 	for _, c := range n.Children {
 		walk(c, fn)
 	}
+}
+
+func normalizeProvider(provider string) string {
+	if provider == "groq" {
+		return "groq"
+	}
+	return "codex"
 }

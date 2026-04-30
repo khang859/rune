@@ -9,6 +9,7 @@ import (
 )
 
 type Settings struct {
+	Provider              string
 	Effort                string
 	IconMode              string
 	ActivityMode          string
@@ -23,6 +24,7 @@ type Settings struct {
 	SubagentTimeout       string
 	SubagentRetain        string
 	BraveAPIKeyStatus     string
+	GroqAPIKeyStatus      string
 }
 
 type SettingsAction struct {
@@ -54,7 +56,8 @@ type settingsRow struct {
 }
 
 const (
-	settingsRowEffort = iota
+	settingsRowProvider = iota
+	settingsRowEffort
 	settingsRowIconMode
 	settingsRowActivityMode
 	settingsRowAutoCompact
@@ -64,6 +67,7 @@ const (
 	settingsRowWebSearch
 	settingsRowSearchProvider
 	settingsRowBraveAPIKey
+	settingsRowGroqAPIKey
 	settingsRowSubagents
 	settingsRowSubagentMaxConcurrent
 	settingsRowSubagentTimeout
@@ -73,6 +77,7 @@ const (
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
 	return &SettingsModal{cur: cur, rows: []settingsRow{
+		newSettingsRow("Provider", "provider", []string{"codex", "groq"}, cur.Provider),
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
@@ -83,6 +88,7 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
 		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "searxng"}, cur.SearchProvider),
 		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
 		newSettingsRow("Subagents", "subagents", []string{"off", "on"}, cur.Subagents),
 		newSettingsRow("Subagents", "max concurrent", []string{"1", "2", "4", "8"}, cur.SubagentMaxConcurrent),
 		newSettingsRow("Subagents", "default timeout", []string{"30s", "60s", "120s", "300s", "600s"}, cur.SubagentTimeout),
@@ -91,6 +97,9 @@ func NewSettings(cur Settings) Modal {
 }
 
 func normalizeSettings(s Settings) Settings {
+	if s.Provider == "" {
+		s.Provider = "codex"
+	}
 	if s.Effort == "" {
 		s.Effort = "medium"
 	}
@@ -132,6 +141,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.BraveAPIKeyStatus == "" {
 		s.BraveAPIKeyStatus = "missing — Enter to set"
+	}
+	if s.GroqAPIKeyStatus == "" {
+		s.GroqAPIKeyStatus = "missing — Enter to set"
 	}
 	return s
 }
@@ -187,6 +199,7 @@ func (s *SettingsModal) cycleSelected(delta int) {
 
 func (s *SettingsModal) selectedSettings() Settings {
 	return Settings{
+		Provider:              s.rows[settingsRowProvider].options[s.rows[settingsRowProvider].value],
 		Effort:                s.rows[settingsRowEffort].options[s.rows[settingsRowEffort].value],
 		IconMode:              s.rows[settingsRowIconMode].options[s.rows[settingsRowIconMode].value],
 		ActivityMode:          s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
@@ -201,6 +214,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		SubagentTimeout:       s.rows[settingsRowSubagentTimeout].options[s.rows[settingsRowSubagentTimeout].value],
 		SubagentRetain:        s.rows[settingsRowSubagentRetain].options[s.rows[settingsRowSubagentRetain].value],
 		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
+		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
 	}
 }
 

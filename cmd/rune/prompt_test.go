@@ -62,7 +62,7 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "hello") {
@@ -72,5 +72,29 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	sessions, _ := os.ReadDir(filepath.Join(runeDir, "sessions"))
 	if len(sessions) == 0 {
 		t.Fatal("no session file written")
+	}
+}
+
+func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("g", 24) {
+			t.Errorf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"groq\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_GROQ_ENDPOINT", srv.URL)
+	t.Setenv("RUNE_GROQ_API_KEY", strings.Repeat("g", 24))
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "groq", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "groq") {
+		t.Fatalf("output = %q", buf.String())
 	}
 }

@@ -16,13 +16,14 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--script <file>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq] [--model <id>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	script := flag.String("script", "", "run a JSON script (headless smoke runner)")
 	prompt := flag.String("prompt", "", "run a single turn against the configured provider and exit")
-	model := flag.String("model", "", "Codex model id (overrides RUNE_CODEX_MODEL; default gpt-5.5)")
+	provider := flag.String("provider", "", "provider id (codex or groq; overrides RUNE_PROVIDER and settings)")
+	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
 	flag.Parse()
 
 	if *showVersion {
@@ -69,13 +70,13 @@ func main() {
 		return
 	}
 	if *prompt != "" {
-		if err := runPrompt(ctx, *prompt, *model, os.Stdout); err != nil {
+		if err := runPrompt(ctx, *prompt, *provider, *model, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := runInteractive(ctx, *model); err != nil {
+	if err := runInteractive(ctx, *provider, *model); err != nil {
 		runelog.Error("interactive", "err", err.Error())
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

@@ -2,6 +2,19 @@ package config
 
 import "testing"
 
+func TestDefaultSettingsIncludesProvider(t *testing.T) {
+	s := DefaultSettings()
+	if s.Provider != "codex" {
+		t.Fatalf("provider = %q, want codex", s.Provider)
+	}
+	if s.CodexModel != "gpt-5.5" {
+		t.Fatalf("codex model = %q", s.CodexModel)
+	}
+	if s.GroqModel != "llama-3.3-70b-versatile" {
+		t.Fatalf("groq model = %q", s.GroqModel)
+	}
+}
+
 func TestDefaultSettingsIncludesAutoCompact(t *testing.T) {
 	s := DefaultSettings()
 	if !s.AutoCompact.EnabledValue() {
@@ -25,6 +38,13 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 	}
 	if s.Subagents.MaxCompletedRetain != 100 {
 		t.Fatalf("MaxCompletedRetain = %d, want 100", s.Subagents.MaxCompletedRetain)
+	}
+}
+
+func TestNormalizeSettingsFillsProviderDefaults(t *testing.T) {
+	s := NormalizeSettings(Settings{})
+	if s.Provider != "codex" || s.CodexModel == "" || s.GroqModel == "" {
+		t.Fatalf("settings = %+v", s)
 	}
 }
 

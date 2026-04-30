@@ -17,7 +17,12 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Sett
 	if braveConfigured {
 		status = "configured — Enter to replace"
 	}
+	groqStatus := "missing — Enter to set"
+	if groqKeyConfigured() {
+		groqStatus = "configured — Enter to replace"
+	}
 	return modal.Settings{
+		Provider:              s.Provider,
 		Effort:                s.ReasoningEffort,
 		IconMode:              s.IconMode,
 		ActivityMode:          s.ActivityMode,
@@ -32,12 +37,20 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool) modal.Sett
 		SubagentTimeout:       fmt.Sprintf("%ds", s.Subagents.DefaultTimeoutSecs),
 		SubagentRetain:        strconv.Itoa(s.Subagents.MaxCompletedRetain),
 		BraveAPIKeyStatus:     status,
+		GroqAPIKeyStatus:      groqStatus,
 	}
 }
 
 func configFromModalSettings(s modal.Settings) config.Settings {
 	enabled := s.Subagents != "off"
-	return config.NormalizeSettings(config.Settings{
+	loaded, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		loaded = config.DefaultSettings()
+	}
+	settings := config.NormalizeSettings(config.Settings{
+		Provider:        s.Provider,
+		CodexModel:      loaded.CodexModel,
+		GroqModel:       loaded.GroqModel,
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
 		ActivityMode:    s.ActivityMode,
@@ -58,6 +71,7 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 			MaxCompletedRetain: atoiDefault(s.SubagentRetain, 100),
 		},
 	})
+	return settings
 }
 
 func onOff(v bool) string {
@@ -89,6 +103,11 @@ func parsePercentDefault(s string, fallback int) int {
 
 func braveKeyConfigured() bool {
 	key, err := config.NewSecretStore(config.SecretsPath()).BraveSearchAPIKey()
+	return err == nil && key != ""
+}
+
+func groqKeyConfigured() bool {
+	key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
 	return err == nil && key != ""
 }
 

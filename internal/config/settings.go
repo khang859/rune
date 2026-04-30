@@ -9,6 +9,9 @@ import (
 )
 
 type Settings struct {
+	Provider        string           `json:"provider,omitempty"`
+	CodexModel      string           `json:"codex_model,omitempty"`
+	GroqModel       string           `json:"groq_model,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	IconMode        string           `json:"icon_mode,omitempty"`
 	ActivityMode    string           `json:"activity_mode,omitempty"`
@@ -54,6 +57,9 @@ func (a AutoCompact) EnabledValue() bool {
 
 func DefaultSettings() Settings {
 	return Settings{
+		Provider:        "codex",
+		CodexModel:      "gpt-5.5",
+		GroqModel:       "llama-3.3-70b-versatile",
 		ReasoningEffort: "medium",
 		IconMode:        "unicode",
 		ActivityMode:    "arcane",
@@ -80,6 +86,18 @@ func LoadSettings(path string) (Settings, error) {
 
 func NormalizeSettings(s Settings) Settings {
 	d := DefaultSettings()
+	if s.Provider == "" {
+		s.Provider = d.Provider
+	}
+	if s.Provider != "codex" && s.Provider != "groq" {
+		s.Provider = d.Provider
+	}
+	if s.CodexModel == "" {
+		s.CodexModel = d.CodexModel
+	}
+	if s.GroqModel == "" {
+		s.GroqModel = d.GroqModel
+	}
 	if s.ReasoningEffort == "" {
 		s.ReasoningEffort = d.ReasoningEffort
 	}
