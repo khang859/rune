@@ -220,6 +220,81 @@ func TestRoot_PlanModeSlashCommandsBlockedWhileStreaming(t *testing.T) {
 	}
 }
 
+func TestRoot_PlanModeBannerRendersAndReservesLayoutRow(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	actHeight := m.viewport.Height
+
+	m.handleSlashCommand("/plan")
+	if !strings.Contains(m.View(), "Plan Mode: edits and bash disabled") {
+		t.Fatalf("missing plan mode banner:\n%s", m.View())
+	}
+	if got, want := m.viewport.Height, actHeight-1; got != want {
+		t.Fatalf("plan mode viewport height = %d, want %d", got, want)
+	}
+
+	m.handleSlashCommand("/act")
+	if strings.Contains(m.View(), "Plan Mode: edits and bash disabled") {
+		t.Fatalf("plan mode banner remained after /act:\n%s", m.View())
+	}
+	if got, want := m.viewport.Height, actHeight; got != want {
+		t.Fatalf("act mode viewport height = %d, want %d", got, want)
+	}
+}
+
+func TestRoot_ShiftTabCyclesNormalPlanCopyNormal(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	if a.Mode() != agent.ModeAct || m.copyMode || m.footer.Mode != "" {
+		t.Fatalf("initial mode = agent %q copy=%v footer=%q, want normal/act", a.Mode(), m.copyMode, m.footer.Mode)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if a.Mode() != agent.ModePlan || !m.planPending || m.copyMode || m.footer.Mode != "plan" {
+		t.Fatalf("first Shift+Tab did not enter plan: mode=%q pending=%v copy=%v footer=%q", a.Mode(), m.planPending, m.copyMode, m.footer.Mode)
+	}
+	if !strings.Contains(m.View(), "Plan Mode: edits and bash disabled") {
+		t.Fatalf("missing plan banner after first Shift+Tab:\n%s", m.View())
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if a.Mode() != agent.ModeAct || m.planPending || !m.copyMode || m.footer.Mode != "" {
+		t.Fatalf("second Shift+Tab did not enter copy mode from plan: mode=%q pending=%v copy=%v footer=%q", a.Mode(), m.planPending, m.copyMode, m.footer.Mode)
+	}
+	if !strings.Contains(m.View(), "[copy mode]") {
+		t.Fatalf("missing copy banner after second Shift+Tab:\n%s", m.View())
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if a.Mode() != agent.ModeAct || m.planPending || m.copyMode || m.footer.Mode != "" {
+		t.Fatalf("third Shift+Tab did not return to normal: mode=%q pending=%v copy=%v footer=%q", a.Mode(), m.planPending, m.copyMode, m.footer.Mode)
+	}
+	out := m.View()
+	if strings.Contains(out, "Plan Mode: edits and bash disabled") || strings.Contains(out, "[copy mode]") {
+		t.Fatalf("normal mode still shows mode banner:\n%s", out)
+	}
+}
+
+func TestRoot_ShiftTabCycleBlockedWhileStreaming(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.streaming = true
+
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	if a.Mode() != agent.ModeAct || m.copyMode {
+		t.Fatalf("Shift+Tab while streaming changed normal mode: mode=%q copy=%v", a.Mode(), m.copyMode)
+	}
+	if !strings.Contains(m.View(), "busy — wait for current turn to finish") {
+		t.Fatalf("missing busy message after blocked Shift+Tab:\n%s", m.View())
+	}
+}
+
 func TestRoot_PlanModeBlocksShellShortcuts(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

@@ -181,7 +181,7 @@ func runMCPList(stdout io.Writer) error {
 		if sc.Type == "http" {
 			desc = "http " + sc.URL
 		}
-		fmt.Fprintf(tw, "%s\t%s\n", name, desc)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", name, desc, planModeDescription(sc))
 	}
 	return tw.Flush()
 }
@@ -215,9 +215,26 @@ func runMCPValidate(stdout io.Writer) error {
 		default:
 			return fmt.Errorf("server %q has unsupported type %q", name, sc.Type)
 		}
+		for _, tool := range sc.PlanTools {
+			if strings.TrimSpace(tool) == "" {
+				return fmt.Errorf("server %q has empty plan_tools entry", name)
+			}
+		}
 	}
 	fmt.Fprintln(stdout, "mcp config is valid")
 	return nil
+}
+
+func planModeDescription(sc mcp.ServerConfig) string {
+	if sc.ReadOnly {
+		return "plan: read-only"
+	}
+	if len(sc.PlanTools) > 0 {
+		tools := append([]string(nil), sc.PlanTools...)
+		sort.Strings(tools)
+		return "plan: " + strings.Join(tools, ",")
+	}
+	return "plan: disabled"
 }
 
 func loadMCPConfig() (mcp.Config, error) {

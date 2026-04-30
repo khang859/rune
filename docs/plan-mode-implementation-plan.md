@@ -17,14 +17,14 @@ Add a safe, enforced Plan Mode for interactive Rune:
 
 - Enforce safety in code, not only in prompts.
 - Tool spec filtering is helpful but insufficient; runtime tool execution must also enforce permissions.
-- Deny opaque external/MCP tools by default in Plan Mode until capability metadata or an allowlist exists.
+- Deny opaque external/MCP tools by default in Plan Mode unless capability metadata or an allowlist explicitly opts them in.
 - Avoid changing permissions mid-turn. Mode changes should be blocked while streaming or applied only at safe turn boundaries.
 - Do not automatically implement after `/approve`; require an explicit follow-up user message.
 - Keep the MVP focused. Add specialized validator/exploration subagent types as a follow-up.
 
 ## Implementation status
 
-Status: **MVP implemented**.
+Status: **MVP implemented**. Follow-up banner, planning subagent types, read-only local exploration tools, read-only git inspection tools, and MCP Plan Mode metadata/allowlists are also implemented.
 
 Implemented in this pass:
 
@@ -35,6 +35,10 @@ Implemented in this pass:
 - `Registry.Run()` now runtime-denies Plan Mode-denied tools with a normal `Result{IsError: true}` instead of a Go error.
 - Plan Mode allows read-only/core-safe tools:
   - `read`
+  - `list_files`
+  - `search_files`
+  - `git_status`
+  - `git_diff`
   - `web_search`
   - `web_fetch`
   - `spawn_subagent`
@@ -46,6 +50,9 @@ Implemented in this pass:
   - `edit`
   - `bash`
   - MCP/external tools and any other tool not explicitly allowed
+- MCP tools can now opt in to Plan Mode with server config metadata:
+  - `read_only: true` allows all tools from that MCP server.
+  - `plan_tools: [...]` allows only the listed unprefixed MCP tool names.
 - `CloneReadOnly()` now uses Plan Mode policy and still unregisters child subagent tools so child subagents cannot recursively spawn subagents.
 - Added agent modes in `internal/agent/agent.go`:
   - `ModeAct`
@@ -121,17 +128,22 @@ Denied in the MVP:
 - `write`
 - `edit`
 - `bash`
-- all MCP/external tools by default
+- MCP/external tools by default unless they explicitly opt in to Plan Mode
 
-Allowed in the MVP:
+Allowed in the current implementation:
 
 - `read`
+- `list_files`
+- `search_files`
+- `git_status`
+- `git_diff`
 - `web_search`
 - `web_fetch`
 - `spawn_subagent`
 - `list_subagents`
 - `get_subagent_result`
-- likely `cancel_subagent`, for cleanup
+- `cancel_subagent`
+- MCP/external tools that implement the Plan Mode opt-in policy, including MCP tools enabled by `read_only` or `plan_tools` config metadata
 
 Permission denial should return a normal tool result, not a Go error:
 
@@ -234,7 +246,7 @@ planPending bool
 - Show an informational message:
 
 ```text
-plan mode: edits, bash, and MCP tools disabled
+plan mode: edits and bash disabled; MCP tools require read-only allowlist
 ```
 
 ### `/act`
@@ -301,10 +313,10 @@ To reduce clutter, it may be enough to show only `plan` when Plan Mode is active
 Optional for MVP but recommended:
 
 ```text
-Plan Mode: edits, bash, and MCP tools disabled · /approve or /act to implement
+Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve or /act to implement
 ```
 
-If a banner is added, update `layout()` row accounting.
+If a banner is added, update `layout()` row accounting. The currently implemented banner still uses conservative MCP-disabled wording; it can be polished to mention the read-only allowlist.
 
 ## Phase 4: Shell shortcut safety
 
@@ -398,7 +410,8 @@ Document:
 - Plan mode hides `write`, `edit`, and `bash` from `Specs()`.
 - Plan mode denies `write`, `edit`, and `bash` in `Run()`.
 - Unknown-tool behavior remains unchanged.
-- A fake MCP/external tool is denied in Plan Mode.
+- A fake MCP/external tool is denied in Plan Mode by default.
+- A fake MCP/external tool that explicitly opts in to Plan Mode is exposed and runnable.
 
 ### Agent loop
 
@@ -462,12 +475,9 @@ Implemented:
 
 Deferred from MVP:
 
-1. Plan Mode banner. The MVP uses a footer indicator only.
-2. First-class `exploration` and `validator` subagent types.
-3. Automatic Plan Mode exploration orchestration.
-4. Validator subagent before showing plans.
-5. MCP allowlist/read-only classification.
-6. Session persistence of plan state.
+1. Automatic Plan Mode exploration orchestration.
+2. Mandatory validator subagent before showing plans.
+3. Session persistence of plan state.
 
 ## Recommended follow-ups
 
@@ -478,7 +488,8 @@ Run `rune` interactively and verify:
 - `/plan` enters Plan Mode and footer shows `plan`.
 - A planning prompt can still use read-only exploration tools.
 - `!cmd` and `!!cmd` are blocked with the Plan Mode safety message.
-- Requests that would trigger `write`, `edit`, `bash`, or MCP tools are hidden from specs and runtime-denied if called anyway.
+- Requests that would trigger `write`, `edit`, `bash`, or non-allowlisted MCP tools are hidden from specs and runtime-denied if called anyway.
+- MCP tools enabled with `read_only` or `plan_tools` are visible and runnable in Plan Mode.
 - `/cancel-plan` clears pending plan state but stays in Plan Mode.
 - `/approve` returns to Act Mode and does not automatically start an implementation turn.
 - A follow-up message like “go ahead” can implement in Act Mode.
@@ -493,25 +504,66 @@ make all
 
 ### 3. Add a Plan Mode banner
 
-The footer indicator is intentionally compact. A banner would make Plan Mode harder to miss:
+Implemented. The footer indicator is intentionally compact, and the TUI now also renders this banner while Plan Mode is active:
 
 ```text
-Plan Mode: edits, bash, and MCP tools disabled · /approve or /act to implement
+Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve or /act to implement
 ```
 
-If added, update `layout()` row accounting and viewport overlap tests.
+`layout()` row accounting and TUI tests were updated.
 
-### 4. Add MCP capability metadata or an allowlist
+### 4. Add dedicated read-only local exploration tools
 
-Current MVP denies all MCP/external tools in Plan Mode because their capabilities are opaque. A follow-up could support:
+Implemented initial first-class tools that cover common read-only discovery workflows without exposing arbitrary shell execution:
 
-- MCP tool metadata declaring read-only vs mutating behavior.
-- User/project allowlists for known-safe MCP tools.
-- A conservative default-deny fallback when metadata is absent.
+- `list_files(path?, glob?, max_results?)`
+  - Recursively lists project files.
+  - Skips common noisy directories.
+  - Bounds output with `max_results`.
+- `search_files(query, path?, glob?, context_lines?, max_results?)`
+  - Performs literal text search.
+  - Includes optional context lines and file filters.
+  - Bounds output and skips binary/large files.
 
-### 5. Add first-class planning subagent types
+These tools are registered as builtins and added to the Plan Mode allowlist in `Registry.toolAllowed`, while `bash` remains hidden and runtime-denied.
 
-Add specialized types such as:
+Implemented additional dedicated git inspection tools:
+
+- `git_status(path?)` — read-only repository status inspection.
+- `git_diff(repo?, path?, staged?, stat?, max_bytes?)` — read-only diff inspection for unstaged or staged changes, optionally as a diffstat or path-filtered output.
+
+A `bash_readonly` tool is possible but less desirable. If added, it should execute only validated command+argument arrays, not shell strings, and should explicitly reject redirection, command substitution, `find -exec`, and mutating subcommands.
+
+### 5. MCP capability metadata and allowlists
+
+Implemented. MCP/external tools remain denied by default in Plan Mode because their capabilities are opaque, but trusted read-only MCP tools can now opt in via `~/.rune/mcp.json`:
+
+```json
+{
+  "servers": {
+    "docs": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "read_only": true
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "plan_tools": ["resolve-library-id", "query-docs"]
+    }
+  }
+}
+```
+
+- `read_only: true` allows all tools from that MCP server in Plan Mode.
+- `plan_tools` allows only the listed unprefixed MCP tool names from that MCP server in Plan Mode.
+- With neither field set, MCP tools remain hidden from specs and runtime-denied in Plan Mode.
+
+The registry supports an explicit `PlanModeTool` opt-in interface for external tools, and MCP tools implement it based on the server config metadata.
+
+### 6. Add first-class planning subagent types
+
+Implemented specialized read-only subagent types:
 
 - `exploration` — read-only codebase discovery.
 - `validator` — reviews the drafted plan for gaps, safety issues, and test coverage.
@@ -522,15 +574,15 @@ Suggested workflow:
 exploration subagents → draft plan → validator subagent → revise plan → present to user
 ```
 
-### 6. Persist mode state if desired
+### 7. Persist mode state if desired
 
 The MVP treats Plan Mode as interactive UI state, not durable session state. Consider persisting mode/pending-plan state only if users expect Plan Mode to survive reload/resume.
 
-### 7. Architecture docs
+### 8. Architecture docs
 
 If the permission model expands, document it in `docs/architecture.md`, including:
 
 - Tool spec filtering vs runtime denial.
 - Default-deny Plan Mode policy.
-- MCP capability classification.
+- MCP capability classification and user allowlists.
 - Subagent read-only inheritance.

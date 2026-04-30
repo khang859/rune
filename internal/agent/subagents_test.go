@@ -58,6 +58,37 @@ func TestSubagentSupervisor_DefaultsToGeneral(t *testing.T) {
 	}
 }
 
+func TestSubagentSupervisor_AcceptsPlanningTypes(t *testing.T) {
+	for _, typ := range []string{"exploration", "validator"} {
+		t.Run(typ, func(t *testing.T) {
+			p := faux.New().Reply("ok").Done()
+			a := New(p, tools.NewRegistry(), session.New("gpt-test"), "")
+
+			task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{
+				Name:       typ,
+				Prompt:     "do it",
+				AgentType:  typ,
+				Background: false,
+			})
+			if err != nil {
+				t.Fatalf("Spawn error: %v", err)
+			}
+			if task.AgentType != typ {
+				t.Fatalf("agent type = %q, want %q", task.AgentType, typ)
+			}
+		})
+	}
+}
+
+func TestSubagentSystemPromptSpecializesPlanningTypes(t *testing.T) {
+	if got := subagentSystemPrompt("exploration"); !strings.Contains(got, "Exploration focus") || !strings.Contains(got, "Discover the relevant files") {
+		t.Fatalf("exploration prompt missing specialization:\n%s", got)
+	}
+	if got := subagentSystemPrompt("validator"); !strings.Contains(got, "Validator focus") || !strings.Contains(got, "Review the proposed plan") {
+		t.Fatalf("validator prompt missing specialization:\n%s", got)
+	}
+}
+
 func TestSubagentSupervisor_AssignsUniqueFamiliarNames(t *testing.T) {
 	a := New(faux.New().Reply("ok").Done(), tools.NewRegistry(), session.New("gpt-test"), "")
 	seen := map[string]struct{}{}

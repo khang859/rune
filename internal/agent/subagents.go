@@ -204,8 +204,8 @@ func (s *SubagentSupervisor) Spawn(ctx context.Context, req tools.SpawnSubagentR
 		return nil, fmt.Errorf("prompt is required")
 	}
 	req.AgentType = normalizeSubagentType(req.AgentType)
-	if req.AgentType != "general" {
-		return nil, fmt.Errorf("unknown agent_type %q. Available subagent types: general", req.AgentType)
+	if !validSubagentType(req.AgentType) {
+		return nil, fmt.Errorf("unknown agent_type %q. Available subagent types: %s", req.AgentType, strings.Join(subagentTypes, ", "))
 	}
 
 	deps := cleanDependencies(req.Dependencies)
@@ -611,12 +611,23 @@ func cleanDependencies(deps []string) []string {
 	return out
 }
 
+var subagentTypes = []string{"general", "exploration", "validator"}
+
 func normalizeSubagentType(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
 	if t == "" {
 		return "general"
 	}
 	return t
+}
+
+func validSubagentType(t string) bool {
+	for _, typ := range subagentTypes {
+		if t == typ {
+			return true
+		}
+	}
+	return false
 }
 
 var familiarNames = []string{
@@ -683,9 +694,31 @@ func toToolSubagentTask(t *SubagentTask) tools.SubagentTask {
 }
 
 func subagentSystemPrompt(agentType string) string {
-	return `You are a rune subagent of type "` + agentType + `".
+	base := `You are a rune subagent of type "` + agentType + `".
 
-Work independently on the delegated task using your own isolated context. Keep your scope narrow. Prefer reading and analysis. Do not attempt to modify files or run shell commands unless explicitly available as tools.
+Work independently on the delegated task using your own isolated context. Keep your scope narrow. Prefer reading and analysis. Do not attempt to modify files or run shell commands unless explicitly available as tools.`
+
+	specialized := ""
+	switch agentType {
+	case "exploration":
+		specialized = `
+
+Exploration focus:
+- Discover the relevant files, functions, data flow, and existing tests.
+- Use read-only tools to gather evidence before drawing conclusions.
+- Do not propose broad rewrites unless the codebase evidence supports them.
+- Emphasize concrete implementation touchpoints and open questions.`
+	case "validator":
+		specialized = `
+
+Validator focus:
+- Review the proposed plan for missing files, unsafe assumptions, and sequencing issues.
+- Check that the plan includes appropriate tests and validation commands.
+- Identify risks, edge cases, and simpler alternatives.
+- Do not implement; return approval concerns and suggested revisions.`
+	}
+
+	return base + specialized + `
 
 Return a concise structured final answer using this format:
 

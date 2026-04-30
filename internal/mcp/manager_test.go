@@ -102,6 +102,108 @@ func TestManager_RegistersToolsFromHTTPServer(t *testing.T) {
 	}
 }
 
+func TestManager_DefaultMCPToolsAreDeniedInPlanMode(t *testing.T) {
+	bin := buildStubServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := fmt.Sprintf(`{"servers":{"stub":{"command":%q}}}`, bin)
+	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
+
+	reg := tools.NewRegistry()
+	reg.SetPermissionMode(tools.PermissionModePlan)
+	mgr := NewManager(cfgPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mgr.Start(ctx, reg); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Shutdown()
+
+	for _, spec := range reg.Specs() {
+		if spec.Name == "stub_echo" {
+			t.Fatalf("default MCP tool exposed in plan mode: %v", reg.Specs())
+		}
+	}
+	res, err := reg.Run(ctx, ai.ToolCall{Name: "stub_echo", Args: json.RawMessage(`{"text":"x"}`)})
+	if err != nil || !res.IsError {
+		t.Fatalf("default MCP tool should be denied in plan mode: result=%#v err=%v", res, err)
+	}
+}
+
+func TestManager_ReadOnlyMCPToolsAreAllowedInPlanMode(t *testing.T) {
+	bin := buildStubServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := fmt.Sprintf(`{"servers":{"stub":{"command":%q,"read_only":true}}}`, bin)
+	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
+
+	reg := tools.NewRegistry()
+	reg.SetPermissionMode(tools.PermissionModePlan)
+	mgr := NewManager(cfgPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mgr.Start(ctx, reg); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Shutdown()
+
+	found := false
+	for _, spec := range reg.Specs() {
+		if spec.Name == "stub_echo" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("read-only MCP tool not exposed in plan mode: %v", reg.Specs())
+	}
+	res, err := reg.Run(ctx, ai.ToolCall{Name: "stub_echo", Args: json.RawMessage(`{"text":"x"}`)})
+	if err != nil || res.IsError || res.Output == "" {
+		t.Fatalf("read-only MCP tool should run in plan mode: result=%#v err=%v", res, err)
+	}
+}
+
+func TestManager_PlanToolAllowlistAllowsSpecificMCPTools(t *testing.T) {
+	bin := buildStubServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := fmt.Sprintf(`{"servers":{"stub":{"command":%q,"plan_tools":["echo"]}}}`, bin)
+	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
+
+	reg := tools.NewRegistry()
+	reg.SetPermissionMode(tools.PermissionModePlan)
+	mgr := NewManager(cfgPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mgr.Start(ctx, reg); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Shutdown()
+
+	res, err := reg.Run(ctx, ai.ToolCall{Name: "stub_echo", Args: json.RawMessage(`{"text":"x"}`)})
+	if err != nil || res.IsError || res.Output == "" {
+		t.Fatalf("allowlisted MCP tool should run in plan mode: result=%#v err=%v", res, err)
+	}
+}
+
+func TestManager_UnknownPlanToolAllowlistDoesNotAllowMCPTool(t *testing.T) {
+	bin := buildStubServer(t)
+	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := fmt.Sprintf(`{"servers":{"stub":{"command":%q,"plan_tools":["other"]}}}`, bin)
+	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
+
+	reg := tools.NewRegistry()
+	reg.SetPermissionMode(tools.PermissionModePlan)
+	mgr := NewManager(cfgPath)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := mgr.Start(ctx, reg); err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.Shutdown()
+
+	res, err := reg.Run(ctx, ai.ToolCall{Name: "stub_echo", Args: json.RawMessage(`{"text":"x"}`)})
+	if err != nil || !res.IsError {
+		t.Fatalf("non-allowlisted MCP tool should be denied in plan mode: result=%#v err=%v", res, err)
+	}
+}
+
 func TestManager_RecordsFailedStatus(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
 	cfg := `{"servers":{"missing":{"command":"definitely-not-a-real-mcp-binary"}}}`

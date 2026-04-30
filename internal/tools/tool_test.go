@@ -12,6 +12,13 @@ import (
 
 type stubTool struct{ name string }
 
+type planStubTool struct {
+	stubTool
+	allowed bool
+}
+
+func (p planStubTool) AllowedInPlanMode() bool { return p.allowed }
+
 func (s stubTool) Spec() ai.ToolSpec {
 	return ai.ToolSpec{Name: s.name, Description: "stub", Schema: json.RawMessage(`{}`)}
 }
@@ -62,24 +69,26 @@ func TestRegistry_Specs(t *testing.T) {
 
 func TestRegistry_PlanModeFiltersAndDeniesTools(t *testing.T) {
 	r := NewRegistry()
-	for _, name := range []string{"read", "write", "edit", "bash", "web_search", "external_tool"} {
+	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "write", "edit", "bash", "web_search", "external_tool"} {
 		r.Register(stubTool{name: name})
 	}
+	r.Register(planStubTool{stubTool: stubTool{name: "plan_external"}, allowed: true})
+	r.Register(planStubTool{stubTool: stubTool{name: "unsafe_external"}, allowed: false})
 	r.SetPermissionMode(PermissionModePlan)
 
 	for _, spec := range r.Specs() {
 		switch spec.Name {
-		case "write", "edit", "bash", "external_tool":
+		case "write", "edit", "bash", "external_tool", "unsafe_external":
 			t.Fatalf("plan mode exposed denied tool %q", spec.Name)
 		}
 	}
-	for _, name := range []string{"read", "web_search"} {
+	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "web_search", "plan_external"} {
 		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
 		if err != nil || res.IsError {
 			t.Fatalf("allowed tool %q result=%#v err=%v", name, res, err)
 		}
 	}
-	for _, name := range []string{"write", "edit", "bash", "external_tool"} {
+	for _, name := range []string{"write", "edit", "bash", "external_tool", "unsafe_external"} {
 		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
 		if err != nil {
 			t.Fatalf("denial should not be go error for %q: %v", name, err)

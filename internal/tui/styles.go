@@ -31,6 +31,7 @@ type Styles struct {
 	EditorBoxDim         lipgloss.Style // dimmed border while in copy mode
 	Activity             lipgloss.Style
 	CopyModeBanner       lipgloss.Style
+	PlanModeBanner       lipgloss.Style
 	QuitPrimedBanner     lipgloss.Style
 	Icons                IconSet
 	Markdown             Markdown
@@ -70,6 +71,7 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		EditorBoxDim:         lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).Faint(true).Padding(0, 1),
 		Activity:             lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Italic(true),
 		CopyModeBanner:       lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
+		PlanModeBanner:       lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),
 		QuitPrimedBanner:     lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")),
 		Icons:                IconSetForMode(mode),
 		Markdown:             NewMarkdown(),

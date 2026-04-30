@@ -8,7 +8,7 @@
 | Ctrl+C | Quit (twice if interactive editing) |
 | Ctrl+L | Open `/model` |
 | Tab | Path completion (or accept overlay item) |
-| Shift+Tab | Toggle copy mode (releases mouse so terminal can select text) |
+| Shift+Tab | Cycle normal → Plan Mode → copy mode |
 | ↑ / ↓ | Navigate overlays / modals |
 | `@` | Open file picker |
 | `/` | Open command menu |
@@ -18,11 +18,13 @@
 
 ## Plan Mode
 
-Use `/plan` to enter Plan Mode. While active, write/edit/bash, MCP tools, and shell shortcuts are disabled. Use `/approve` or `/act` to return to Act Mode before implementation. See `docs/plan-mode.md`.
+Use `/plan` or cycle with `Shift+Tab` to enter Plan Mode. While active, write/edit/bash and shell shortcuts are disabled. MCP tools are available only when marked read-only or allowlisted with `read_only` / `plan_tools` in MCP config. Use `/approve`, `/act`, or continue cycling with `Shift+Tab` to return to Act Mode before implementation. See `docs/plan-mode.md`.
 
 ## Copy mode
 
-`Shift+Tab` (or `/copy-mode`) surrenders mouse capture so your terminal handles
+`Shift+Tab` cycles normal → Plan Mode → copy mode → normal. Copy mode (also
+available with `/copy-mode`) surrenders mouse capture so your terminal handles
 text selection natively. Drag to highlight, copy with your terminal's normal
 shortcut (Cmd+C on macOS, Ctrl+Shift+C on most Linux terminals). Press
-`Shift+Tab` or `Esc` again to return to normal mode (wheel-scroll resumes).
+`Shift+Tab` to continue cycling to normal mode, or `Esc` to exit copy mode
+(wheel-scroll resumes).

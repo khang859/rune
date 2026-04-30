@@ -88,6 +88,25 @@ func TestSpawnSubagentSpecAdvertisesDependencies(t *testing.T) {
 	}
 }
 
+func TestSpawnSubagentSpecAdvertisesPlanningTypes(t *testing.T) {
+	spec := (SpawnSubagent{}).Spec()
+	if !strings.Contains(spec.Description, "exploration") || !strings.Contains(spec.Description, "validator") {
+		t.Fatalf("description missing planning types: %q", spec.Description)
+	}
+	var schema struct {
+		Properties map[string]struct {
+			Description string `json:"description"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(spec.Schema, &schema); err != nil {
+		t.Fatalf("schema unmarshal: %v", err)
+	}
+	agentType := schema.Properties["agent_type"]
+	if !strings.Contains(agentType.Description, "exploration") || !strings.Contains(agentType.Description, "validator") {
+		t.Fatalf("agent_type description missing planning types: %q", agentType.Description)
+	}
+}
+
 func TestCancelSubagentSpecMentionsBlocked(t *testing.T) {
 	spec := (CancelSubagent{}).Spec()
 	if !strings.Contains(strings.ToLower(spec.Description), "blocked") {

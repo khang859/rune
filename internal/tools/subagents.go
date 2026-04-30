@@ -94,7 +94,7 @@ func RegisterSubagentTools(r *Registry, m SubagentManager) {
 }
 
 func (SpawnSubagent) Spec() ai.ToolSpec {
-	return ai.ToolSpec{Name: "spawn_subagent", Description: "Start a specialized subagent with isolated context. V1 supports read-only General subagents and can run them in the background.", Schema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"prompt":{"type":"string"},"agent_type":{"type":"string","default":"general","description":"Subagent type/name. Available: general."},"background":{"type":"boolean","default":true},"dependencies":{"type":"array","items":{"type":"string"},"description":"Optional subagent task IDs that must complete before this task starts."},"timeout_secs":{"type":"integer","default":600}},"required":["name","prompt"]}`)}
+	return ai.ToolSpec{Name: "spawn_subagent", Description: "Start a specialized subagent with isolated context. Supports read-only general, exploration, and validator subagents and can run them in the background.", Schema: json.RawMessage(`{"type":"object","properties":{"name":{"type":"string"},"prompt":{"type":"string"},"agent_type":{"type":"string","default":"general","description":"Subagent type/name. Available: general, exploration, validator."},"background":{"type":"boolean","default":true},"dependencies":{"type":"array","items":{"type":"string"},"description":"Optional subagent task IDs that must complete before this task starts."},"timeout_secs":{"type":"integer","default":600}},"required":["name","prompt"]}`)}
 }
 
 func (t SpawnSubagent) Run(ctx context.Context, args json.RawMessage) (Result, error) {

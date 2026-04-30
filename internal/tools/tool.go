@@ -16,6 +16,13 @@ type Tool interface {
 	Run(ctx context.Context, args json.RawMessage) (Result, error)
 }
 
+// PlanModeTool is implemented by tools that explicitly opt in to Plan Mode.
+// Built-in read-only tools are still controlled by the registry allowlist below;
+// this interface is primarily for external/MCP tools, which are denied by default.
+type PlanModeTool interface {
+	AllowedInPlanMode() bool
+}
+
 type Result struct {
 	Output  string
 	IsError bool
@@ -86,6 +93,10 @@ type BuiltinOptions struct {
 
 func RegisterBuiltins(r *Registry, opts BuiltinOptions) {
 	r.Register(Read{})
+	r.Register(ListFiles{})
+	r.Register(SearchFiles{})
+	r.Register(GitStatus{})
+	r.Register(GitDiff{})
 	r.Register(Write{})
 	r.Register(Edit{})
 	r.Register(Bash{})
@@ -136,9 +147,13 @@ func (r *Registry) toolAllowed(name string) bool {
 		return true
 	}
 	switch name {
-	case "read", "web_search", "web_fetch", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
+	case "read", "list_files", "search_files", "git_status", "git_diff", "web_search", "web_fetch", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
 		return true
-	default:
-		return false
 	}
+	if t, ok := r.tools[name]; ok {
+		if pm, ok := t.(PlanModeTool); ok {
+			return pm.AllowedInPlanMode()
+		}
+	}
+	return false
 }

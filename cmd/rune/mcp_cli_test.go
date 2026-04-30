@@ -114,8 +114,8 @@ func TestRunMCPList(t *testing.T) {
 	t.Setenv("RUNE_DIR", dir)
 	writeMCPConfig(t, mcp.Config{Servers: map[string]mcp.ServerConfig{
 		"sqlite":     {Command: "uvx", Args: []string{"mcp-server-sqlite", "--db-path", "/tmp/db.sqlite"}},
-		"filesystem": {Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp/work"}},
-		"context7":   {Type: "http", URL: "https://mcp.context7.com/mcp"},
+		"filesystem": {Command: "npx", Args: []string{"-y", "@modelcontextprotocol/server-filesystem", "/tmp/work"}, ReadOnly: true},
+		"context7":   {Type: "http", URL: "https://mcp.context7.com/mcp", PlanTools: []string{"query-docs", "resolve-library-id"}},
 	}})
 
 	var out bytes.Buffer
@@ -131,6 +131,11 @@ func TestRunMCPList(t *testing.T) {
 	}
 	if !strings.Contains(got, "context7") || !strings.Contains(got, "http https://mcp.context7.com/mcp") {
 		t.Fatalf("list output missing context7: %q", got)
+	}
+	for _, want := range []string{"plan: read-only", "plan: disabled", "plan: query-docs,resolve-library-id"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("list output missing %q: %q", want, got)
+		}
 	}
 	if strings.Index(got, "filesystem") > strings.Index(got, "sqlite") {
 		t.Fatalf("list output not sorted: %q", got)
@@ -199,7 +204,7 @@ func TestRunMCPValidate(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RUNE_DIR", dir)
 	writeMCPConfig(t, mcp.Config{Servers: map[string]mcp.ServerConfig{
-		"filesystem": {Command: "npx"},
+		"filesystem": {Command: "npx", PlanTools: []string{"read_file"}},
 	}})
 
 	var out bytes.Buffer
@@ -208,6 +213,19 @@ func TestRunMCPValidate(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "valid") {
 		t.Fatalf("validate output = %q, want valid", out.String())
+	}
+}
+
+func TestRunMCPValidateRejectsEmptyPlanTool(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RUNE_DIR", dir)
+	writeMCPConfig(t, mcp.Config{Servers: map[string]mcp.ServerConfig{
+		"filesystem": {Command: "npx", PlanTools: []string{"read_file", " "}},
+	}})
+
+	err := runMCP([]string{"validate"}, ioDiscard{}, ioDiscard{})
+	if err == nil || !strings.Contains(err.Error(), "empty plan_tools") {
+		t.Fatalf("err = %v, want empty plan_tools", err)
 	}
 }
 

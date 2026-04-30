@@ -16,6 +16,11 @@ rune's built-ins as `<server>:<tool>`.
     "sqlite": {
       "command": "uvx",
       "args": ["mcp-server-sqlite", "--db-path", "/tmp/db.sqlite"]
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "plan_tools": ["resolve-library-id", "query-docs"]
     }
   }
 }
@@ -23,6 +28,36 @@ rune's built-ins as `<server>:<tool>`.
 
 Each server is spawned at rune startup. If a server fails to spawn, rune logs
 the error to `~/.rune/log` and continues — its tools are simply unavailable.
+
+## Plan Mode access
+
+MCP tools are denied by default in Plan Mode because rune cannot infer whether an
+external tool mutates state. Opt in trusted read-only MCP tools with config
+metadata:
+
+```json
+{
+  "servers": {
+    "docs": {
+      "type": "http",
+      "url": "https://example.com/mcp",
+      "read_only": true
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "plan_tools": ["resolve-library-id", "query-docs"]
+    }
+  }
+}
+```
+
+- `read_only: true` allows all tools from that server while planning.
+- `plan_tools` allows only the listed unprefixed MCP tool names while planning.
+- With neither field set, tools from the server are hidden and runtime-denied in Plan Mode.
+
+Only use these fields for tools that cannot mutate files, databases, network
+state, issues, tickets, or other external resources.
 
 ## Lifecycle
 

@@ -357,7 +357,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if k, ok := msg.(tea.KeyMsg); ok {
 		if k.Type == tea.KeyShiftTab {
-			return m, m.toggleCopyMode()
+			return m, m.cycleInteractionMode()
 		}
 		if m.copyMode && k.Type == tea.KeyEsc {
 			return m, m.toggleCopyMode()
@@ -568,32 +568,23 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/copy-mode":
 		initCmd = m.toggleCopyMode()
 	case "/plan":
-		if m.streaming || m.compacting {
+		if !m.canChangeAgentMode() {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
-		m.agent.SetMode(agent.ModePlan)
-		m.footer.Mode = footerMode(m.agent.Mode())
-		m.planPending = true
-		m.msgs.OnInfo("plan mode: edits, bash, and MCP tools disabled")
+		initCmd = m.enterPlanMode("plan mode: edits and bash disabled; MCP tools require read-only allowlist")
 	case "/act":
-		if m.streaming || m.compacting {
+		if !m.canChangeAgentMode() {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
-		m.agent.SetMode(agent.ModeAct)
-		m.footer.Mode = footerMode(m.agent.Mode())
-		m.planPending = false
-		m.msgs.OnInfo("act mode: implementation tools enabled")
+		initCmd = m.enterActMode("act mode: implementation tools enabled")
 	case "/approve":
-		if m.streaming || m.compacting {
+		if !m.canChangeAgentMode() {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
-		m.agent.SetMode(agent.ModeAct)
-		m.footer.Mode = footerMode(m.agent.Mode())
-		m.planPending = false
-		m.msgs.OnInfo("plan approved; act mode enabled — send your next message to implement")
+		initCmd = m.enterActMode("plan approved; act mode enabled — send your next message to implement")
 	case "/cancel-plan":
 		if m.streaming || m.compacting {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -737,6 +728,8 @@ func (m *RootModel) View() string {
 	banner := ""
 	if m.copyMode {
 		banner = m.styles.CopyModeBanner.Render("[copy mode] drag to highlight, copy with your terminal shortcut · Shift+Tab/Esc to exit")
+	} else if m.agent.Mode() == agent.ModePlan {
+		banner = m.styles.PlanModeBanner.Render("Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve or /act to implement")
 	}
 	quitNotice := ""
 	if m.quitPrimed {
@@ -852,7 +845,7 @@ func (m *RootModel) layout() {
 		hintRows = 1
 	}
 	bannerRows := 0
-	if m.copyMode {
+	if m.copyMode || m.agent.Mode() == agent.ModePlan {
 		bannerRows = 1
 	}
 	quitPrimedRows := 0
@@ -1582,18 +1575,87 @@ func arcaneActivityPhrases(icons IconSet) []string {
 	}
 }
 
+func (m *RootModel) canChangeAgentMode() bool {
+	return !m.streaming && !m.compacting
+}
+
+func (m *RootModel) enterPlanMode(info string) tea.Cmd {
+	cmd := m.exitCopyMode()
+	m.agent.SetMode(agent.ModePlan)
+	m.footer.Mode = footerMode(m.agent.Mode())
+	m.planPending = true
+	if info != "" {
+		m.msgs.OnInfo(info)
+	}
+	m.layout()
+	return cmd
+}
+
+func (m *RootModel) enterActMode(info string) tea.Cmd {
+	cmd := m.exitCopyMode()
+	m.agent.SetMode(agent.ModeAct)
+	m.footer.Mode = footerMode(m.agent.Mode())
+	m.planPending = false
+	if info != "" {
+		m.msgs.OnInfo(info)
+	}
+	m.layout()
+	return cmd
+}
+
+// cycleInteractionMode advances through normal/act -> plan -> copy ->
+// normal/act. Copy mode is terminal-native, so entering it leaves plan mode and
+// surrenders mouse capture; leaving it restores mouse capture.
+func (m *RootModel) cycleInteractionMode() tea.Cmd {
+	if m.copyMode {
+		return m.enterActMode("normal mode")
+	}
+	if m.agent.Mode() == agent.ModePlan {
+		if !m.canChangeAgentMode() {
+			m.msgs.OnInfo("(busy — wait for current turn to finish)")
+			m.refreshViewport()
+			return nil
+		}
+		m.agent.SetMode(agent.ModeAct)
+		m.footer.Mode = footerMode(m.agent.Mode())
+		m.planPending = false
+		return m.enterCopyMode()
+	}
+	if !m.canChangeAgentMode() {
+		m.msgs.OnInfo("(busy — wait for current turn to finish)")
+		m.refreshViewport()
+		return nil
+	}
+	return m.enterPlanMode("plan mode: edits and bash disabled; MCP tools require read-only allowlist")
+}
+
 // toggleCopyMode flips terminal-native copy mode. When entering, we surrender
 // mouse capture so the terminal handles click-drag selection itself; the editor
 // is blurred and the box dims to signal it's not accepting input. When exiting,
 // we re-enable wheel-scroll and restore editor focus (unless a turn is
 // streaming or compacting, which independently keep the editor blurred).
 func (m *RootModel) toggleCopyMode() tea.Cmd {
-	m.copyMode = !m.copyMode
 	if m.copyMode {
-		m.editor.Blur()
-		m.layout()
-		return tea.DisableMouse
+		return m.exitCopyMode()
 	}
+	return m.enterCopyMode()
+}
+
+func (m *RootModel) enterCopyMode() tea.Cmd {
+	if m.copyMode {
+		return nil
+	}
+	m.copyMode = true
+	m.editor.Blur()
+	m.layout()
+	return tea.DisableMouse
+}
+
+func (m *RootModel) exitCopyMode() tea.Cmd {
+	if !m.copyMode {
+		return nil
+	}
+	m.copyMode = false
 	if !m.streaming && !m.compacting {
 		m.editor.Focus()
 	}

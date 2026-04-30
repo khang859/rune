@@ -13,12 +13,14 @@ import (
 )
 
 type ServerConfig struct {
-	Type    string            `json:"type,omitempty"`
-	Command string            `json:"command,omitempty"`
-	Args    []string          `json:"args,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	URL     string            `json:"url,omitempty"`
-	Headers map[string]string `json:"headers,omitempty"`
+	Type      string            `json:"type,omitempty"`
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	ReadOnly  bool              `json:"read_only,omitempty"`
+	PlanTools []string          `json:"plan_tools,omitempty"`
 }
 
 type Config struct {
@@ -85,9 +87,10 @@ func (m *Manager) Start(ctx context.Context, reg *tools.Registry) error {
 		status.Connected = true
 		status.ToolCount = len(ts)
 		status.Tools = make([]string, 0, len(ts))
+		planTools := planToolSet(sc.PlanTools)
 		for _, t := range ts {
 			status.Tools = append(status.Tools, t.Name)
-			reg.Register(NewTool(c, t))
+			reg.Register(NewToolWithPlanMode(c, t, sc.ReadOnly || planTools[t.Name]))
 		}
 		m.mu.Lock()
 		m.clients[name] = c
@@ -165,6 +168,14 @@ func envSlice(m map[string]string) []string {
 	out = append(out, base...)
 	for k, v := range m {
 		out = append(out, k+"="+v)
+	}
+	return out
+}
+
+func planToolSet(names []string) map[string]bool {
+	out := make(map[string]bool, len(names))
+	for _, name := range names {
+		out[name] = true
 	}
 	return out
 }

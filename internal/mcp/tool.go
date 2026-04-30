@@ -10,13 +10,20 @@ import (
 )
 
 type MCPTool struct {
-	client *Client
-	tool   Tool
+	client            *Client
+	tool              Tool
+	allowedInPlanMode bool
 }
 
 func NewTool(c *Client, t Tool) *MCPTool {
-	return &MCPTool{client: c, tool: t}
+	return NewToolWithPlanMode(c, t, false)
 }
+
+func NewToolWithPlanMode(c *Client, t Tool, allowedInPlanMode bool) *MCPTool {
+	return &MCPTool{client: c, tool: t, allowedInPlanMode: allowedInPlanMode}
+}
+
+func (m *MCPTool) AllowedInPlanMode() bool { return m.allowedInPlanMode }
 
 func (m *MCPTool) Spec() ai.ToolSpec {
 	return ai.ToolSpec{

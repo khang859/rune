@@ -41,7 +41,7 @@ Type `/` in the editor to see all commands. Highlights:
 - `/tree` — jump to any point in the session
 - `/resume` — pick a previous session
 - `/compact` — summarize history
-- `/plan` — enter safe planning mode; edits, bash, and MCP tools are disabled
+- `/plan` — enter safe planning mode; edits and bash are disabled, and MCP tools require a read-only allowlist
 - `/act` — leave planning mode and enable implementation tools
 - `/approve` — approve a plan and return to act mode without auto-implementing
 - `/cancel-plan` — clear pending plan state while staying in plan mode
