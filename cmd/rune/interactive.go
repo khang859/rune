@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/khang859/rune/internal/agent"
+	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
@@ -47,9 +48,21 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride string)
 			filepath.Join(cwd, ".rune", "skills"),
 		},
 	}).Load()
+	customAgents, err := (&agentdef.Loader{
+		Roots: []string{
+			filepath.Join(home, ".rune", "agents"),
+			filepath.Join(cwd, ".rune", "agents"),
+		},
+		Reserved: agent.BuiltinSubagentTypeSet(),
+	}).Load()
+	if err != nil {
+		return err
+	}
 
 	system := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
-	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, agent.SubagentConfigFromSettings(settings.Subagents))
+	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
+	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
+	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 
 	return tui.Run(a, sess, skills, mgr.Statuses())

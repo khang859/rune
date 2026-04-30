@@ -102,11 +102,20 @@ Implemented in the fifth MVP pass:
 - Stale non-terminal tasks from prior processes are restored as cancelled with a session-restore error.
 - Full prompts/transcripts are intentionally not persisted yet.
 
+Implemented in the sixth MVP pass:
+
+- Custom user-defined subagent type registry loaded from `~/.rune/agents/*.md` and `./.rune/agents/*.md`.
+- Markdown/frontmatter custom agent definitions with `name`, `description`, `model`, `timeout_secs`, and `tools`.
+- Per-subagent model selection on the current provider.
+- Per-subagent default timeout, overridable by `spawn_subagent.timeout_secs`.
+- `tools: readonly` and `tools: full` custom subagent modes.
+- Full-tool subagents receive an act-mode cloned registry, while subagent-management tools remain stripped to prevent recursive subagents.
+
 Not yet implemented:
 
 - Subagent transcript/artifact persistence beyond durable task metadata.
 - Per-subagent model selection.
-- Custom user-defined subagent type registry.
+- Per-subagent provider selection. Custom subagents support model selection on the current provider.
 - File scopes and file locks.
 - Patch/worktree-based implementation subagents.
 - Peer-to-peer subagent messaging or full agent-team mode.

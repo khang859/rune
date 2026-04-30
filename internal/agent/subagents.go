@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -47,10 +48,38 @@ type SubagentEvent struct {
 	Status SubagentStatus     `json:"status"`
 }
 
+type SubagentToolMode string
+
+const (
+	SubagentToolsReadOnly SubagentToolMode = "readonly"
+	SubagentToolsFull     SubagentToolMode = "full"
+)
+
+type SubagentDefinition struct {
+	Name         string
+	Description  string
+	Model        string
+	Timeout      time.Duration
+	Tools        SubagentToolMode
+	Instructions string
+	Path         string
+}
+
+type SubagentTypeInfo struct {
+	Name        string
+	Builtin     bool
+	Description string
+	Model       string
+	Timeout     time.Duration
+	Tools       SubagentToolMode
+	Path        string
+}
+
 type SubagentConfig struct {
 	MaxConcurrent      int
 	DefaultTimeout     time.Duration
 	MaxCompletedRetain int
+	Definitions        map[string]SubagentDefinition
 }
 
 type SubagentSupervisor struct {
@@ -77,6 +106,7 @@ func NewSubagentSupervisor(parent *Agent, cfg SubagentConfig) *SubagentSuperviso
 	if cfg.MaxCompletedRetain <= 0 {
 		cfg.MaxCompletedRetain = 100
 	}
+	cfg.Definitions = normalizeSubagentDefinitions(cfg.Definitions)
 	s := &SubagentSupervisor{
 		parent:      parent,
 		cfg:         cfg,
@@ -204,8 +234,12 @@ func (s *SubagentSupervisor) Spawn(ctx context.Context, req tools.SpawnSubagentR
 		return nil, fmt.Errorf("prompt is required")
 	}
 	req.AgentType = normalizeSubagentType(req.AgentType)
-	if !validSubagentType(req.AgentType) {
-		return nil, fmt.Errorf("unknown agent_type %q. Available subagent types: %s", req.AgentType, strings.Join(subagentTypes, ", "))
+	def, ok := s.subagentDefinition(req.AgentType)
+	if !ok {
+		return nil, fmt.Errorf("unknown agent_type %q. Available subagent types: %s", req.AgentType, strings.Join(s.availableSubagentTypes(), ", "))
+	}
+	if req.TimeoutSecs <= 0 && def.Timeout > 0 {
+		req.TimeoutSecs = int(def.Timeout / time.Second)
 	}
 
 	deps := cleanDependencies(req.Dependencies)
@@ -283,6 +317,39 @@ func (s *SubagentSupervisor) List() []tools.SubagentTask {
 		if t := s.tasks[id]; t != nil {
 			out = append(out, toToolSubagentTask(t))
 		}
+	}
+	return out
+}
+
+func (s *SubagentSupervisor) SetDefinitions(defs map[string]SubagentDefinition) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cfg.Definitions = normalizeSubagentDefinitions(defs)
+}
+
+func (s *SubagentSupervisor) Types() []SubagentTypeInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]SubagentTypeInfo, 0, len(subagentTypes)+len(s.cfg.Definitions))
+	for _, name := range subagentTypes {
+		out = append(out, SubagentTypeInfo{Name: name, Builtin: true, Tools: SubagentToolsReadOnly})
+	}
+	names := make([]string, 0, len(s.cfg.Definitions))
+	for name := range s.cfg.Definitions {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		def := s.cfg.Definitions[name]
+		out = append(out, SubagentTypeInfo{
+			Name:        def.Name,
+			Builtin:     false,
+			Description: def.Description,
+			Model:       def.Model,
+			Timeout:     def.Timeout,
+			Tools:       def.Tools,
+			Path:        def.Path,
+		})
 	}
 	return out
 }
@@ -389,13 +456,21 @@ func (s *SubagentSupervisor) runTask(parentCtx context.Context, id string, req t
 }
 
 func (s *SubagentSupervisor) runIsolatedAgent(ctx context.Context, req tools.SpawnSubagentRequest, prompt string) (string, error) {
-	childSession := session.New(s.parent.session.Model)
+	def, _ := s.subagentDefinition(req.AgentType)
+	model := s.parent.session.Model
+	if strings.TrimSpace(def.Model) != "" {
+		model = strings.TrimSpace(def.Model)
+	}
+	childSession := session.New(model)
 	childTools := s.parent.tools.CloneReadOnly()
+	if def.Tools == SubagentToolsFull {
+		childTools = s.parent.tools.CloneForSubagentFull()
+	}
 	childSystem := s.parent.system
 	if childSystem != "" {
 		childSystem += "\n\n"
 	}
-	childSystem += subagentSystemPrompt(req.AgentType)
+	childSystem += subagentSystemPrompt(req.AgentType, def)
 	child := New(s.parent.provider, childTools, childSession, childSystem)
 	child.SetReasoningEffort(s.parent.effort)
 
@@ -612,6 +687,14 @@ func cleanDependencies(deps []string) []string {
 
 var subagentTypes = []string{"general", "exploration", "validator"}
 
+func BuiltinSubagentTypeSet() map[string]bool {
+	out := map[string]bool{}
+	for _, typ := range subagentTypes {
+		out[typ] = true
+	}
+	return out
+}
+
 func normalizeSubagentType(t string) string {
 	t = strings.ToLower(strings.TrimSpace(t))
 	if t == "" {
@@ -620,13 +703,57 @@ func normalizeSubagentType(t string) string {
 	return t
 }
 
-func validSubagentType(t string) bool {
+func (s *SubagentSupervisor) subagentDefinition(t string) (SubagentDefinition, bool) {
+	t = normalizeSubagentType(t)
 	for _, typ := range subagentTypes {
 		if t == typ {
-			return true
+			return SubagentDefinition{Name: typ, Tools: SubagentToolsReadOnly}, true
 		}
 	}
-	return false
+	if s != nil {
+		def, ok := s.cfg.Definitions[t]
+		return def, ok
+	}
+	return SubagentDefinition{}, false
+}
+
+func (s *SubagentSupervisor) availableSubagentTypes() []string {
+	out := append([]string(nil), subagentTypes...)
+	if s != nil {
+		for name := range s.cfg.Definitions {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func normalizeSubagentDefinitions(in map[string]SubagentDefinition) map[string]SubagentDefinition {
+	out := map[string]SubagentDefinition{}
+	for name, def := range in {
+		if def.Name == "" {
+			def.Name = name
+		}
+		def.Name = normalizeSubagentType(def.Name)
+		if def.Name == "" {
+			continue
+		}
+		reserved := false
+		for _, typ := range subagentTypes {
+			if def.Name == typ {
+				reserved = true
+				break
+			}
+		}
+		if reserved {
+			continue
+		}
+		if def.Tools == "" {
+			def.Tools = SubagentToolsReadOnly
+		}
+		out[def.Name] = def
+	}
+	return out
 }
 
 var familiarNames = []string{
@@ -692,7 +819,7 @@ func toToolSubagentTask(t *SubagentTask) tools.SubagentTask {
 	}
 }
 
-func subagentSystemPrompt(agentType string) string {
+func subagentSystemPrompt(agentType string, def SubagentDefinition) string {
 	base := `You are a rune subagent of type "` + agentType + `".
 
 Work independently on the delegated task using your own isolated context. Keep your scope narrow. Prefer reading and analysis. Do not attempt to modify files or run shell commands unless explicitly available as tools.`
@@ -717,7 +844,12 @@ Validator focus:
 - Do not implement; return approval concerns and suggested revisions.`
 	}
 
-	return base + specialized + `
+	custom := ""
+	if strings.TrimSpace(def.Instructions) != "" {
+		custom = "\n\nCustom subagent instructions:\n" + strings.TrimSpace(def.Instructions)
+	}
+
+	return base + specialized + custom + `
 
 Return a concise structured final answer using this format:
 

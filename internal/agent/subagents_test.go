@@ -81,10 +81,10 @@ func TestSubagentSupervisor_AcceptsPlanningTypes(t *testing.T) {
 }
 
 func TestSubagentSystemPromptSpecializesPlanningTypes(t *testing.T) {
-	if got := subagentSystemPrompt("exploration"); !strings.Contains(got, "Exploration focus") || !strings.Contains(got, "Discover the relevant files") {
+	if got := subagentSystemPrompt("exploration", SubagentDefinition{}); !strings.Contains(got, "Exploration focus") || !strings.Contains(got, "Discover the relevant files") {
 		t.Fatalf("exploration prompt missing specialization:\n%s", got)
 	}
-	if got := subagentSystemPrompt("validator"); !strings.Contains(got, "Validator focus") || !strings.Contains(got, "Review the proposed plan") {
+	if got := subagentSystemPrompt("validator", SubagentDefinition{}); !strings.Contains(got, "Validator focus") || !strings.Contains(got, "Review the proposed plan") {
 		t.Fatalf("validator prompt missing specialization:\n%s", got)
 	}
 }
@@ -125,6 +125,70 @@ func TestSubagentSupervisor_RejectsUnknownType(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestSubagentSupervisor_CustomDefinitionModelTimeoutAndInstructions(t *testing.T) {
+	p := &subagentCaptureProvider{}
+	cfg := SubagentConfig{
+		DefaultTimeout: time.Minute,
+		Definitions: map[string]SubagentDefinition{
+			"security-reviewer": {
+				Name:         "security-reviewer",
+				Model:        "gpt-custom",
+				Timeout:      2 * time.Minute,
+				Tools:        SubagentToolsReadOnly,
+				Instructions: "Check auth boundaries.",
+			},
+		},
+	}
+	a := NewWithSubagentConfig(p, tools.NewRegistry(), session.New("gpt-parent"), "", cfg)
+	task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{Name: "review", Prompt: "do it", AgentType: "security-reviewer", Background: false})
+	if err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+	if task.AgentType != "security-reviewer" {
+		t.Fatalf("agent type = %q", task.AgentType)
+	}
+	if len(p.requests) != 1 {
+		t.Fatalf("requests = %d, want 1", len(p.requests))
+	}
+	if p.requests[0].Model != "gpt-custom" {
+		t.Fatalf("model = %q, want gpt-custom", p.requests[0].Model)
+	}
+	if !strings.Contains(p.requests[0].System, "Check auth boundaries.") {
+		t.Fatalf("system missing custom instructions:\n%s", p.requests[0].System)
+	}
+}
+
+func TestSubagentSupervisor_CustomDefinitionFullTools(t *testing.T) {
+	reg := tools.NewRegistry()
+	reg.Register(tools.Write{})
+	cfg := SubagentConfig{Definitions: map[string]SubagentDefinition{"impl": {Name: "impl", Tools: SubagentToolsFull}}}
+	a := NewWithSubagentConfig(faux.New().CallTool("write", `{"path":"/tmp/rune-subagent-test","content":"ok"}`).Done().Reply("wrote").Done(), reg, session.New("gpt-test"), "", cfg)
+	_, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{Name: "impl", Prompt: "write", AgentType: "impl", Background: false})
+	if err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+}
+
+func TestSubagentSupervisor_TypesIncludesBuiltinsAndCustomDefinitions(t *testing.T) {
+	cfg := SubagentConfig{Definitions: map[string]SubagentDefinition{
+		"impl": {Name: "impl", Description: "Makes changes", Model: "gpt-custom", Timeout: 3 * time.Minute, Tools: SubagentToolsFull, Path: "/tmp/impl.md"},
+	}}
+	a := NewWithSubagentConfig(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "", cfg)
+	types := a.Subagents().Types()
+	var sawGeneral, sawImpl bool
+	for _, typ := range types {
+		switch typ.Name {
+		case "general":
+			sawGeneral = typ.Builtin && typ.Tools == SubagentToolsReadOnly
+		case "impl":
+			sawImpl = !typ.Builtin && typ.Description == "Makes changes" && typ.Model == "gpt-custom" && typ.Timeout == 3*time.Minute && typ.Tools == SubagentToolsFull && typ.Path == "/tmp/impl.md"
+		}
+	}
+	if !sawGeneral || !sawImpl {
+		t.Fatalf("types = %+v", types)
 	}
 }
 

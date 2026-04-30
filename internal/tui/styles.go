@@ -47,7 +47,7 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		Assistant:            lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
 		Thinking:             lipgloss.NewStyle().Faint(true).Italic(true),
 		ToolCall:             lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
-		ToolResult:           lipgloss.NewStyle().Foreground(lipgloss.Color("8")),
+		ToolResult:           lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
 		ToolError:            lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		DiffAdd:              lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
 		DiffDel:              lipgloss.NewStyle().Foreground(lipgloss.Color("9")),

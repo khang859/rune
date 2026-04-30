@@ -57,6 +57,8 @@ See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mod
 
 - **Skills** — drop a `.md` file into `~/.rune/skills/` or `./.rune/skills/`.
   See `docs/skills.md`.
+- **Custom subagents** — drop a `.md` file into `~/.rune/agents/` or `./.rune/agents/`.
+  See `docs/subagents.md`.
 - **MCP plugins** — configure `~/.rune/mcp.json`. See `docs/mcp.md`.
 - **Project context** — rune walks up from the cwd collecting `AGENTS.md`.
 

@@ -78,11 +78,22 @@ func (r *Registry) Clone() *Registry {
 func (r *Registry) CloneReadOnly() *Registry {
 	cp := r.Clone()
 	cp.SetPermissionMode(PermissionModePlan)
-	cp.Unregister("spawn_subagent")
-	cp.Unregister("list_subagents")
-	cp.Unregister("get_subagent_result")
-	cp.Unregister("cancel_subagent")
+	cp.UnregisterSubagentTools()
 	return cp
+}
+
+func (r *Registry) CloneForSubagentFull() *Registry {
+	cp := r.Clone()
+	cp.SetPermissionMode(PermissionModeAct)
+	cp.UnregisterSubagentTools()
+	return cp
+}
+
+func (r *Registry) UnregisterSubagentTools() {
+	r.Unregister("spawn_subagent")
+	r.Unregister("list_subagents")
+	r.Unregister("get_subagent_result")
+	r.Unregister("cancel_subagent")
 }
 
 type BuiltinOptions struct {

@@ -1,7 +1,6 @@
 package editor
 
 import (
-	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
@@ -333,39 +332,18 @@ func (e *Editor) submit() Result {
 		cmd := strings.TrimPrefix(text, "!")
 		return Result{ShellCommand: cmd, ShellMode: ShellModeSend}
 	}
-	text = e.consumeImagePathsInline(text)
+	e.attachImagePathsInText(text)
 	return Result{Send: true, Text: text, Images: e.atts.Drain()}
 }
 
-// consumeImagePathsInline removes lines that are bare image paths and adds them as attachments.
-func (e *Editor) consumeImagePathsInline(text string) string {
-	var keep []string
-	for _, line := range strings.Split(text, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if isImageFile(trimmed) {
-			if _, err := os.Stat(trimmed); err == nil {
-				if err := e.atts.AddFromPath(trimmed); err == nil {
-					continue
-				}
-			}
-		}
-		keep = append(keep, line)
+// attachImagePathsInText finds local image paths anywhere in submitted prose and
+// attaches only files that exist, are regular/readable, and contain supported
+// image bytes. The original text is preserved so the model still sees the
+// user's surrounding instruction.
+func (e *Editor) attachImagePathsInText(text string) {
+	for _, p := range extractImagePathCandidates(text, e.cwd) {
+		_ = e.atts.AddFromPath(p)
 	}
-	return strings.Join(keep, "\n")
-}
-
-func isImageFile(s string) bool {
-	if s == "" || !strings.ContainsAny(s, "/\\") {
-		return false
-	}
-	return mimeFromExt(extOf(s)) != ""
-}
-
-func extOf(s string) string {
-	if i := strings.LastIndex(s, "."); i >= 0 {
-		return s[i:]
-	}
-	return ""
 }
 
 func (e *Editor) maybeOpenOverlay() {

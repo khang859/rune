@@ -3,6 +3,7 @@ package agent
 import (
 	"time"
 
+	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
@@ -52,10 +53,37 @@ func SubagentConfigFromSettings(s config.SubagentSettings) SubagentConfig {
 	}
 }
 
+func SubagentDefinitionsFromAgentDefs(defs map[string]agentdef.Definition) map[string]SubagentDefinition {
+	out := map[string]SubagentDefinition{}
+	for name, def := range defs {
+		mode := SubagentToolsReadOnly
+		if def.Tools == agentdef.ToolsFull {
+			mode = SubagentToolsFull
+		}
+		out[name] = SubagentDefinition{
+			Name:         def.Name,
+			Description:  def.Description,
+			Model:        def.Model,
+			Timeout:      time.Duration(def.TimeoutSecs) * time.Second,
+			Tools:        mode,
+			Instructions: def.Instructions,
+			Path:         def.Path,
+		}
+	}
+	return out
+}
+
 func (a *Agent) Provider() ai.Provider          { return a.provider }
 func (a *Agent) Tools() *tools.Registry         { return a.tools }
 func (a *Agent) System() string                 { return a.system }
 func (a *Agent) Subagents() *SubagentSupervisor { return a.subagents }
+
+func (a *Agent) SetSubagentDefinitions(defs map[string]SubagentDefinition) {
+	if a == nil || a.subagents == nil {
+		return
+	}
+	a.subagents.SetDefinitions(defs)
+}
 
 func (a *Agent) RegisterSubagentTools() {
 	tools.RegisterSubagentTools(a.tools, a.subagents)
