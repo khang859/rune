@@ -99,6 +99,62 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("r", 24) {
+			t.Errorf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"runpod\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_RUNPOD_API_KEY", strings.Repeat("r", 24))
+	settings := map[string]any{
+		"provider":        "runpod",
+		"runpod_model":    "custom/model",
+		"runpod_endpoint": srv.URL,
+	}
+	b, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(runeDir, "settings.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "runpod") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
+func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer ollama-token" {
+			t.Errorf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ollama-auth\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+	t.Setenv("RUNE_OLLAMA_API_KEY", "ollama-token")
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "ollama-auth") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
 func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("g", 24) {

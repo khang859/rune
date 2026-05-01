@@ -26,7 +26,10 @@ type Settings struct {
 	BraveAPIKeyStatus     string
 	TavilyAPIKeyStatus    string
 	GroqAPIKeyStatus      string
+	OllamaAPIKeyStatus    string
 	RunpodAPIKeyStatus    string
+	OllamaEndpointStatus  string
+	RunpodEndpointStatus  string
 }
 
 type SettingsAction struct {
@@ -59,6 +62,11 @@ type settingsRow struct {
 
 const (
 	settingsRowProvider = iota
+	settingsRowOllamaAPIKey
+	settingsRowGroqAPIKey
+	settingsRowRunpodAPIKey
+	settingsRowOllamaEndpoint
+	settingsRowRunpodEndpoint
 	settingsRowEffort
 	settingsRowIconMode
 	settingsRowActivityMode
@@ -70,8 +78,6 @@ const (
 	settingsRowSearchProvider
 	settingsRowBraveAPIKey
 	settingsRowTavilyAPIKey
-	settingsRowGroqAPIKey
-	settingsRowRunpodAPIKey
 	settingsRowSubagents
 	settingsRowSubagentMaxConcurrent
 	settingsRowSubagentTimeout
@@ -86,6 +92,11 @@ func NewSettings(cur Settings) Modal {
 	}
 	return &SettingsModal{cur: cur, rows: []settingsRow{
 		newSettingsRow("Provider", "provider", []string{"none", "codex", "groq", "ollama", "runpod"}, provider),
+		{kind: settingsRowAction, section: "Provider", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
+		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
@@ -97,8 +108,6 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Web Scrying", "search provider", []string{"auto", "brave", "tavily", "searxng"}, cur.SearchProvider),
 		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
 		{kind: settingsRowAction, section: "Web Scrying", label: "tavily api key", action: "tavily_api_key", status: cur.TavilyAPIKeyStatus},
-		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
-		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
 		newSettingsRow("Subagents", "subagents", []string{"off", "on"}, cur.Subagents),
 		newSettingsRow("Subagents", "max concurrent", []string{"1", "2", "4", "8"}, cur.SubagentMaxConcurrent),
 		newSettingsRow("Subagents", "default timeout", []string{"30s", "60s", "120s", "300s", "600s"}, cur.SubagentTimeout),
@@ -155,8 +164,17 @@ func normalizeSettings(s Settings) Settings {
 	if s.GroqAPIKeyStatus == "" {
 		s.GroqAPIKeyStatus = "missing — Enter to set"
 	}
+	if s.OllamaAPIKeyStatus == "" {
+		s.OllamaAPIKeyStatus = "optional — Enter to set"
+	}
 	if s.RunpodAPIKeyStatus == "" {
 		s.RunpodAPIKeyStatus = "missing — Enter to set"
+	}
+	if s.OllamaEndpointStatus == "" {
+		s.OllamaEndpointStatus = "default local — Enter to edit"
+	}
+	if s.RunpodEndpointStatus == "" {
+		s.RunpodEndpointStatus = "model default — Enter to set"
 	}
 	return s
 }
@@ -236,7 +254,10 @@ func (s *SettingsModal) selectedSettings() Settings {
 		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
 		TavilyAPIKeyStatus:    s.cur.TavilyAPIKeyStatus,
 		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
+		OllamaAPIKeyStatus:    s.cur.OllamaAPIKeyStatus,
 		RunpodAPIKeyStatus:    s.cur.RunpodAPIKeyStatus,
+		OllamaEndpointStatus:  s.cur.OllamaEndpointStatus,
+		RunpodEndpointStatus:  s.cur.RunpodEndpointStatus,
 	}
 }
 

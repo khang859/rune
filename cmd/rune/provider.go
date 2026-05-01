@@ -85,9 +85,16 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
 			endpoint = v
 		}
-		return providerSelection{Provider: provider, Model: model, AI: ollama.New(endpoint)}, nil
+		key, err := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
+		if err != nil {
+			return providerSelection{}, err
+		}
+		return providerSelection{Provider: provider, Model: model, AI: ollama.New(endpoint, key)}, nil
 	case providers.Runpod:
-		endpoint := runpod.EndpointForModel(model)
+		endpoint := settings.RunpodEndpoint
+		if endpoint == "" {
+			endpoint = runpod.EndpointForModel(model)
+		}
 		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
 			endpoint = v
 		}

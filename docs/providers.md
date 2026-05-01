@@ -123,12 +123,13 @@ rune --provider ollama --model llama3.2
 
 Ollama model names are local/user-controlled tags, so rune accepts arbitrary model IDs such as `qwen3:4b`, `qwen2.5-coder:14b`, or a custom model you created with Ollama. In the TUI, `/model` lists installed local models from Ollama's `/api/tags` endpoint when available and also offers a `custom…` entry for typing any model name.
 
-`rune login ollama` is not required; local Ollama does not use OAuth or API keys.
+`rune login ollama` is not required; local Ollama does not use OAuth or API keys. If your Ollama-compatible endpoint is behind an authenticated proxy, save an optional Ollama API key from `/settings` or use an environment variable.
 
 ### Env overrides
 
 - `RUNE_OLLAMA_MODEL` — model default for Ollama.
 - `RUNE_OLLAMA_ENDPOINT` — override the OpenAI-compatible chat completions endpoint. Defaults to `http://localhost:11434/v1/chat/completions`.
+- `RUNE_OLLAMA_API_KEY` / `OLLAMA_API_KEY` — optional bearer token for authenticated Ollama-compatible endpoints.
 
 If a selected model is not installed, run:
 
@@ -183,13 +184,13 @@ Available from `/model` when the active provider is Runpod:
 
 ### Custom/private endpoints
 
-Set `RUNE_RUNPOD_ENDPOINT` for a private/custom Runpod Serverless vLLM endpoint. Accepted values include:
+Set `RUNE_RUNPOD_ENDPOINT` for a private/custom Runpod Serverless vLLM endpoint, or save `runpod_endpoint` from `/settings`. Accepted values include:
 
 - Full chat-completions URL, e.g. `https://api.runpod.ai/v2/<endpoint-id>/openai/v1/chat/completions`
 - OpenAI-compatible base URL, e.g. `https://api.runpod.ai/v2/<endpoint-id>/openai/v1`
 - Endpoint ID/slug only, e.g. `<endpoint-id>` (expanded to `https://api.runpod.ai/v2/<endpoint-id>/openai/v1/chat/completions`)
 
-Set `RUNE_RUNPOD_MODEL` to the model ID deployed by that endpoint.
+Set `RUNE_RUNPOD_MODEL` or use `/model` to select the model ID deployed by that endpoint. Environment variables take precedence over saved `/settings` values.
 
 ### Env overrides
 

@@ -39,6 +39,24 @@ func TestStream_NoAuthRequiredAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestStream_SendsAuthWhenAPIKeyConfigured(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer OK" {
+			t.Fatalf("auth header = %q, want bearer", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+	p := New(srv.URL, "OK")
+	ch, err := p.Stream(context.Background(), ai.Request{Model: "llama3.2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+}
+
 func TestStream_RetriesRateLimit(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -93,10 +111,13 @@ func TestListModelsUsesAPITags(t *testing.T) {
 		if r.URL.Path != "/api/tags" {
 			t.Fatalf("path = %q, want /api/tags", r.URL.Path)
 		}
+		if got := r.Header.Get("Authorization"); got != "Bearer OK" {
+			t.Fatalf("auth header = %q, want bearer", got)
+		}
 		_, _ = w.Write([]byte(`{"models":[{"name":"llama3.2"},{"name":"qwen3:4b"}]}`))
 	}))
 	defer srv.Close()
-	models, err := ListModels(context.Background(), srv.URL+"/v1/chat/completions")
+	models, err := ListModels(context.Background(), srv.URL+"/v1/chat/completions", "OK")
 	if err != nil {
 		t.Fatal(err)
 	}

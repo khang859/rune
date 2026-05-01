@@ -788,7 +788,13 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 	if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
 		endpoint = v
 	}
-	if models, err := ollama.ListModels(context.Background(), endpoint); err == nil && len(models) > 0 {
+	key, keyErr := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
+	if keyErr != nil {
+		m.msgs.OnInfo(fmt.Sprintf("(could not load Ollama API key: %v; choose custom or run `ollama pull <model>`)", keyErr))
+		m.refreshViewport()
+		return m.openModal(modal.NewOllamaModelPicker(items, m.sess.Model))
+	}
+	if models, err := ollama.ListModels(context.Background(), endpoint, key); err == nil && len(models) > 0 {
 		items = models
 	} else if err != nil {
 		m.msgs.OnInfo(fmt.Sprintf("(could not list Ollama models: %v; choose custom or run `ollama pull <model>`)", err))
@@ -1240,8 +1246,19 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "groq_api_key" {
 				return m.openModal(modal.NewSecretInput("Groq API key", "groq_api_key"))
 			}
+			if v.Action == "ollama_api_key" {
+				return m.openModal(modal.NewSecretInput("Ollama API key", "ollama_api_key"))
+			}
 			if v.Action == "runpod_api_key" {
 				return m.openModal(modal.NewSecretInput("Runpod API key", "runpod_api_key"))
+			}
+			if v.Action == "ollama_endpoint" {
+				settings, _ := config.LoadSettings(config.SettingsPath())
+				return m.openModal(modal.NewTextInput("Ollama endpoint", "ollama_endpoint", settings.OllamaEndpoint))
+			}
+			if v.Action == "runpod_endpoint" {
+				settings, _ := config.LoadSettings(config.SettingsPath())
+				return m.openModal(modal.NewTextInput("Runpod endpoint", "runpod_endpoint", settings.RunpodEndpoint))
 			}
 		case modal.Settings:
 			if v.Provider != m.sess.Provider {
@@ -1251,17 +1268,24 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 	case *modal.TextInput:
 		if res, ok := payload.(modal.TextInputResult); ok {
-			if res.Action == "ollama_model" && strings.TrimSpace(res.Value) != "" {
-				id := strings.TrimSpace(res.Value)
-				m.sess.Model = id
-				m.footer.Model = id
-				m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
-				m.clampThinkingForCurrentModel()
-				m.refreshFooterThinkingEffort()
-				m.saveProviderSettings()
-				m.saveSessionIfStarted()
-				m.msgs.OnInfo(fmt.Sprintf("(ollama model: %s)", id))
-				m.refreshViewport()
+			switch res.Action {
+			case "ollama_model":
+				if strings.TrimSpace(res.Value) != "" {
+					id := strings.TrimSpace(res.Value)
+					m.sess.Model = id
+					m.footer.Model = id
+					m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+					m.clampThinkingForCurrentModel()
+					m.refreshFooterThinkingEffort()
+					m.saveProviderSettings()
+					m.saveSessionIfStarted()
+					m.msgs.OnInfo(fmt.Sprintf("(ollama model: %s)", id))
+					m.refreshViewport()
+				}
+			case "ollama_endpoint":
+				m.saveEndpointSetting(providers.Ollama, res.Value)
+			case "runpod_endpoint":
+				m.saveEndpointSetting(providers.Runpod, res.Value)
 			}
 		}
 	case *modal.SecretInput:
@@ -1289,6 +1313,20 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				} else {
 					m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
 					m.msgs.OnInfo("(saved Groq API key)")
+				}
+			case "ollama_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetOllamaAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.OllamaAPIKeyStatus = "configured — Enter to replace"
+					if m.sess.Provider == providers.Ollama {
+						if p, err := buildTUIProvider(providers.Ollama); err == nil {
+							m.replaceActiveProvider(p)
+						} else {
+							m.msgs.OnTurnError(err)
+						}
+					}
+					m.msgs.OnInfo("(saved Ollama API key)")
 				}
 			case "runpod_api_key":
 				if err := config.NewSecretStore(config.SecretsPath()).SetRunpodAPIKey(res.Value); err != nil {
@@ -1429,18 +1467,9 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	m.pendingSubagentContinuation = false
 	_ = m.startSubagentListener()
 	m.settings.Provider = provider
-	if provider == providers.Groq {
-		m.settings.GroqAPIKeyStatus = "missing — Enter to set"
-		if groqKeyConfigured() {
-			m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
-		}
-	}
-	if provider == providers.Runpod {
-		m.settings.RunpodAPIKeyStatus = "missing — Enter to set"
-		if runpodKeyConfigured() {
-			m.settings.RunpodAPIKeyStatus = "configured — Enter to replace"
-		}
-	}
+	loadedSettings, _ = config.LoadSettings(config.SettingsPath())
+	loadedSettings.Provider = provider
+	m.settings = modalSettingsFromConfig(loadedSettings, braveKeyConfigured(), tavilyKeyConfigured())
 	m.clampThinkingForCurrentModel()
 	m.refreshFooterThinkingEffort()
 	if provider == "" {
@@ -1481,7 +1510,11 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
 			endpoint = v
 		}
-		return ollama.New(endpoint), nil
+		key, err := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
+		if err != nil {
+			return nil, err
+		}
+		return ollama.New(endpoint, key), nil
 	case providers.Runpod:
 		settings, _ := config.LoadSettings(config.SettingsPath())
 		model := settings.RunpodModel
@@ -1491,7 +1524,10 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 		if model == "" {
 			model = providers.DefaultRunpodModel
 		}
-		endpoint := runpod.EndpointForModel(model)
+		endpoint := settings.RunpodEndpoint
+		if endpoint == "" {
+			endpoint = runpod.EndpointForModel(model)
+		}
 		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
 			endpoint = v
 		}
@@ -1515,6 +1551,54 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 		}
 		return codex.New(endpoint, src), nil
 	}
+}
+
+func (m *RootModel) replaceActiveProvider(p ai.Provider) {
+	prev := m.agent.ReasoningEffort()
+	prevMode := m.agent.Mode()
+	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
+	m.agent.SetReasoningEffort(prev)
+	m.agent.SetMode(prevMode)
+	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
+	m.subagents = map[string]agent.SubagentEvent{}
+	m.autoContinueSubagentResults = map[string]bool{}
+	m.pendingSubagentContinuation = false
+	_ = m.startSubagentListener()
+}
+
+func (m *RootModel) saveEndpointSetting(provider, endpoint string) {
+	s, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		s = config.DefaultSettings()
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	switch provider {
+	case providers.Ollama:
+		s.OllamaEndpoint = endpoint
+	case providers.Runpod:
+		s.RunpodEndpoint = endpoint
+	}
+	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return
+	}
+	updated, _ := config.LoadSettings(config.SettingsPath())
+	m.settings = modalSettingsFromConfig(updated, braveKeyConfigured(), tavilyKeyConfigured())
+	if m.sess.Provider == provider {
+		if p, err := buildTUIProvider(provider); err == nil {
+			m.replaceActiveProvider(p)
+		} else {
+			m.msgs.OnTurnError(err)
+		}
+	}
+	if provider == providers.Runpod && endpoint == "" {
+		m.msgs.OnInfo("(runpod endpoint reset to model default)")
+	} else if provider == providers.Ollama && endpoint == "" {
+		m.msgs.OnInfo("(ollama endpoint reset to default local)")
+	} else {
+		m.msgs.OnInfo(fmt.Sprintf("(%s endpoint saved)", provider))
+	}
+	m.refreshViewport()
 }
 
 func (m *RootModel) saveProviderSettings() {

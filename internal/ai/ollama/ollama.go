@@ -21,17 +21,23 @@ const (
 
 type Provider struct {
 	endpoint       string
+	apiKey         string
 	httpClient     *http.Client
 	maxRetries     int
 	retryBaseDelay time.Duration
 }
 
-func New(endpoint string) *Provider {
+func New(endpoint string, apiKey ...string) *Provider {
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
 	}
+	key := ""
+	if len(apiKey) > 0 {
+		key = strings.TrimSpace(apiKey[0])
+	}
 	return &Provider{
 		endpoint:       endpoint,
+		apiKey:         key,
 		httpClient:     &http.Client{Timeout: 0},
 		maxRetries:     3,
 		retryBaseDelay: time.Second,
@@ -127,6 +133,9 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("User-Agent", "rune")
+	if p.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+p.apiKey)
+	}
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {
@@ -209,9 +218,13 @@ func (d errorDetails) isModelNotFound() bool {
 // ListModels returns model names installed on the Ollama instance backing a
 // chat-completions endpoint. It uses Ollama's native /api/tags endpoint because
 // that endpoint explicitly reports local models and tags.
-func ListModels(ctx context.Context, chatEndpoint string) ([]string, error) {
+func ListModels(ctx context.Context, chatEndpoint string, apiKey ...string) ([]string, error) {
 	if chatEndpoint == "" {
 		chatEndpoint = DefaultEndpoint
+	}
+	key := ""
+	if len(apiKey) > 0 {
+		key = strings.TrimSpace(apiKey[0])
 	}
 	tags, err := tagsEndpoint(chatEndpoint)
 	if err != nil {
@@ -223,6 +236,9 @@ func ListModels(ctx context.Context, chatEndpoint string) ([]string, error) {
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "rune")
+	if key != "" {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
 		return nil, err

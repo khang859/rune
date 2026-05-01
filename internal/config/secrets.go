@@ -13,6 +13,7 @@ type Secrets struct {
 	BraveSearchAPIKey string `json:"brave_search_api_key,omitempty"`
 	TavilyAPIKey      string `json:"tavily_api_key,omitempty"`
 	GroqAPIKey        string `json:"groq_api_key,omitempty"`
+	OllamaAPIKey      string `json:"ollama_api_key,omitempty"`
 	RunpodAPIKey      string `json:"runpod_api_key,omitempty"`
 }
 
@@ -35,6 +36,7 @@ func (s *SecretStore) Load() (Secrets, error) {
 	sec.BraveSearchAPIKey = NormalizeBraveAPIKeyInput(sec.BraveSearchAPIKey)
 	sec.TavilyAPIKey = NormalizeTavilyAPIKeyInput(sec.TavilyAPIKey)
 	sec.GroqAPIKey = NormalizeGroqAPIKeyInput(sec.GroqAPIKey)
+	sec.OllamaAPIKey = NormalizeOllamaAPIKeyInput(sec.OllamaAPIKey)
 	sec.RunpodAPIKey = NormalizeRunpodAPIKeyInput(sec.RunpodAPIKey)
 	return sec, nil
 }
@@ -165,6 +167,42 @@ func (s *SecretStore) DeleteGroqAPIKey() error {
 	return s.Save(sec)
 }
 
+func (s *SecretStore) OllamaAPIKey() (string, error) {
+	for _, env := range []string{"RUNE_OLLAMA_API_KEY", "OLLAMA_API_KEY"} {
+		if v := NormalizeOllamaAPIKeyInput(os.Getenv(env)); v != "" {
+			return v, ValidateOllamaAPIKey(v)
+		}
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return "", err
+	}
+	if sec.OllamaAPIKey == "" {
+		return "", nil
+	}
+	return sec.OllamaAPIKey, ValidateOllamaAPIKey(sec.OllamaAPIKey)
+}
+func (s *SecretStore) SetOllamaAPIKey(key string) error {
+	key = NormalizeOllamaAPIKeyInput(key)
+	if err := ValidateOllamaAPIKey(key); err != nil {
+		return fmt.Errorf("invalid Ollama API key: %w", err)
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.OllamaAPIKey = key
+	return s.Save(sec)
+}
+func (s *SecretStore) DeleteOllamaAPIKey() error {
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.OllamaAPIKey = ""
+	return s.Save(sec)
+}
+
 func (s *SecretStore) RunpodAPIKey() (string, error) {
 	for _, env := range []string{"RUNE_RUNPOD_API_KEY", "RUNPOD_API_KEY"} {
 		if v := NormalizeRunpodAPIKeyInput(os.Getenv(env)); v != "" {
@@ -288,6 +326,39 @@ func ValidateGroqAPIKey(key string) error {
 	case key == "":
 		return errors.New("empty")
 	case len(key) < 20:
+		return errors.New("too short")
+	case len(key) > 512:
+		return errors.New("too long")
+	case strings.ContainsAny(key, " \t\r\n"):
+		return errors.New("contains whitespace")
+	case strings.ContainsAny(key, "<>{}[]()"):
+		return errors.New("contains unexpected characters")
+	}
+	return nil
+}
+
+func NormalizeOllamaAPIKeyInput(raw string) string {
+	s := strings.TrimSpace(raw)
+	for _, p := range []string{"export RUNE_OLLAMA_API_KEY=", "RUNE_OLLAMA_API_KEY=", "export OLLAMA_API_KEY=", "OLLAMA_API_KEY="} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, p))
+			break
+		}
+	}
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			s = s[1 : len(s)-1]
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+func ValidateOllamaAPIKey(key string) error {
+	switch {
+	case key == "":
+		return errors.New("empty")
+	case len(key) < 1:
 		return errors.New("too short")
 	case len(key) > 512:
 		return errors.New("too long")

@@ -15,6 +15,7 @@ type Settings struct {
 	OllamaModel     string           `json:"ollama_model,omitempty"`
 	RunpodModel     string           `json:"runpod_model,omitempty"`
 	OllamaEndpoint  string           `json:"ollama_endpoint,omitempty"`
+	RunpodEndpoint  string           `json:"runpod_endpoint,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	IconMode        string           `json:"icon_mode,omitempty"`
 	ActivityMode    string           `json:"activity_mode,omitempty"`

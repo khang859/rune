@@ -10,7 +10,9 @@ import (
 
 func TestSettings_CyclesSelectedRow(t *testing.T) {
 	s := NewSettings(Settings{Effort: "low"}).(*SettingsModal)
-	s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	for range settingsRowEffort {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -33,8 +35,9 @@ func TestSettings_CanSelectOllamaProvider(t *testing.T) {
 
 func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "unicode", ActivityMode: "arcane"}).(*SettingsModal)
-	s.Update(tea.KeyMsg{Type: tea.KeyDown})
-	s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	for range settingsRowIconMode {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	s.Update(tea.KeyMsg{Type: tea.KeyRight})
@@ -51,7 +54,7 @@ func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 
 func TestSettings_CanChangeSubagentSettings(t *testing.T) {
 	s := NewSettings(Settings{Subagents: "on", SubagentMaxConcurrent: "4", SubagentTimeout: "600s", SubagentRetain: "100"}).(*SettingsModal)
-	for range 14 {
+	for range settingsRowSubagents {
 		s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	s.Update(tea.KeyMsg{Type: tea.KeyLeft}) // subagents: on -> off
@@ -78,6 +81,28 @@ func TestSettings_CanChangeSubagentSettings(t *testing.T) {
 	}
 }
 
+func TestSettings_EndpointRowsAreActions(t *testing.T) {
+	s := NewSettings(Settings{}).(*SettingsModal)
+	for range settingsRowOllamaEndpoint {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "ollama_endpoint" {
+		t.Fatalf("action = %q, want ollama_endpoint", res.Action)
+	}
+
+	s = NewSettings(Settings{}).(*SettingsModal)
+	for range settingsRowRunpodEndpoint {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd = s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res = cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "runpod_endpoint" {
+		t.Fatalf("action = %q, want runpod_endpoint", res.Action)
+	}
+}
+
 func TestSettings_ViewShowsNewRows(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "nerd", ActivityMode: "arcane"}).(*SettingsModal)
 	out := s.View(80, 24)
@@ -85,8 +110,11 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"Grimoire of Settings",
 		"✧ Provider",
 		"provider",
+		"ollama api key",
 		"groq api key",
 		"runpod api key",
+		"ollama endpoint",
+		"runpod endpoint",
 		"tavily api key",
 		"✧ Mind",
 		"thinking effort",

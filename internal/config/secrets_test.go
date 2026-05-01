@@ -110,6 +110,24 @@ func TestGroqAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	}
 }
 
+func TestOllamaAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	stored := "ollama-local-token"
+	env := "ollama-env-token"
+	if err := store.SetOllamaAPIKey("export OLLAMA_API_KEY='" + stored + "'"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.OllamaAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored ollama key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_OLLAMA_API_KEY", env)
+	key, err = store.OllamaAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env ollama key = %q, %v", key, err)
+	}
+}
+
 func TestRunpodAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
 	stored := strings.Repeat("r", 24)
@@ -125,6 +143,12 @@ func TestRunpodAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	key, err = store.RunpodAPIKey()
 	if err != nil || key != env {
 		t.Fatalf("env runpod key = %q, %v", key, err)
+	}
+}
+
+func TestNormalizeOllamaAPIKeyInput(t *testing.T) {
+	if got := NormalizeOllamaAPIKeyInput("OLLAMA_API_KEY='key'"); got != "key" {
+		t.Fatalf("NormalizeOllamaAPIKeyInput = %q, want key", got)
 	}
 }
 

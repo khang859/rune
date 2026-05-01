@@ -65,8 +65,8 @@ func TestNormalizeSettingsPreservesOllama(t *testing.T) {
 }
 
 func TestNormalizeSettingsPreservesRunpod(t *testing.T) {
-	s := NormalizeSettings(Settings{Provider: "runpod", RunpodModel: "custom/model"})
-	if s.Provider != "runpod" || s.RunpodModel != "custom/model" {
+	s := NormalizeSettings(Settings{Provider: "runpod", RunpodModel: "custom/model", RunpodEndpoint: "private-endpoint"})
+	if s.Provider != "runpod" || s.RunpodModel != "custom/model" || s.RunpodEndpoint != "private-endpoint" {
 		t.Fatalf("settings = %+v", s)
 	}
 }

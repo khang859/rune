@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -25,9 +26,30 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if groqKeyConfigured() {
 		groqStatus = "configured — Enter to replace"
 	}
+	ollamaStatus := "optional — Enter to set"
+	if ollamaKeyConfigured() {
+		ollamaStatus = "configured — Enter to replace"
+	}
+	if strings.TrimSpace(os.Getenv("RUNE_OLLAMA_API_KEY")) != "" || strings.TrimSpace(os.Getenv("OLLAMA_API_KEY")) != "" {
+		ollamaStatus = "env override active"
+	}
 	runpodStatus := "missing — Enter to set"
 	if runpodKeyConfigured() {
 		runpodStatus = "configured — Enter to replace"
+	}
+	ollamaEndpointStatus := "default local — Enter to edit"
+	if strings.TrimSpace(s.OllamaEndpoint) != "" && s.OllamaEndpoint != config.DefaultSettings().OllamaEndpoint {
+		ollamaEndpointStatus = "custom — Enter to edit"
+	}
+	if os.Getenv("RUNE_OLLAMA_ENDPOINT") != "" {
+		ollamaEndpointStatus = "env override active"
+	}
+	runpodEndpointStatus := "model default — Enter to set"
+	if strings.TrimSpace(s.RunpodEndpoint) != "" {
+		runpodEndpointStatus = "custom — Enter to edit"
+	}
+	if os.Getenv("RUNE_RUNPOD_ENDPOINT") != "" {
+		runpodEndpointStatus = "env override active"
 	}
 	return modal.Settings{
 		Provider:              s.Provider,
@@ -47,7 +69,10 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		BraveAPIKeyStatus:     status,
 		TavilyAPIKeyStatus:    tavilyStatus,
 		GroqAPIKeyStatus:      groqStatus,
+		OllamaAPIKeyStatus:    ollamaStatus,
 		RunpodAPIKeyStatus:    runpodStatus,
+		OllamaEndpointStatus:  ollamaEndpointStatus,
+		RunpodEndpointStatus:  runpodEndpointStatus,
 	}
 }
 
@@ -64,6 +89,7 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		OllamaModel:     loaded.OllamaModel,
 		RunpodModel:     loaded.RunpodModel,
 		OllamaEndpoint:  loaded.OllamaEndpoint,
+		RunpodEndpoint:  loaded.RunpodEndpoint,
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
 		ActivityMode:    s.ActivityMode,
@@ -126,6 +152,11 @@ func tavilyKeyConfigured() bool {
 
 func groqKeyConfigured() bool {
 	key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
+	return err == nil && key != ""
+}
+
+func ollamaKeyConfigured() bool {
+	key, err := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
 	return err == nil && key != ""
 }
 
