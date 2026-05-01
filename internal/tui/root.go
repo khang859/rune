@@ -91,7 +91,7 @@ const quitPrimeWindow = 2 * time.Second
 
 var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
-	"/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
+	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/act", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys",
 }
@@ -583,6 +583,13 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewMCPWizard())
 	case "/mcp-status":
 		initCmd = m.openModal(modal.NewMCPStatus(m.mcpStatuses))
+	case "/git-status":
+		data, err := loadGitStatusData(m.editor.Cwd())
+		if err != nil {
+			m.msgs.OnInfo(fmt.Sprintf("(git status unavailable: %v)", err))
+			break
+		}
+		initCmd = m.openModal(modal.NewGitStatus(data))
 	case "/hotkeys":
 		initCmd = m.openModal(modal.NewHotkeys())
 	case "/new", "/clear":
@@ -994,7 +1001,7 @@ func (m *RootModel) handleEvent(e agent.Event) {
 		m.footer.Tokens = m.currentTokens
 		m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 	case agent.ContextOverflow:
-		m.msgs.OnTurnError(fmt.Errorf("context overflow — manual /compact recommended"))
+		m.msgs.OnInfo("context overflow — auto-compacting and retrying…")
 	case agent.InvalidToolCallRecovered:
 		names := strings.Join(v.Names, ", ")
 		m.msgs.OnInfo(fmt.Sprintf("model emitted invalid tool call(s): %s — recovering with a nudge", names))

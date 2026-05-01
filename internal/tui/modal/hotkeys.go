@@ -29,6 +29,7 @@ func (Hotkeys) View(width, height int) string {
   @               file picker
   /               command menu
   /mcp-status     show MCP connection status
+  /git-status     view git status and diffs
   /plan           enter Plan Mode (edits/bash disabled)
   /act            leave Plan Mode
   /approve        approve plan, return to Act Mode

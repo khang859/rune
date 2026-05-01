@@ -260,6 +260,19 @@ func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 	}
 }
 
+func TestRoot_BaseSlashCommandsIncludeGitStatus(t *testing.T) {
+	found := false
+	for _, cmd := range baseSlashCmds {
+		if cmd == "/git-status" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("baseSlashCmds missing /git-status")
+	}
+}
+
 func TestRoot_PlanModeSlashCommands(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
@@ -808,6 +821,22 @@ func TestRoot_RendersArcaneActivityLineWhileStreaming(t *testing.T) {
 	out = m.View()
 	if strings.Contains(out, "consulting the runes") {
 		t.Fatalf("activity line remained after done:\n%s", out)
+	}
+}
+
+func TestRoot_ContextOverflowNoticeMentionsAutoCompactRetry(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleEvent(agent.ContextOverflow{})
+
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
+	if !strings.Contains(out, "auto-compacting and retrying") {
+		t.Fatalf("overflow notice did not mention auto-compacting retry: %q", out)
+	}
+	if strings.Contains(out, "manual /compact recommended") {
+		t.Fatalf("overflow notice still recommends manual compact: %q", out)
 	}
 }
 
