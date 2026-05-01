@@ -282,6 +282,27 @@
         font-size: 0.8rem;
       }
 
+      .copy-button {
+        margin-left: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--muted);
+        cursor: pointer;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.75rem;
+        font-weight: 700;
+        padding: 7px 10px;
+        transition: 160ms ease;
+      }
+
+      .copy-button:hover,
+      .copy-button:focus-visible {
+        border-color: var(--border-strong);
+        color: var(--text);
+        outline: none;
+      }
+
       pre {
         margin: 0;
         white-space: pre-wrap;
@@ -618,6 +639,7 @@
             <span class="dot amber"></span>
             <span class="dot green"></span>
             <span class="terminal-title">~/dev $ rune</span>
+            <button class="copy-button" type="button" data-copy-command="curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh">Copy</button>
           </div>
           <pre class="terminal-body"><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh</code></pre>
         </div>
@@ -739,5 +761,24 @@
         <span><a href="https://github.com/khang859/rune">github.com/khang859/rune</a></span>
       </div>
     </footer>
+
+    <script>
+      document.querySelectorAll("[data-copy-command]").forEach((button) => {
+        const defaultLabel = button.textContent;
+
+        button.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(button.dataset.copyCommand);
+            button.textContent = "Copied";
+          } catch {
+            button.textContent = "Copy failed";
+          }
+
+          window.setTimeout(() => {
+            button.textContent = defaultLabel;
+          }, 1800);
+        });
+      });
+    </script>
   </body>
 </html>
