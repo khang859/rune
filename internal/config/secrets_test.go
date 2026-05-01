@@ -128,6 +128,17 @@ func TestOllamaAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	}
 }
 
+func TestProfileAPIKeySaveLoad(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	if err := store.SetProfileAPIKey("ollama-gpu", "profile-token"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.ProfileAPIKey("ollama-gpu")
+	if err != nil || key != "profile-token" {
+		t.Fatalf("profile key = %q, %v", key, err)
+	}
+}
+
 func TestRunpodAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
 	stored := strings.Repeat("r", 24)

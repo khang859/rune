@@ -121,9 +121,15 @@ ollama pull llama3.2
 rune --provider ollama --model llama3.2
 ```
 
-Ollama model names are local/user-controlled tags, so rune accepts arbitrary model IDs such as `qwen3:4b`, `qwen2.5-coder:14b`, or a custom model you created with Ollama. In the TUI, `/model` lists installed local models from Ollama's `/api/tags` endpoint when available and also offers a `custom…` entry for typing any model name.
+Ollama model names are local/user-controlled tags, so rune accepts arbitrary model IDs such as `qwen3:4b`, `qwen2.5-coder:14b`, or a custom model you created with Ollama. In the TUI, `/model` lists installed local models from the active Ollama profile's `/api/tags` endpoint when available and also offers a `custom…` entry for typing any model name.
 
 `rune login ollama` is not required; local Ollama does not use OAuth or API keys. If your Ollama-compatible endpoint is behind an authenticated proxy, save an optional Ollama API key from `/settings` or use an environment variable.
+
+### Multiple Ollama servers
+
+Use `/settings` → `add ollama profile` to create a named Ollama server profile, then `edit active profile` to set its OpenAI-compatible chat completions endpoint. `/providers` shows configured profiles as separate entries such as `Ollama: Local` and `Ollama: GPU Box`, so switching servers is the same flow as switching providers. Each profile stores its own default model; `/model` updates the active profile's model.
+
+Set `RUNE_PROVIDER_PROFILE=<profile-id>` to select a profile from the environment. CLI flags and provider/model environment variables still take precedence over profile defaults.
 
 ### Env overrides
 

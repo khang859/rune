@@ -13,7 +13,12 @@ import (
 )
 
 func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
+	return RunWithProfile(a, s, "", skills, mcpStatuses, version)
+}
+
+func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
 	m := NewRootModel(a, s)
+	m.SetActiveProfile(activeProfile)
 	m.SetVersion(version)
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)

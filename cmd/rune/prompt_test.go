@@ -131,6 +131,48 @@ func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_UsesOllamaProfile(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer profile-token" {
+			t.Errorf("auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"profile-ollama\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	settings := map[string]any{
+		"provider":       "ollama",
+		"active_profile": "gpu",
+		"profiles": []map[string]any{{
+			"id":       "gpu",
+			"name":     "GPU",
+			"provider": "ollama",
+			"endpoint": srv.URL,
+			"model":    "qwen3:4b",
+		}},
+	}
+	b, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(runeDir, "settings.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secrets := map[string]any{"profile_api_keys": map[string]string{"gpu": "profile-token"}}
+	b, _ = json.Marshal(secrets)
+	if err := os.WriteFile(filepath.Join(runeDir, "secrets.json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "profile-ollama") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
 func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer ollama-token" {

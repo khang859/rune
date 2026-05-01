@@ -28,6 +28,7 @@ type Settings struct {
 	GroqAPIKeyStatus      string
 	OllamaAPIKeyStatus    string
 	RunpodAPIKeyStatus    string
+	ActiveProfileStatus   string
 	OllamaEndpointStatus  string
 	RunpodEndpointStatus  string
 }
@@ -65,6 +66,8 @@ const (
 	settingsRowOllamaAPIKey
 	settingsRowGroqAPIKey
 	settingsRowRunpodAPIKey
+	settingsRowActiveProfile
+	settingsRowAddOllamaProfile
 	settingsRowOllamaEndpoint
 	settingsRowRunpodEndpoint
 	settingsRowEffort
@@ -95,6 +98,8 @@ func NewSettings(cur Settings) Modal {
 		{kind: settingsRowAction, section: "Provider", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "active profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
+		{kind: settingsRowAction, section: "Provider", label: "add ollama profile", action: "add_ollama_profile", status: "Enter to create"},
 		{kind: settingsRowAction, section: "Provider", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
@@ -169,6 +174,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.RunpodAPIKeyStatus == "" {
 		s.RunpodAPIKeyStatus = "missing — Enter to set"
+	}
+	if s.ActiveProfileStatus == "" {
+		s.ActiveProfileStatus = "none"
 	}
 	if s.OllamaEndpointStatus == "" {
 		s.OllamaEndpointStatus = "default local — Enter to edit"
@@ -256,6 +264,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
 		OllamaAPIKeyStatus:    s.cur.OllamaAPIKeyStatus,
 		RunpodAPIKeyStatus:    s.cur.RunpodAPIKeyStatus,
+		ActiveProfileStatus:   s.cur.ActiveProfileStatus,
 		OllamaEndpointStatus:  s.cur.OllamaEndpointStatus,
 		RunpodEndpointStatus:  s.cur.RunpodEndpointStatus,
 	}

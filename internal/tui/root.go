@@ -61,6 +61,7 @@ type RootModel struct {
 
 	modal           modal.Modal
 	settings        modal.Settings
+	activeProfile   string
 	lastModal       modal.Modal
 	pendingForkMode bool
 	clipboardReady  bool
@@ -146,6 +147,7 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 		footer:                      footer,
 		queue:                       &Queue{},
 		settings:                    settings,
+		activeProfile:               loadedSettings.ActiveProfile,
 		subagents:                   map[string]agent.SubagentEvent{},
 		autoContinueSubagentResults: map[string]bool{},
 	}
@@ -167,6 +169,10 @@ func (m *RootModel) SetMCPStatuses(statuses []mcp.Status) {
 		m.mcpStatuses[i] = st
 		m.mcpStatuses[i].Tools = append([]string(nil), st.Tools...)
 	}
+}
+
+func (m *RootModel) SetActiveProfile(profileID string) {
+	m.activeProfile = strings.TrimSpace(profileID)
 }
 
 func (m *RootModel) SetVersion(version string) {
@@ -631,7 +637,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/quit":
 		return tea.Quit
 	case "/providers":
-		initCmd = m.openModal(modal.NewProviderPicker(providers.IDs(), m.sess.Provider))
+		initCmd = m.openProviderPicker()
 	case "/model":
 		initCmd = m.openModelPicker()
 	case "/thinking":
@@ -770,6 +776,40 @@ func footerMode(mode agent.Mode) string {
 	return ""
 }
 
+func (m *RootModel) openProviderPicker() tea.Cmd {
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	settings = config.NormalizeSettings(settings)
+	choices := []modal.ProviderChoice{
+		{ID: providers.Codex, Label: "Codex", Value: settings.CodexModel},
+		{ID: providers.Groq, Label: "Groq", Value: settings.GroqModel},
+	}
+	choices = append(choices, modal.ProviderChoice{ID: providers.Ollama, Label: "Ollama", Value: settings.OllamaModel})
+	for _, p := range settings.Profiles {
+		if p.Provider == providers.Ollama {
+			choices = append(choices, providerChoiceFromProfile(p))
+		}
+	}
+	choices = append(choices, modal.ProviderChoice{ID: providers.Runpod, Label: "Runpod", Value: settings.RunpodModel})
+	for _, p := range settings.Profiles {
+		if p.Provider == providers.Runpod {
+			choices = append(choices, providerChoiceFromProfile(p))
+		}
+	}
+	return m.openModal(modal.NewProviderProfilePicker(choices, m.sess.Provider, m.activeProfile))
+}
+
+func providerChoiceFromProfile(p config.ProviderProfile) modal.ProviderChoice {
+	label := strings.ToUpper(p.Provider[:1]) + p.Provider[1:] + ": " + config.ProfileDisplayName(p)
+	value := p.Model
+	if p.Endpoint != "" {
+		if value != "" {
+			value += " · "
+		}
+		value += p.Endpoint
+	}
+	return modal.ProviderChoice{ID: p.Provider, ProfileID: p.ID, Label: label, Value: value}
+}
+
 func (m *RootModel) openModelPicker() tea.Cmd {
 	if !m.hasActiveProvider() {
 		m.msgs.OnInfo("(no active provider configured; use /providers first)")
@@ -781,14 +821,16 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 	}
 	items := providers.Models(providers.Ollama)
 	settings, _ := config.LoadSettings(config.SettingsPath())
-	endpoint := settings.OllamaEndpoint
-	if endpoint == "" {
-		endpoint = ollama.DefaultEndpoint
+	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providers.Ollama, ProfileOverride: providers.Profile(m.activeProfile)})
+	endpoint := resolved.Endpoint
+	store := config.NewSecretStore(config.SecretsPath())
+	key, keyErr := config.OllamaEnvAPIKey()
+	if keyErr == nil && key == "" && resolved.ProfileID != "" {
+		key, keyErr = store.ProfileAPIKey(resolved.ProfileID)
 	}
-	if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
-		endpoint = v
+	if keyErr == nil && key == "" {
+		key, keyErr = store.OllamaAPIKey()
 	}
-	key, keyErr := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
 	if keyErr != nil {
 		m.msgs.OnInfo(fmt.Sprintf("(could not load Ollama API key: %v; choose custom or run `ollama pull <model>`)", keyErr))
 		m.refreshViewport()
@@ -1210,6 +1252,9 @@ func (m *RootModel) applyThinkingEffort(effort string) {
 func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	switch cur.(type) {
 	case *modal.ProviderPicker:
+		if choice, ok := payload.(modal.ProviderChoice); ok {
+			return m.switchProviderChoice(choice)
+		}
 		if id, ok := payload.(string); ok {
 			return m.switchProvider(id)
 		}
@@ -1249,6 +1294,12 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "ollama_api_key" {
 				return m.openModal(modal.NewSecretInput("Ollama API key", "ollama_api_key"))
 			}
+			if v.Action == "add_ollama_profile" {
+				return m.openModal(modal.NewTextInput("Ollama profile name", "add_ollama_profile", ""))
+			}
+			if v.Action == "edit_active_profile" {
+				return m.openEditActiveProfile()
+			}
 			if v.Action == "runpod_api_key" {
 				return m.openModal(modal.NewSecretInput("Runpod API key", "runpod_api_key"))
 			}
@@ -1269,6 +1320,10 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.TextInput:
 		if res, ok := payload.(modal.TextInputResult); ok {
 			switch res.Action {
+			case "add_ollama_profile":
+				return m.addOllamaProfile(res.Value)
+			case "edit_profile_endpoint":
+				return m.saveActiveProfileEndpoint(res.Value)
 			case "ollama_model":
 				if strings.TrimSpace(res.Value) != "" {
 					id := strings.TrimSpace(res.Value)
@@ -1315,18 +1370,31 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 					m.msgs.OnInfo("(saved Groq API key)")
 				}
 			case "ollama_api_key":
-				if err := config.NewSecretStore(config.SecretsPath()).SetOllamaAPIKey(res.Value); err != nil {
+				store := config.NewSecretStore(config.SecretsPath())
+				var err error
+				if m.activeProfile != "" && m.sess.Provider == providers.Ollama {
+					err = store.SetProfileAPIKey(m.activeProfile, res.Value)
+				} else {
+					err = store.SetOllamaAPIKey(res.Value)
+				}
+				if err != nil {
 					m.msgs.OnTurnError(err)
 				} else {
 					m.settings.OllamaAPIKeyStatus = "configured — Enter to replace"
 					if m.sess.Provider == providers.Ollama {
-						if p, err := buildTUIProvider(providers.Ollama); err == nil {
+						settings, _ := config.LoadSettings(config.SettingsPath())
+						resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providers.Ollama, ProfileOverride: providers.Profile(m.activeProfile)})
+						if p, err := buildTUIProviderResolved(resolved); err == nil {
 							m.replaceActiveProvider(p)
 						} else {
 							m.msgs.OnTurnError(err)
 						}
 					}
-					m.msgs.OnInfo("(saved Ollama API key)")
+					if m.activeProfile != "" && m.sess.Provider == providers.Ollama {
+						m.msgs.OnInfo("(saved Ollama profile API key)")
+					} else {
+						m.msgs.OnInfo("(saved Ollama API key)")
+					}
 				}
 			case "runpod_api_key":
 				if err := config.NewSecretStore(config.SecretsPath()).SetRunpodAPIKey(res.Value); err != nil {
@@ -1415,34 +1483,29 @@ func (m *RootModel) saveSessionIfStarted() {
 }
 
 func (m *RootModel) switchProvider(provider string) tea.Cmd {
-	provider = strings.TrimSpace(provider)
+	return m.switchProviderChoice(modal.ProviderChoice{ID: provider})
+}
+
+func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
+	provider := strings.TrimSpace(choice.ID)
 	if provider == "none" {
 		provider = ""
 	}
 	if provider != "" {
 		provider = providers.Normalize(provider)
 	}
-	if provider == m.sess.Provider {
+	profileID := strings.TrimSpace(choice.ProfileID)
+	if provider == m.sess.Provider && profileID == m.activeProfile {
 		return nil
 	}
 	loadedSettings, _ := config.LoadSettings(config.SettingsPath())
 	loadedSettings = config.NormalizeSettings(loadedSettings)
-	model := ""
-	if provider != "" {
-		model = loadedSettings.CodexModel
-		switch provider {
-		case providers.Groq:
-			model = loadedSettings.GroqModel
-		case providers.Ollama:
-			model = loadedSettings.OllamaModel
-		case providers.Runpod:
-			model = loadedSettings.RunpodModel
-		}
-		if model == "" {
-			model = providers.DefaultModel(provider)
-		}
+	resolved := providers.Resolve(loadedSettings, providers.ResolveOptions{ProviderOverride: provider, ProfileOverride: providers.Profile(profileID)})
+	model := resolved.Model
+	if provider == "" {
+		model = ""
 	}
-	p, err := buildTUIProvider(provider)
+	p, err := buildTUIProviderResolved(resolved)
 	if err != nil {
 		m.msgs.OnTurnError(err)
 		m.refreshViewport()
@@ -1451,6 +1514,7 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	m.stopActiveTurn()
 	m.sess.Provider = provider
 	m.sess.Model = model
+	m.activeProfile = resolved.ProfileID
 	m.footer.Model = model
 	if provider == "" {
 		m.footer.Model = "no provider"
@@ -1469,6 +1533,7 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	m.settings.Provider = provider
 	loadedSettings, _ = config.LoadSettings(config.SettingsPath())
 	loadedSettings.Provider = provider
+	loadedSettings.ActiveProfile = m.activeProfile
 	m.settings = modalSettingsFromConfig(loadedSettings, braveKeyConfigured(), tavilyKeyConfigured())
 	m.clampThinkingForCurrentModel()
 	m.refreshFooterThinkingEffort()
@@ -1487,50 +1552,45 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 }
 
 func buildTUIProvider(provider string) (ai.Provider, error) {
-	if strings.TrimSpace(provider) == "" {
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: provider})
+	return buildTUIProviderResolved(resolved)
+}
+
+func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider, error) {
+	if strings.TrimSpace(resolved.Provider) == "" {
 		return unavailable.New("no active provider configured"), nil
 	}
-	switch providers.Normalize(provider) {
+	switch providers.Normalize(resolved.Provider) {
 	case providers.Groq:
-		endpoint := groq.DefaultEndpoint
-		if v := os.Getenv("RUNE_GROQ_ENDPOINT"); v != "" {
-			endpoint = v
-		}
+		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
 		if err != nil {
 			return nil, err
 		}
 		return groq.New(endpoint, key), nil
 	case providers.Ollama:
-		settings, _ := config.LoadSettings(config.SettingsPath())
-		endpoint := settings.OllamaEndpoint
-		if endpoint == "" {
-			endpoint = ollama.DefaultEndpoint
-		}
-		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
-			endpoint = v
-		}
-		key, err := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
+		endpoint := resolved.Endpoint
+		store := config.NewSecretStore(config.SecretsPath())
+		key, err := config.OllamaEnvAPIKey()
 		if err != nil {
 			return nil, err
 		}
+		if key == "" && resolved.ProfileID != "" {
+			key, err = store.ProfileAPIKey(resolved.ProfileID)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if key == "" {
+			key, err = store.OllamaAPIKey()
+			if err != nil {
+				return nil, err
+			}
+		}
 		return ollama.New(endpoint, key), nil
 	case providers.Runpod:
-		settings, _ := config.LoadSettings(config.SettingsPath())
-		model := settings.RunpodModel
-		if v := os.Getenv("RUNE_RUNPOD_MODEL"); v != "" {
-			model = v
-		}
-		if model == "" {
-			model = providers.DefaultRunpodModel
-		}
-		endpoint := settings.RunpodEndpoint
-		if endpoint == "" {
-			endpoint = runpod.EndpointForModel(model)
-		}
-		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
-			endpoint = v
-		}
+		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
 		if err != nil {
 			return nil, err
@@ -1603,20 +1663,109 @@ func (m *RootModel) saveEndpointSetting(provider, endpoint string) {
 
 func (m *RootModel) saveProviderSettings() {
 	s := configFromModalSettings(m.settings)
-	s.Provider = m.sess.Provider
-	switch m.sess.Provider {
-	case providers.Codex:
-		s.CodexModel = m.sess.Model
-	case providers.Groq:
-		s.GroqModel = m.sess.Model
-	case providers.Ollama:
-		s.OllamaModel = m.sess.Model
-	case providers.Runpod:
-		s.RunpodModel = m.sess.Model
-	}
-	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+	resolved := providers.Resolve(s, providers.ResolveOptions{ProviderOverride: m.sess.Provider, ModelOverride: m.sess.Model, ProfileOverride: providers.Profile(m.activeProfile)})
+	if err := providers.SaveResolvedSelection(config.SettingsPath(), s, resolved); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
 	}
+}
+
+func (m *RootModel) openEditActiveProfile() tea.Cmd {
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	if p := config.FindProviderProfile(settings.Profiles, m.activeProfile); p != nil {
+		return m.openModal(modal.NewTextInput("Profile endpoint", "edit_profile_endpoint", p.Endpoint))
+	}
+	m.msgs.OnInfo("(no active profile to edit; use add ollama profile first)")
+	m.refreshViewport()
+	return nil
+}
+
+func (m *RootModel) addOllamaProfile(name string) tea.Cmd {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "Ollama"
+	}
+	settings, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		settings = config.DefaultSettings()
+	}
+	settings = config.NormalizeSettings(settings)
+	id := uniqueProfileID(settings.Profiles, "ollama-"+slug(name))
+	settings.Profiles = append(settings.Profiles, config.ProviderProfile{ID: id, Name: name, Provider: providers.Ollama, Endpoint: settings.OllamaEndpoint, Model: settings.OllamaModel})
+	settings.Provider = providers.Ollama
+	settings.ActiveProfile = id
+	if err := config.SaveSettings(config.SettingsPath(), settings); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return nil
+	}
+	m.msgs.OnInfo(fmt.Sprintf("(added Ollama profile %s; edit active profile to set endpoint)", name))
+	return m.switchProviderChoice(modal.ProviderChoice{ID: providers.Ollama, ProfileID: id})
+}
+
+func (m *RootModel) saveActiveProfileEndpoint(endpoint string) tea.Cmd {
+	settings, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		settings = config.DefaultSettings()
+	}
+	settings = config.NormalizeSettings(settings)
+	p := config.FindProviderProfile(settings.Profiles, m.activeProfile)
+	if p == nil {
+		m.msgs.OnInfo("(no active profile to edit)")
+		m.refreshViewport()
+		return nil
+	}
+	for i := range settings.Profiles {
+		if settings.Profiles[i].ID == m.activeProfile {
+			settings.Profiles[i].Endpoint = strings.TrimSpace(endpoint)
+		}
+	}
+	if err := config.SaveSettings(config.SettingsPath(), settings); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return nil
+	}
+	updated, _ := config.LoadSettings(config.SettingsPath())
+	m.settings = modalSettingsFromConfig(updated, braveKeyConfigured(), tavilyKeyConfigured())
+	if m.sess.Provider == p.Provider {
+		resolved := providers.Resolve(updated, providers.ResolveOptions{ProviderOverride: p.Provider, ProfileOverride: providers.Profile(m.activeProfile)})
+		if provider, err := buildTUIProviderResolved(resolved); err == nil {
+			m.replaceActiveProvider(provider)
+		} else {
+			m.msgs.OnTurnError(err)
+		}
+	}
+	m.msgs.OnInfo("(profile endpoint saved)")
+	m.refreshViewport()
+	return nil
+}
+
+func uniqueProfileID(profiles []config.ProviderProfile, base string) string {
+	base = strings.Trim(base, "-")
+	if base == "" {
+		base = "ollama"
+	}
+	id := base
+	for n := 2; config.FindProviderProfile(profiles, id) != nil; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	return id
+}
+
+func slug(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range s {
+		ok := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if ok {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
 }
 
 func sessionLabel(s *session.Session) string {
@@ -1661,6 +1810,7 @@ func (m *RootModel) swapSession(s *session.Session) {
 	prevMode := m.agent.Mode()
 	p := m.agent.Provider()
 	if s.Provider != oldProvider {
+		m.activeProfile = ""
 		if np, err := buildTUIProvider(s.Provider); err == nil {
 			p = np
 		} else {

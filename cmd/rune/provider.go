@@ -17,92 +17,56 @@ import (
 )
 
 type providerSelection struct {
-	Provider string
-	Model    string
-	AI       ai.Provider
+	Provider  string
+	ProfileID string
+	Model     string
+	AI        ai.Provider
 }
 
 func buildProvider(ctx context.Context, providerOverride, modelOverride string) (providerSelection, error) {
 	settings, _ := config.LoadSettings(config.SettingsPath())
-	provider := settings.Provider
-	if v := os.Getenv("RUNE_PROVIDER"); v != "" {
-		provider = v
-	}
-	if providerOverride != "" {
-		provider = providerOverride
-	}
-	provider = strings.TrimSpace(provider)
+	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providerOverride, ModelOverride: modelOverride})
+	provider := strings.TrimSpace(resolved.Provider)
 	if provider == "" {
 		return providerSelection{}, fmt.Errorf("no active provider configured (use `rune --provider <id>` or choose one in /providers)")
 	}
-	provider = providers.Normalize(provider)
-
-	model := modelOverride
-	if model == "" {
-		switch provider {
-		case providers.Groq:
-			model = os.Getenv("RUNE_GROQ_MODEL")
-		case providers.Ollama:
-			model = os.Getenv("RUNE_OLLAMA_MODEL")
-		case providers.Runpod:
-			model = os.Getenv("RUNE_RUNPOD_MODEL")
-		default:
-			model = os.Getenv("RUNE_CODEX_MODEL")
-		}
-	}
-	if model == "" {
-		switch provider {
-		case providers.Groq:
-			model = settings.GroqModel
-		case providers.Ollama:
-			model = settings.OllamaModel
-		case providers.Runpod:
-			model = settings.RunpodModel
-		default:
-			model = settings.CodexModel
-		}
-	}
-	if model == "" {
-		model = providers.DefaultModel(provider)
-	}
+	model := resolved.Model
 
 	switch provider {
 	case providers.Groq:
-		endpoint := groq.DefaultEndpoint
-		if v := os.Getenv("RUNE_GROQ_ENDPOINT"); v != "" {
-			endpoint = v
-		}
+		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
 		if err != nil {
 			return providerSelection{}, err
 		}
-		return providerSelection{Provider: provider, Model: model, AI: groq.New(endpoint, key)}, nil
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: groq.New(endpoint, key)}, nil
 	case providers.Ollama:
-		endpoint := settings.OllamaEndpoint
-		if endpoint == "" {
-			endpoint = ollama.DefaultEndpoint
-		}
-		if v := os.Getenv("RUNE_OLLAMA_ENDPOINT"); v != "" {
-			endpoint = v
-		}
-		key, err := config.NewSecretStore(config.SecretsPath()).OllamaAPIKey()
+		endpoint := resolved.Endpoint
+		store := config.NewSecretStore(config.SecretsPath())
+		key, err := config.OllamaEnvAPIKey()
 		if err != nil {
 			return providerSelection{}, err
 		}
-		return providerSelection{Provider: provider, Model: model, AI: ollama.New(endpoint, key)}, nil
+		if key == "" && resolved.ProfileID != "" {
+			key, err = store.ProfileAPIKey(resolved.ProfileID)
+			if err != nil {
+				return providerSelection{}, err
+			}
+		}
+		if key == "" {
+			key, err = store.OllamaAPIKey()
+			if err != nil {
+				return providerSelection{}, err
+			}
+		}
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: ollama.New(endpoint, key)}, nil
 	case providers.Runpod:
-		endpoint := settings.RunpodEndpoint
-		if endpoint == "" {
-			endpoint = runpod.EndpointForModel(model)
-		}
-		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
-			endpoint = v
-		}
+		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
 		if err != nil {
 			return providerSelection{}, err
 		}
-		return providerSelection{Provider: provider, Model: model, AI: runpod.New(endpoint, key)}, nil
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: runpod.New(endpoint, key)}, nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -117,6 +81,6 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		if _, err := src.Token(ctx); err != nil {
 			return providerSelection{}, fmt.Errorf("not logged in: %w (run `rune login codex`)", err)
 		}
-		return providerSelection{Provider: provider, Model: model, AI: codex.New(endpoint, src)}, nil
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: codex.New(endpoint, src)}, nil
 	}
 }

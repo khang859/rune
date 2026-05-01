@@ -113,6 +113,8 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"ollama api key",
 		"groq api key",
 		"runpod api key",
+		"active profile",
+		"add ollama profile",
 		"ollama endpoint",
 		"runpod endpoint",
 		"tavily api key",

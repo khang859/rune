@@ -57,6 +57,20 @@ func TestNormalizeSettingsFillsProviderDefaults(t *testing.T) {
 	}
 }
 
+func TestNormalizeSettingsPreservesProfiles(t *testing.T) {
+	s := NormalizeSettings(Settings{Provider: "ollama", ActiveProfile: "gpu", Profiles: []ProviderProfile{{ID: "gpu", Name: "GPU", Provider: "ollama", Endpoint: "http://gpu:11434/v1/chat/completions", Model: "qwen3:4b"}}})
+	if s.ActiveProfile != "gpu" || s.Provider != "ollama" || len(s.Profiles) != 1 {
+		t.Fatalf("settings = %+v", s)
+	}
+}
+
+func TestNormalizeSettingsDropsInvalidActiveProfile(t *testing.T) {
+	s := NormalizeSettings(Settings{Provider: "ollama", ActiveProfile: "missing", Profiles: []ProviderProfile{{ID: "gpu", Provider: "ollama"}}})
+	if s.ActiveProfile != "" {
+		t.Fatalf("active profile = %q, want empty", s.ActiveProfile)
+	}
+}
+
 func TestNormalizeSettingsPreservesOllama(t *testing.T) {
 	s := NormalizeSettings(Settings{Provider: "ollama", OllamaModel: "custom:latest", OllamaEndpoint: "http://127.0.0.1:11434/v1/chat/completions"})
 	if s.Provider != "ollama" || s.OllamaModel != "custom:latest" || s.OllamaEndpoint != "http://127.0.0.1:11434/v1/chat/completions" {

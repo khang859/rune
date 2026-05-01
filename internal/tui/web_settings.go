@@ -51,6 +51,10 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if os.Getenv("RUNE_RUNPOD_ENDPOINT") != "" {
 		runpodEndpointStatus = "env override active"
 	}
+	activeProfileStatus := "none"
+	if p := config.FindProviderProfile(s.Profiles, s.ActiveProfile); p != nil {
+		activeProfileStatus = config.ProfileDisplayName(*p) + " — Enter to edit"
+	}
 	return modal.Settings{
 		Provider:              s.Provider,
 		Effort:                s.ReasoningEffort,
@@ -71,6 +75,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		GroqAPIKeyStatus:      groqStatus,
 		OllamaAPIKeyStatus:    ollamaStatus,
 		RunpodAPIKeyStatus:    runpodStatus,
+		ActiveProfileStatus:   activeProfileStatus,
 		OllamaEndpointStatus:  ollamaEndpointStatus,
 		RunpodEndpointStatus:  runpodEndpointStatus,
 	}
@@ -82,8 +87,14 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 	if err != nil {
 		loaded = config.DefaultSettings()
 	}
+	activeProfile := loaded.ActiveProfile
+	if p := config.FindProviderProfile(loaded.Profiles, activeProfile); p == nil || p.Provider != s.Provider {
+		activeProfile = ""
+	}
 	settings := config.NormalizeSettings(config.Settings{
 		Provider:        s.Provider,
+		ActiveProfile:   activeProfile,
+		Profiles:        loaded.Profiles,
 		CodexModel:      loaded.CodexModel,
 		GroqModel:       loaded.GroqModel,
 		OllamaModel:     loaded.OllamaModel,

@@ -10,11 +10,12 @@ import (
 )
 
 type Secrets struct {
-	BraveSearchAPIKey string `json:"brave_search_api_key,omitempty"`
-	TavilyAPIKey      string `json:"tavily_api_key,omitempty"`
-	GroqAPIKey        string `json:"groq_api_key,omitempty"`
-	OllamaAPIKey      string `json:"ollama_api_key,omitempty"`
-	RunpodAPIKey      string `json:"runpod_api_key,omitempty"`
+	BraveSearchAPIKey string            `json:"brave_search_api_key,omitempty"`
+	TavilyAPIKey      string            `json:"tavily_api_key,omitempty"`
+	GroqAPIKey        string            `json:"groq_api_key,omitempty"`
+	OllamaAPIKey      string            `json:"ollama_api_key,omitempty"`
+	RunpodAPIKey      string            `json:"runpod_api_key,omitempty"`
+	ProfileAPIKeys    map[string]string `json:"profile_api_keys,omitempty"`
 }
 
 type SecretStore struct{ path string }
@@ -38,6 +39,14 @@ func (s *SecretStore) Load() (Secrets, error) {
 	sec.GroqAPIKey = NormalizeGroqAPIKeyInput(sec.GroqAPIKey)
 	sec.OllamaAPIKey = NormalizeOllamaAPIKeyInput(sec.OllamaAPIKey)
 	sec.RunpodAPIKey = NormalizeRunpodAPIKeyInput(sec.RunpodAPIKey)
+	for id, key := range sec.ProfileAPIKeys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			delete(sec.ProfileAPIKeys, id)
+			continue
+		}
+		sec.ProfileAPIKeys[id] = key
+	}
 	return sec, nil
 }
 func (s *SecretStore) Save(sec Secrets) error {
@@ -167,11 +176,18 @@ func (s *SecretStore) DeleteGroqAPIKey() error {
 	return s.Save(sec)
 }
 
-func (s *SecretStore) OllamaAPIKey() (string, error) {
+func OllamaEnvAPIKey() (string, error) {
 	for _, env := range []string{"RUNE_OLLAMA_API_KEY", "OLLAMA_API_KEY"} {
 		if v := NormalizeOllamaAPIKeyInput(os.Getenv(env)); v != "" {
 			return v, ValidateOllamaAPIKey(v)
 		}
+	}
+	return "", nil
+}
+
+func (s *SecretStore) OllamaAPIKey() (string, error) {
+	if key, err := OllamaEnvAPIKey(); key != "" || err != nil {
+		return key, err
 	}
 	sec, err := s.Load()
 	if err != nil {
@@ -192,6 +208,42 @@ func (s *SecretStore) SetOllamaAPIKey(key string) error {
 		return err
 	}
 	sec.OllamaAPIKey = key
+	return s.Save(sec)
+}
+
+func (s *SecretStore) ProfileAPIKey(profileID string) (string, error) {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return "", nil
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return "", err
+	}
+	key := strings.TrimSpace(sec.ProfileAPIKeys[profileID])
+	if key == "" {
+		return "", nil
+	}
+	return key, ValidateOllamaAPIKey(key)
+}
+
+func (s *SecretStore) SetProfileAPIKey(profileID, key string) error {
+	profileID = strings.TrimSpace(profileID)
+	if profileID == "" {
+		return fmt.Errorf("profile id is required")
+	}
+	key = NormalizeOllamaAPIKeyInput(key)
+	if err := ValidateOllamaAPIKey(key); err != nil {
+		return fmt.Errorf("invalid profile API key: %w", err)
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	if sec.ProfileAPIKeys == nil {
+		sec.ProfileAPIKeys = map[string]string{}
+	}
+	sec.ProfileAPIKeys[profileID] = key
 	return s.Save(sec)
 }
 func (s *SecretStore) DeleteOllamaAPIKey() error {
