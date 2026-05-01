@@ -49,6 +49,7 @@ Type `/` in the editor to see all commands. Highlights:
 - `/approve` — approve a plan and return to act mode without auto-implementing
 - `/cancel-plan` — clear pending plan state while staying in plan mode
 - `/skill:<name>` — invoke a markdown skill
+- `/skill-creator` — get guided help drafting or improving a rune skill
 - `/quit` — exit
 
 See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mode details, and `/hotkeys` for in-app help.

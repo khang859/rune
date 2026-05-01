@@ -11,10 +11,26 @@ The filename minus `.md` becomes the slug — `refactor-step.md` → `/skill:ref
 3. Selecting a skill **arms** its body. The body is prepended to your next
    submitted message and then cleared.
 
+## Creating skills
+
+Use `/skill-creator` for guided help drafting or improving a skill. It arms a
+built-in prompt; send your next message describing the workflow you want to
+capture, or paste an existing skill you want to refine.
+
+Good source material includes real tasks, corrections you gave rune, project
+conventions, examples, edge cases, runbooks, and desired input/output formats.
+After saving a generated skill, run `/reload` if rune is already open.
+
 ## Authoring tips
 
 - Be specific. "When refactoring, write a failing test first" beats "be careful".
 - One skill per file; don't bury two unrelated workflows in one body.
+- Focus on what rune would otherwise get wrong: project conventions, domain
+  gotchas, fragile sequences, required commands, or expected output formats.
+- Prefer concrete procedures, defaults, examples, and validation steps over
+  generic advice.
+- Keep skills concise. Since rune loads the whole file, every line competes with
+  the user's request and the rest of the conversation.
 - The body is just text — there's no schema, no front matter.
 
 ## Example

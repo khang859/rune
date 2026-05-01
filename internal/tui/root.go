@@ -94,7 +94,7 @@ var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/act", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys",
+	"/compact", "/reload", "/hotkeys", "/skill-creator",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -535,6 +535,39 @@ func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cm
 
 const subagentContinuationPrompt = "A subagent has completed. Review the subagent result that was added to your context and continue the user's task. If actions are needed, take them; otherwise briefly report the conclusion."
 
+const skillCreatorPrompt = `You are helping the user create or improve a rune skill.
+
+Rune skills are single Markdown files placed in ~/.rune/skills/ or ./.rune/skills/. The filename without .md becomes the slash command slug, for example refactor-step.md becomes /skill:refactor-step. Rune prepends the entire skill body to the user's next submitted message. Rune skills currently have no schema, no front matter, no skill folders, no bundled scripts, and no automatic progressive-disclosure references.
+
+Follow this workflow:
+
+1. Understand the intended reusable workflow.
+   - Ask at most one clarifying question at a time when required.
+   - Prefer concrete source material: a real successful task, user corrections, project conventions, runbooks, examples, edge cases, or desired input/output formats.
+   - If the user only has a rough idea, help narrow it to one coherent skill.
+
+2. Decide whether a skill is warranted.
+   - Create a skill for repeatable procedures, project-specific conventions, domain-specific gotchas, or tool/API usage the agent would otherwise get wrong.
+   - Push back if the request is too broad, too generic, or already handled well without a skill.
+
+3. Draft a rune-compatible Markdown skill.
+   - Write only the skill body, unless the user asks for explanation too.
+   - Keep it concise and directly actionable.
+   - Include what the agent would not know without the skill; omit generic advice.
+   - Favor procedures over declarations: steps, defaults, gotchas, validation loops, and output templates.
+   - Provide clear defaults instead of presenting many equal options.
+   - Match specificity to task fragility: be prescriptive for fragile sequences, flexible where judgment is useful.
+   - Include a short "When to use" section only if it helps users choose the skill.
+   - Include examples or success criteria when they clarify expected behavior.
+   - Do not mention unsupported rune skill features such as front matter, SKILL.md folders, references directories, or bundled scripts as requirements.
+
+4. Suggest installation.
+   - Recommend a kebab-case filename such as ~/.rune/skills/<slug>.md or ./.rune/skills/<slug>.md.
+   - Tell the user to run /reload if rune is already open.
+
+5. Iterate.
+   - Encourage testing on a real task and revising based on where the agent wastes effort, misses context, follows irrelevant instructions, or needs more concrete defaults.`
+
 func (m *RootModel) startSubagentContinuationTurn() tea.Cmd {
 	return m.startTurn(subagentContinuationPrompt, nil)
 }
@@ -597,6 +630,9 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewGitStatus(data))
 	case "/hotkeys":
 		initCmd = m.openModal(modal.NewHotkeys())
+	case "/skill-creator":
+		m.pendingSkillBody = skillCreatorPrompt
+		m.msgs.OnInfo("(skill-creator armed; describe the skill you want to create or improve)")
 	case "/new", "/clear":
 		m.startNewSession()
 	case "/name":
