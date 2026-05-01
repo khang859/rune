@@ -58,12 +58,14 @@
       }
 
       html {
+        overflow-x: hidden;
         scroll-behavior: smooth;
       }
 
       body {
         margin: 0;
         min-height: 100vh;
+        overflow-x: hidden;
         background:
           radial-gradient(circle at 78% 8%, rgba(99, 230, 255, 0.18), transparent 34rem),
           radial-gradient(circle at 14% 22%, rgba(255, 191, 105, 0.13), transparent 28rem),
@@ -194,6 +196,7 @@
         font-size: clamp(3.1rem, 8vw, 6.8rem);
         line-height: 0.9;
         letter-spacing: -0.085em;
+        overflow-wrap: break-word;
       }
 
       .gradient-text {
@@ -349,6 +352,7 @@
       }
 
       .image-card {
+        max-width: 100%;
         aspect-ratio: 16 / 9;
         border: 1px solid var(--border);
         border-radius: var(--radius);
@@ -562,7 +566,9 @@
 
       @media (max-width: 640px) {
         .shell {
-          width: min(100% - 28px, 1160px);
+          width: 100%;
+          padding-left: 18px;
+          padding-right: 18px;
         }
 
         .nav {
@@ -579,8 +585,42 @@
           grid-template-columns: 1fr;
         }
 
+        h1 {
+          font-size: clamp(2.8rem, 15vw, 4.2rem);
+          letter-spacing: -0.075em;
+        }
+
+        h2 {
+          font-size: clamp(2rem, 11vw, 2.8rem);
+        }
+
+        .actions {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .button {
+          width: 100%;
+        }
+
+        .hero-art::before {
+          display: none;
+        }
+
         .section {
           padding: 58px 0;
+        }
+
+        .panel,
+        .terminal-card,
+        .feature,
+        .doc-link,
+        .cta {
+          border-radius: 20px;
+        }
+
+        .panel {
+          overflow-wrap: anywhere;
         }
 
         .terminal-top {
