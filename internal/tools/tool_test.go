@@ -69,7 +69,7 @@ func TestRegistry_Specs(t *testing.T) {
 
 func TestRegistry_PlanModeFiltersAndDeniesTools(t *testing.T) {
 	r := NewRegistry()
-	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "write", "edit", "bash", "web_search", "external_tool"} {
+	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "gh", "write", "edit", "bash", "web_search", "external_tool"} {
 		r.Register(stubTool{name: name})
 	}
 	r.Register(planStubTool{stubTool: stubTool{name: "plan_external"}, allowed: true})
@@ -82,7 +82,7 @@ func TestRegistry_PlanModeFiltersAndDeniesTools(t *testing.T) {
 			t.Fatalf("plan mode exposed denied tool %q", spec.Name)
 		}
 	}
-	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "web_search", "plan_external"} {
+	for _, name := range []string{"read", "list_files", "search_files", "git_status", "git_diff", "gh", "web_search", "plan_external"} {
 		res, err := r.Run(context.Background(), ai.ToolCall{Name: name, Args: json.RawMessage(`{}`)})
 		if err != nil || res.IsError {
 			t.Fatalf("allowed tool %q result=%#v err=%v", name, res, err)

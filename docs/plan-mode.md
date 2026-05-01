@@ -6,7 +6,7 @@ Enter it with `/plan`. While active, rune adds stronger planning instructions to
 
 - `write`, `edit`, and `bash` are hidden from the model and denied at runtime.
 - MCP/external tools are denied by default unless explicitly marked read-only or allowlisted in MCP config.
-- Read-only tools such as `read`, `web_search`, and `web_fetch` remain available when configured.
+- Read-only tools such as `read`, `gh`, `web_search`, and `web_fetch` remain available when configured.
 - Subagents remain available to the main agent for read-only exploration and plan validation; child subagents cannot recursively spawn subagents.
 - Shell shortcuts (`!cmd` and `!!cmd`) are blocked in the TUI.
 - The TUI shows both a footer `plan` indicator and a Plan Mode banner while active.
@@ -23,10 +23,11 @@ To preserve safe discovery without exposing arbitrary shell execution, Plan Mode
 - `search_files` — literal text search with path/glob filters, context lines, binary/large-file skipping, and result limits.
 - `git_status` — inspect repository status without mutating state.
 - `git_diff` — inspect unstaged or staged diffs, optionally as a diffstat or filtered to a path, with bounded output.
+- `gh` — run selected read-only GitHub CLI commands such as issue/PR/repo/run/release views, searches, and `gh api` GET requests.
 
 These tools use bounded output and do not evaluate shell strings.
 
-A restricted shell tool such as `bash_readonly` is possible, but it is riskier because shell redirection, `find -exec`, command substitution, aliases, and broad command semantics can hide mutations. If implemented, it should avoid invoking a shell and should validate command names and arguments strictly.
+A restricted shell tool such as `bash_readonly` is possible, but it is riskier because shell redirection, `find -exec`, command substitution, aliases, and broad command semantics can hide mutations. The `gh` tool instead runs the `gh` executable directly and validates the command/subcommand before execution.
 
 ## MCP read-only metadata and allowlists
 

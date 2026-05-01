@@ -45,7 +45,7 @@ func PlanModePrompt() string {
 	return strings.Join([]string{
 		"You are in PLAN MODE.",
 		"",
-		"Do not edit, write, delete, patch, commit, run shell commands, or use mutating tools. Use only read-only tools, read-only subagents, and read-only research. Do not implement.",
+		"Do not edit, write, delete, patch, commit, run shell commands, or use mutating tools. Use only read-only tools, read-only subagents, read-only gh commands, and read-only research. Do not implement.",
 		"",
 		"Your job is to reach a shared, implementation-ready understanding with the user before any changes are made.",
 		"",

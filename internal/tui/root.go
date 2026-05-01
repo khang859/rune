@@ -709,7 +709,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
-		initCmd = m.enterPlanMode("plan mode: edits and bash disabled; MCP tools require read-only allowlist")
+		initCmd = m.enterPlanMode("plan mode: edits and bash disabled; read-only gh available; MCP tools require read-only allowlist")
 	case "/act":
 		if !m.canChangeAgentMode() {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -899,7 +899,7 @@ func (m *RootModel) View() string {
 	if m.copyMode {
 		banner = m.styles.CopyModeBanner.Render("[copy mode] drag to highlight, copy with your terminal shortcut · Shift+Tab/Esc to exit")
 	} else if m.agent.Mode() == agent.ModePlan {
-		banner = m.styles.PlanModeBanner.Render("Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve or /act to implement")
+		banner = m.styles.PlanModeBanner.Render("Plan Mode: edits and bash disabled · read-only gh available · MCP tools require read-only allowlist · /approve or /act to implement")
 	}
 	quitNotice := ""
 	if m.quitPrimed {
@@ -2115,7 +2115,7 @@ func (m *RootModel) cycleInteractionMode() tea.Cmd {
 		m.refreshViewport()
 		return nil
 	}
-	return m.enterPlanMode("plan mode: edits and bash disabled; MCP tools require read-only allowlist")
+	return m.enterPlanMode("plan mode: edits and bash disabled; read-only gh available; MCP tools require read-only allowlist")
 }
 
 // toggleCopyMode flips terminal-native copy mode. When entering, we surrender

@@ -101,7 +101,7 @@ func TestPlanModeAllowsGitReadonlyToolsButDeniesBash(t *testing.T) {
 	for _, spec := range r.Specs() {
 		names = append(names, spec.Name)
 	}
-	for _, want := range []string{"git_status", "git_diff"} {
+	for _, want := range []string{"git_status", "git_diff", "gh"} {
 		if !containsString(names, want) {
 			t.Fatalf("plan specs missing %q in %v", want, names)
 		}
