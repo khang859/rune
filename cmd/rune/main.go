@@ -5,7 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"runtime/debug"
+	"syscall"
 
 	"github.com/khang859/rune/internal/ai/faux"
 	"github.com/khang859/rune/internal/config"
@@ -43,7 +45,8 @@ func main() {
 		}
 	}()
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	args := flag.Args()
 	if len(args) >= 1 && args[0] == "mcp" {

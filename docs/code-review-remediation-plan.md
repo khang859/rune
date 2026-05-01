@@ -130,6 +130,21 @@ go test ./internal/config ./internal/ai/oauth
 
 ## Phase 2: Make CLI/TUI cancellation and terminal cleanup reliable
 
+**Status:** In progress.
+
+Completed on 2026-05-01:
+
+- Root CLI context now uses `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)` and defers `stop()`.
+- SIGINT/SIGTERM cancellation is threaded through existing login, prompt, script, and interactive startup paths, including provider construction and MCP startup.
+- Added regression coverage for canceled prompt contexts and OAuth login wait cancellation.
+- Confirmed remaining TUI-created `context.Background()` operations after startup are outside this item and remain for later TUI cancellation work.
+
+Validation completed:
+
+```sh
+go test ./cmd/rune ./internal/ai/oauth
+```
+
 ### 4. Use signal-aware root context
 
 **Problem:** `cmd/rune/main.go` uses `context.Background()`, so prompt/login/MCP startup do not receive SIGINT/SIGTERM cancellation through context.
@@ -146,10 +161,23 @@ go test ./internal/config ./internal/ai/oauth
 - Thread this context through existing login, prompt, script, and interactive paths.
 - Add targeted tests where practical for canceled prompt/script/login contexts.
 
+**Status:** Completed on 2026-05-01.
+
+Implemented:
+
+- Root context now uses `signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)` with deferred `stop()`.
+- Existing login, prompt, script, and interactive startup paths receive the signal-aware context.
+- Added practical cancellation regression tests for prompt provider requests and OAuth login waiting.
+- `runScript` already accepts and passes context into the agent path; no deterministic script-specific cancellation test was added because the current faux provider can deliver buffered events despite a pre-canceled context.
+
+Caveat:
+
+- Several TUI operations created after startup still use fresh `context.Background()` values. Those are tracked by later TUI cancellation items rather than this root startup-context item.
+
 **Verify:**
 
 ```sh
-go test ./cmd/rune
+go test ./cmd/rune ./internal/ai/oauth
 ```
 
 ### 5. Add bounded MCP startup timeouts

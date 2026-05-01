@@ -3,6 +3,7 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -74,5 +75,21 @@ func TestRunLoginFlow_RejectsStateMismatch(t *testing.T) {
 	_, err = flow.Wait(context.Background(), 1*time.Second)
 	if err == nil {
 		t.Fatal("expected state-mismatch error")
+	}
+}
+
+func TestRunLoginFlow_WaitReturnsCanceledContext(t *testing.T) {
+	flow, err := StartLogin(LoginConfig{Port: 0, OpenBrowser: func(string) error { return nil }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer flow.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = flow.Wait(ctx, time.Minute)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait error = %v, want context.Canceled", err)
 	}
 }

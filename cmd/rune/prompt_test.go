@@ -99,6 +99,53 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_CanceledContextCancelsProviderRequest(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseHandler := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(requestStarted)
+		w.Header().Set("Content-Type", "text/event-stream")
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-releaseHandler
+	}))
+	defer srv.Close()
+	defer close(releaseHandler)
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	var buf bytes.Buffer
+	go func() {
+		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", &buf)
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(2 * time.Second):
+		cancel()
+		t.Fatal("provider request did not start")
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runPrompt did not return after cancellation")
+	}
+	if strings.Contains(buf.String(), "ollama") {
+		t.Fatalf("canceled prompt streamed response: %q", buf.String())
+	}
+}
+
 func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("r", 24) {
