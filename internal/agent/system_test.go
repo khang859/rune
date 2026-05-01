@@ -14,10 +14,19 @@ func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
 	}
 	for _, want := range []string{
 		"You are rune, a coding agent.",
-		"present a concise plan",
-		"wait for the user's approval before editing files",
+		"Default behavior:",
+		"small, obvious change",
+		"first inspect the relevant code and clarify the goal before editing files",
+		"ask the user exactly one clarifying question at a time",
+		"include your recommended answer and brief rationale",
+		"present a concise implementation plan",
+		"wait for the user's approval before proceeding",
+		"Preserve user work",
+		"Validate with targeted tests or checks when practical",
 		"Prefer `read`, `write`, and `edit` over `bash`",
 		"do not call get_subagent_result immediately after starting it",
+		"Cite source URLs when relying on web information",
+		"summarize what changed, where, and how it was validated",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("BasePrompt() missing %q in: %q", want, got)
