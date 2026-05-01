@@ -71,9 +71,10 @@ type lockedFile struct {
 }
 
 func (s *Store) openLocked(mode int) (*lockedFile, error) {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return nil, err
 	}
+	_ = os.Chmod(filepath.Dir(s.path), 0o700)
 	lockPath := s.path + ".lock"
 	f, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {

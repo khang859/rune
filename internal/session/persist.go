@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/khang859/rune/internal/ai"
 )
@@ -39,9 +40,10 @@ func (s *Session) Save() error {
 	if s.path == "" {
 		return fmt.Errorf("session path is empty; set with SetPath or Load")
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(filepath.Dir(s.path), 0o700)
 	w := wireSession{
 		ID:        s.ID,
 		Name:      s.Name,
@@ -76,7 +78,7 @@ func (s *Session) Save() error {
 		return err
 	}
 	tmp := s.path + ".tmp"
-	f, err := os.Create(tmp)
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
 	}
@@ -94,7 +96,11 @@ func (s *Session) Save() error {
 		os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, s.path)
+	if err := os.Rename(tmp, s.path); err != nil {
+		return err
+	}
+	_ = os.Chmod(s.path, 0o600)
+	return nil
 }
 
 func Load(path string) (*Session, error) {
@@ -143,9 +149,9 @@ func walk(n *Node, fn func(*Node)) {
 }
 
 func normalizeProvider(provider string) string {
-	switch provider {
-	case "groq", "ollama":
-		return provider
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case "", "codex", "groq", "ollama", "runpod":
+		return strings.ToLower(strings.TrimSpace(provider))
 	default:
 		return "codex"
 	}

@@ -50,9 +50,10 @@ func (s *SecretStore) Load() (Secrets, error) {
 	return sec, nil
 }
 func (s *SecretStore) Save(sec Secrets) error {
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
 		return err
 	}
+	_ = os.Chmod(filepath.Dir(s.path), 0o700)
 	b, err := json.MarshalIndent(sec, "", "  ")
 	if err != nil {
 		return err

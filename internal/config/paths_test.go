@@ -31,13 +31,50 @@ func TestSessionsDir_IsUnderRuneDir(t *testing.T) {
 	}
 }
 
-func TestEnsureRuneDir_CreatesDir(t *testing.T) {
+func TestEnsureRuneDir_CreatesPrivateDirs(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("RUNE_DIR", filepath.Join(dir, "nested"))
 	if err := EnsureRuneDir(); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(RuneDir()); err != nil {
+	for _, path := range []string{RuneDir(), SessionsDir()} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.IsDir() {
+			t.Fatalf("%s is not a directory", path)
+		}
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("%s permissions = %o, want 700", path, got)
+		}
+	}
+}
+
+func TestEnsureRuneDir_MigratesExistingDirPermissions(t *testing.T) {
+	dir := t.TempDir()
+	runeDir := filepath.Join(dir, "nested")
+	sessionsDir := filepath.Join(runeDir, "sessions")
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.Chmod(runeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sessionsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("RUNE_DIR", runeDir)
+	if err := EnsureRuneDir(); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{runeDir, sessionsDir} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := info.Mode().Perm(); got != 0o700 {
+			t.Fatalf("%s permissions = %o, want 700", path, got)
+		}
 	}
 }

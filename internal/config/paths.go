@@ -28,5 +28,13 @@ func HistoryPath() string  { return filepath.Join(RuneDir(), "history") }
 
 // EnsureRuneDir creates the rune dir tree if missing.
 func EnsureRuneDir() error {
-	return os.MkdirAll(SessionsDir(), 0o755)
+	for _, dir := range []string{RuneDir(), SessionsDir()} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return err
+		}
+		if err := os.Chmod(dir, 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
 }

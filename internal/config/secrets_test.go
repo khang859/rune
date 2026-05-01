@@ -31,7 +31,7 @@ func TestValidateBraveAPIKeyRejectsObviousMistakes(t *testing.T) {
 }
 
 func TestSecretStoreSaveLoadAndEnvPrecedence(t *testing.T) {
-	dir := t.TempDir()
+	dir := filepath.Join(t.TempDir(), "rune")
 	store := NewSecretStore(filepath.Join(dir, "secrets.json"))
 	stored := strings.Repeat("a", 24)
 	env := strings.Repeat("b", 24)
@@ -45,6 +45,13 @@ func TestSecretStoreSaveLoadAndEnvPrecedence(t *testing.T) {
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("permissions = %v, want 0600", info.Mode().Perm())
 	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("directory permissions = %o, want 700", got)
+	}
 	key, err := store.BraveSearchAPIKey()
 	if err != nil || key != stored {
 		t.Fatalf("stored key = %q, %v", key, err)
@@ -53,6 +60,27 @@ func TestSecretStoreSaveLoadAndEnvPrecedence(t *testing.T) {
 	key, err = store.BraveSearchAPIKey()
 	if err != nil || key != env {
 		t.Fatalf("env key = %q, %v", key, err)
+	}
+}
+
+func TestSecretStore_MigratesExistingDirPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "rune")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := NewSecretStore(filepath.Join(dir, "secrets.json"))
+	if err := store.SetBraveSearchAPIKey(strings.Repeat("a", 24)); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o700 {
+		t.Fatalf("directory permissions = %o, want 700", got)
 	}
 }
 

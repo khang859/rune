@@ -43,10 +43,32 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestSave_AndLoad_PreservesOllamaProvider(t *testing.T) {
+func TestSave_AndLoad_PreservesSupportedProviders(t *testing.T) {
+	for _, provider := range []string{"", "codex", "groq", "ollama", "runpod"} {
+		t.Run(provider, func(t *testing.T) {
+			dir := t.TempDir()
+			s := New("qwen3:4b")
+			s.Provider = provider
+			s.SetPath(filepath.Join(dir, s.ID+".json"))
+			s.Append(userMsg("hi"))
+			if err := s.Save(); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := Load(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if loaded.Provider != provider || loaded.Model != "qwen3:4b" {
+				t.Fatalf("loaded provider/model = %q/%q, want %q/qwen3:4b", loaded.Provider, loaded.Model, provider)
+			}
+		})
+	}
+}
+
+func TestSave_AndLoad_NormalizesUnknownProviderToCodex(t *testing.T) {
 	dir := t.TempDir()
-	s := New("qwen3:4b")
-	s.Provider = "ollama"
+	s := New("gpt-5")
+	s.Provider = "future-provider"
 	s.SetPath(filepath.Join(dir, s.ID+".json"))
 	s.Append(userMsg("hi"))
 	if err := s.Save(); err != nil {
@@ -56,8 +78,8 @@ func TestSave_AndLoad_PreservesOllamaProvider(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Provider != "ollama" || loaded.Model != "qwen3:4b" {
-		t.Fatalf("loaded provider/model = %s/%s", loaded.Provider, loaded.Model)
+	if loaded.Provider != "codex" {
+		t.Fatalf("loaded provider = %q, want codex", loaded.Provider)
 	}
 }
 
@@ -176,6 +198,51 @@ func TestSave_IsAtomic(t *testing.T) {
 	entries, _ := os.ReadDir(dir)
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 file, got %d", len(entries))
+	}
+}
+
+func TestSave_WritesPrivateFileAndDirectoryPermissions(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "sessions")
+	s := New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.Append(userMsg("hi"))
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("session file permissions = %o, want 600", got)
+	}
+	dirInfo, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := dirInfo.Mode().Perm(); got != 0o700 {
+		t.Fatalf("session dir permissions = %o, want 700", got)
+	}
+}
+
+func TestSave_MigratesExistingSessionFilePermissions(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.json")
+	if err := os.WriteFile(path, []byte("{}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New("gpt-5")
+	s.SetPath(path)
+	s.Append(userMsg("hi"))
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("session file permissions = %o, want 600", got)
 	}
 }
 
