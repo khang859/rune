@@ -1204,6 +1204,29 @@ var _ = ai.RoleUser
 var _ = json.Valid
 var _ = context.Background
 
+func waitForSubagentStatus(t *testing.T, a *agent.Agent, id, status string) {
+	t.Helper()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if got := a.Subagents().Get(id); got != nil && got.Status == status {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("subagent %s did not reach status %q; got %+v", id, status, a.Subagents().Get(id))
+}
+
+type blockingTUIProvider struct{}
+
+func (blockingTUIProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	out := make(chan ai.Event)
+	go func() {
+		defer close(out)
+		<-ctx.Done()
+	}()
+	return out, nil
+}
+
 func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
@@ -1226,14 +1249,18 @@ func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 
 func TestRoot_SubagentSlashCommandsListAndCancel(t *testing.T) {
 	s := session.New("gpt-5")
-	a := agent.New(faux.New().Reply("working").Done(), tools.NewRegistry(), s, "")
+	a := agent.New(blockingTUIProvider{}, tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{Name: "repo-plan", Prompt: "inspect", AgentType: "general", Background: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	m.subagents[task.ID] = agent.SubagentEvent{Status: agent.SubagentRunning, Task: *task}
+	defer func() { _ = a.Subagents().Cancel(task.ID) }()
+	waitForSubagentStatus(t, a, task.ID, string(agent.SubagentRunning))
+	if latest := a.Subagents().Get(task.ID); latest != nil {
+		m.subagents[task.ID] = agent.SubagentEvent{Status: agent.SubagentRunning, Task: *latest}
+	}
 
 	m.handleSlashCommand("/subagents")
 	out := m.msgs.Render(m.styles, false, false, time.Now())
