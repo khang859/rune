@@ -27,7 +27,22 @@ func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
 
 func TestPlanModePrompt_IncludesSafetyGuidance(t *testing.T) {
 	got := PlanModePrompt()
-	for _, want := range []string{"You are in PLAN MODE", "Do not edit", "run shell commands", "approve before implementation"} {
+	for _, want := range []string{
+		"You are in PLAN MODE",
+		"Do not edit",
+		"run shell commands",
+		"mutating tools",
+		"Use only read-only tools",
+		"If a question can be answered by reading/searching/inspecting the codebase, do that instead of asking the user",
+		"Walk the design tree systematically",
+		"Ask exactly one question at a time",
+		"Include your recommended answer and a brief rationale",
+		"Stop and wait for the user's answer",
+		"produce a concise plan",
+		"Approval request",
+		"approve before implementation",
+		"Act Mode",
+	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("PlanModePrompt() missing %q in %q", want, got)
 		}
