@@ -12,6 +12,7 @@ func TestPDFInputSupport(t *testing.T) {
 		{Codex, "custom-model", DocumentUnknown},
 		{Groq, "meta-llama/llama-4-scout-17b-16e-instruct", DocumentUnsupported},
 		{Ollama, "qwen3-vl:8b", DocumentUnsupported},
+		{Runpod, "openai/gpt-oss-120b", DocumentUnsupported},
 	}
 	for _, tc := range cases {
 		if got := PDFInputSupport(tc.provider, tc.model); got != tc.want {
@@ -62,6 +63,22 @@ func TestImageInputSupport_Ollama(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if got := ImageInputSupport(Ollama, tc.model); got != tc.want {
+			t.Fatalf("%s support = %s, want %s", tc.model, got, tc.want)
+		}
+	}
+}
+
+func TestImageInputSupport_Runpod(t *testing.T) {
+	cases := []struct {
+		model string
+		want  ImageSupport
+	}{
+		{"openai/gpt-oss-120b", ImageUnsupported},
+		{"Qwen/Qwen3-32B-AWQ", ImageUnsupported},
+		{"custom-vision-model", ImageUnknown},
+	}
+	for _, tc := range cases {
+		if got := ImageInputSupport(Runpod, tc.model); got != tc.want {
 			t.Fatalf("%s support = %s, want %s", tc.model, got, tc.want)
 		}
 	}

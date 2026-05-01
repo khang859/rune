@@ -21,6 +21,7 @@ import (
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/ollama"
+	"github.com/khang859/rune/internal/ai/runpod"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/providers"
@@ -1196,6 +1197,9 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "groq_api_key" {
 				return m.openModal(modal.NewSecretInput("Groq API key", "groq_api_key"))
 			}
+			if v.Action == "runpod_api_key" {
+				return m.openModal(modal.NewSecretInput("Runpod API key", "runpod_api_key"))
+			}
 		case modal.Settings:
 			if providers.Normalize(v.Provider) != m.sess.Provider {
 				return m.switchProvider(v.Provider)
@@ -1242,6 +1246,13 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				} else {
 					m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
 					m.msgs.OnInfo("(saved Groq API key)")
+				}
+			case "runpod_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetRunpodAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.RunpodAPIKeyStatus = "configured — Enter to replace"
+					m.msgs.OnInfo("(saved Runpod API key)")
 				}
 			}
 			m.refreshViewport()
@@ -1335,6 +1346,8 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 		model = loadedSettings.GroqModel
 	case providers.Ollama:
 		model = loadedSettings.OllamaModel
+	case providers.Runpod:
+		model = loadedSettings.RunpodModel
 	}
 	if model == "" {
 		model = providers.DefaultModel(provider)
@@ -1365,6 +1378,12 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 		m.settings.GroqAPIKeyStatus = "missing — Enter to set"
 		if groqKeyConfigured() {
 			m.settings.GroqAPIKeyStatus = "configured — Enter to replace"
+		}
+	}
+	if provider == providers.Runpod {
+		m.settings.RunpodAPIKeyStatus = "missing — Enter to set"
+		if runpodKeyConfigured() {
+			m.settings.RunpodAPIKeyStatus = "configured — Enter to replace"
 		}
 	}
 	m.clampThinkingForCurrentModel()
@@ -1398,6 +1417,24 @@ func buildTUIProvider(provider string) (ai.Provider, error) {
 			endpoint = v
 		}
 		return ollama.New(endpoint), nil
+	case providers.Runpod:
+		settings, _ := config.LoadSettings(config.SettingsPath())
+		model := settings.RunpodModel
+		if v := os.Getenv("RUNE_RUNPOD_MODEL"); v != "" {
+			model = v
+		}
+		if model == "" {
+			model = providers.DefaultRunpodModel
+		}
+		endpoint := runpod.EndpointForModel(model)
+		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
+		if err != nil {
+			return nil, err
+		}
+		return runpod.New(endpoint, key), nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -1423,6 +1460,8 @@ func (m *RootModel) saveProviderSettings() {
 		s.GroqModel = m.sess.Model
 	case providers.Ollama:
 		s.OllamaModel = m.sess.Model
+	case providers.Runpod:
+		s.RunpodModel = m.sess.Model
 	default:
 		s.CodexModel = m.sess.Model
 	}

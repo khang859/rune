@@ -10,6 +10,7 @@ import (
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/ollama"
+	"github.com/khang859/rune/internal/ai/runpod"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/providers"
 )
@@ -38,6 +39,8 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 			model = os.Getenv("RUNE_GROQ_MODEL")
 		case providers.Ollama:
 			model = os.Getenv("RUNE_OLLAMA_MODEL")
+		case providers.Runpod:
+			model = os.Getenv("RUNE_RUNPOD_MODEL")
 		default:
 			model = os.Getenv("RUNE_CODEX_MODEL")
 		}
@@ -48,6 +51,8 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 			model = settings.GroqModel
 		case providers.Ollama:
 			model = settings.OllamaModel
+		case providers.Runpod:
+			model = settings.RunpodModel
 		default:
 			model = settings.CodexModel
 		}
@@ -76,6 +81,16 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 			endpoint = v
 		}
 		return providerSelection{Provider: provider, Model: model, AI: ollama.New(endpoint)}, nil
+	case providers.Runpod:
+		endpoint := runpod.EndpointForModel(model)
+		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
+		if err != nil {
+			return providerSelection{}, err
+		}
+		return providerSelection{Provider: provider, Model: model, AI: runpod.New(endpoint, key)}, nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {

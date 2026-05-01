@@ -19,7 +19,7 @@ const (
 func PDFInputSupport(provider, model string) DocumentSupport {
 	model = strings.ToLower(strings.TrimSpace(model))
 	switch Normalize(provider) {
-	case Groq, Ollama:
+	case Groq, Ollama, Runpod:
 		return DocumentUnsupported
 	default:
 		if isKnownCodexModel(model) || looksLikeOpenAIFileModel(model) {
@@ -47,6 +47,11 @@ func ImageInputSupport(provider, model string) ImageSupport {
 			return ImageSupported
 		}
 		if IsKnownModel(Ollama, model) {
+			return ImageUnsupported
+		}
+		return ImageUnknown
+	case Runpod:
+		if IsKnownModel(Runpod, model) {
 			return ImageUnsupported
 		}
 		return ImageUnknown

@@ -26,6 +26,7 @@ type Settings struct {
 	BraveAPIKeyStatus     string
 	TavilyAPIKeyStatus    string
 	GroqAPIKeyStatus      string
+	RunpodAPIKeyStatus    string
 }
 
 type SettingsAction struct {
@@ -70,6 +71,7 @@ const (
 	settingsRowBraveAPIKey
 	settingsRowTavilyAPIKey
 	settingsRowGroqAPIKey
+	settingsRowRunpodAPIKey
 	settingsRowSubagents
 	settingsRowSubagentMaxConcurrent
 	settingsRowSubagentTimeout
@@ -79,7 +81,7 @@ const (
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
 	return &SettingsModal{cur: cur, rows: []settingsRow{
-		newSettingsRow("Provider", "provider", []string{"codex", "groq", "ollama"}, cur.Provider),
+		newSettingsRow("Provider", "provider", []string{"codex", "groq", "ollama", "runpod"}, cur.Provider),
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
@@ -92,6 +94,7 @@ func NewSettings(cur Settings) Modal {
 		{kind: settingsRowAction, section: "Web Scrying", label: "brave api key", action: "brave_api_key", status: cur.BraveAPIKeyStatus},
 		{kind: settingsRowAction, section: "Web Scrying", label: "tavily api key", action: "tavily_api_key", status: cur.TavilyAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
 		newSettingsRow("Subagents", "subagents", []string{"off", "on"}, cur.Subagents),
 		newSettingsRow("Subagents", "max concurrent", []string{"1", "2", "4", "8"}, cur.SubagentMaxConcurrent),
 		newSettingsRow("Subagents", "default timeout", []string{"30s", "60s", "120s", "300s", "600s"}, cur.SubagentTimeout),
@@ -150,6 +153,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.GroqAPIKeyStatus == "" {
 		s.GroqAPIKeyStatus = "missing — Enter to set"
+	}
+	if s.RunpodAPIKeyStatus == "" {
+		s.RunpodAPIKeyStatus = "missing — Enter to set"
 	}
 	return s
 }
@@ -222,6 +228,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
 		TavilyAPIKeyStatus:    s.cur.TavilyAPIKeyStatus,
 		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
+		RunpodAPIKeyStatus:    s.cur.RunpodAPIKeyStatus,
 	}
 }
 

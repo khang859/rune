@@ -13,6 +13,7 @@ type Settings struct {
 	CodexModel      string           `json:"codex_model,omitempty"`
 	GroqModel       string           `json:"groq_model,omitempty"`
 	OllamaModel     string           `json:"ollama_model,omitempty"`
+	RunpodModel     string           `json:"runpod_model,omitempty"`
 	OllamaEndpoint  string           `json:"ollama_endpoint,omitempty"`
 	ReasoningEffort string           `json:"reasoning_effort,omitempty"`
 	IconMode        string           `json:"icon_mode,omitempty"`
@@ -63,6 +64,7 @@ func DefaultSettings() Settings {
 		CodexModel:      "gpt-5.5",
 		GroqModel:       "llama-3.3-70b-versatile",
 		OllamaModel:     "llama3.2",
+		RunpodModel:     "openai/gpt-oss-120b",
 		OllamaEndpoint:  "http://localhost:11434/v1/chat/completions",
 		ReasoningEffort: "medium",
 		IconMode:        "unicode",
@@ -93,7 +95,7 @@ func NormalizeSettings(s Settings) Settings {
 	if s.Provider == "" {
 		s.Provider = d.Provider
 	}
-	if s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" {
+	if s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" && s.Provider != "runpod" {
 		s.Provider = d.Provider
 	}
 	if s.CodexModel == "" {
@@ -104,6 +106,9 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.OllamaModel == "" {
 		s.OllamaModel = d.OllamaModel
+	}
+	if s.RunpodModel == "" {
+		s.RunpodModel = d.RunpodModel
 	}
 	if s.OllamaEndpoint == "" {
 		s.OllamaEndpoint = d.OllamaEndpoint

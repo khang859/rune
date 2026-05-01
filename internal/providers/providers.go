@@ -6,10 +6,12 @@ const (
 	Codex  = "codex"
 	Groq   = "groq"
 	Ollama = "ollama"
+	Runpod = "runpod"
 
 	DefaultCodexModel  = "gpt-5.5"
 	DefaultGroqModel   = "llama-3.3-70b-versatile"
 	DefaultOllamaModel = "llama3.2"
+	DefaultRunpodModel = "openai/gpt-oss-120b"
 )
 
 type Info struct {
@@ -55,12 +57,19 @@ var OllamaModels = []string{
 	"gpt-oss:20b",
 }
 
+var RunpodModels = []string{
+	"openai/gpt-oss-120b",
+	"Qwen/Qwen3-32B-AWQ",
+}
+
 func Normalize(id string) string {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case Groq:
 		return Groq
 	case Ollama:
 		return Ollama
+	case Runpod:
+		return Runpod
 	default:
 		return Codex
 	}
@@ -71,10 +80,11 @@ func All() []Info {
 		{ID: Codex, Display: "Codex", DefaultModel: DefaultCodexModel, Models: CodexModels},
 		{ID: Groq, Display: "Groq", DefaultModel: DefaultGroqModel, Models: GroqModels},
 		{ID: Ollama, Display: "Ollama", DefaultModel: DefaultOllamaModel, Models: OllamaModels},
+		{ID: Runpod, Display: "Runpod", DefaultModel: DefaultRunpodModel, Models: RunpodModels},
 	}
 }
 
-func IDs() []string { return []string{Codex, Groq, Ollama} }
+func IDs() []string { return []string{Codex, Groq, Ollama, Runpod} }
 
 func Models(provider string) []string {
 	switch Normalize(provider) {
@@ -82,6 +92,8 @@ func Models(provider string) []string {
 		return append([]string(nil), GroqModels...)
 	case Ollama:
 		return append([]string(nil), OllamaModels...)
+	case Runpod:
+		return append([]string(nil), RunpodModels...)
 	default:
 		return append([]string(nil), CodexModels...)
 	}
@@ -93,6 +105,8 @@ func DefaultModel(provider string) string {
 		return DefaultGroqModel
 	case Ollama:
 		return DefaultOllamaModel
+	case Runpod:
+		return DefaultRunpodModel
 	default:
 		return DefaultCodexModel
 	}
@@ -100,7 +114,7 @@ func DefaultModel(provider string) string {
 
 func IsKnownModel(provider, model string) bool {
 	for _, m := range Models(provider) {
-		if m == model {
+		if strings.EqualFold(m, model) {
 			return true
 		}
 	}

@@ -109,3 +109,27 @@ func TestGroqAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 		t.Fatalf("env groq key = %q, %v", key, err)
 	}
 }
+
+func TestRunpodAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	stored := strings.Repeat("r", 24)
+	env := strings.Repeat("p", 24)
+	if err := store.SetRunpodAPIKey("export RUNPOD_API_KEY='" + stored + "'"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.RunpodAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored runpod key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_RUNPOD_API_KEY", env)
+	key, err = store.RunpodAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env runpod key = %q, %v", key, err)
+	}
+}
+
+func TestNormalizeRunpodAPIKeyInput(t *testing.T) {
+	if got := NormalizeRunpodAPIKeyInput("RUNPOD_API_KEY='key'"); got != "key" {
+		t.Fatalf("NormalizeRunpodAPIKeyInput = %q, want key", got)
+	}
+}

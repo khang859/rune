@@ -25,6 +25,10 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if groqKeyConfigured() {
 		groqStatus = "configured — Enter to replace"
 	}
+	runpodStatus := "missing — Enter to set"
+	if runpodKeyConfigured() {
+		runpodStatus = "configured — Enter to replace"
+	}
 	return modal.Settings{
 		Provider:              s.Provider,
 		Effort:                s.ReasoningEffort,
@@ -43,6 +47,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		BraveAPIKeyStatus:     status,
 		TavilyAPIKeyStatus:    tavilyStatus,
 		GroqAPIKeyStatus:      groqStatus,
+		RunpodAPIKeyStatus:    runpodStatus,
 	}
 }
 
@@ -57,6 +62,7 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		CodexModel:      loaded.CodexModel,
 		GroqModel:       loaded.GroqModel,
 		OllamaModel:     loaded.OllamaModel,
+		RunpodModel:     loaded.RunpodModel,
 		OllamaEndpoint:  loaded.OllamaEndpoint,
 		ReasoningEffort: s.Effort,
 		IconMode:        s.IconMode,
@@ -120,6 +126,11 @@ func tavilyKeyConfigured() bool {
 
 func groqKeyConfigured() bool {
 	key, err := config.NewSecretStore(config.SecretsPath()).GroqAPIKey()
+	return err == nil && key != ""
+}
+
+func runpodKeyConfigured() bool {
+	key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
 	return err == nil && key != ""
 }
 

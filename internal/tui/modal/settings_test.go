@@ -51,7 +51,7 @@ func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 
 func TestSettings_CanChangeSubagentSettings(t *testing.T) {
 	s := NewSettings(Settings{Subagents: "on", SubagentMaxConcurrent: "4", SubagentTimeout: "600s", SubagentRetain: "100"}).(*SettingsModal)
-	for range 13 {
+	for range 14 {
 		s.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
 	s.Update(tea.KeyMsg{Type: tea.KeyLeft}) // subagents: on -> off
@@ -86,6 +86,7 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"✧ Provider",
 		"provider",
 		"groq api key",
+		"runpod api key",
 		"tavily api key",
 		"✧ Mind",
 		"thinking effort",
