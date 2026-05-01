@@ -11,10 +11,11 @@ subscriptions via OAuth, and Groq via API key.
 ```bash
 curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh
 
-rune login codex          # opens a browser to auth via your ChatGPT account
-# or: export GROQ_API_KEY=... && rune --provider groq
-# or: ollama pull llama3.2 && rune --provider ollama --model llama3.2
 rune                      # interactive mode
+# then use /providers or /settings to choose/configure a provider
+# Codex: rune login codex  # opens a browser to auth via your ChatGPT account
+# Groq: export GROQ_API_KEY=... && rune --provider groq
+# Ollama: ollama pull llama3.2 && rune --provider ollama --model llama3.2
 ```
 
 The installer downloads the latest GitHub release for macOS or Linux and can be

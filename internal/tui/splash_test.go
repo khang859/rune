@@ -18,6 +18,13 @@ func TestRenderSplashShowsWordmarkAndTagline(t *testing.T) {
 	}
 }
 
+func TestRenderSplashShowsNotice(t *testing.T) {
+	out := renderSplashWithNotice(80, 20, DefaultStyles(), "1.2.3", "No active provider configured.")
+	if !strings.Contains(out, "No active provider configured") {
+		t.Fatalf("notice missing:\n%s", out)
+	}
+}
+
 func TestRenderSplashHidesWhenTooSmall(t *testing.T) {
 	cases := []struct {
 		w, h int

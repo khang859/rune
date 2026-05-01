@@ -22,6 +22,7 @@ import (
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/ollama"
 	"github.com/khang859/rune/internal/ai/runpod"
+	"github.com/khang859/rune/internal/ai/unavailable"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/providers"
@@ -123,21 +124,26 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	cmds := append([]string{}, baseSlashCmds...)
 	ed := editor.New(realCwd, cmds)
 	ed.SetHistory(editor.NewHistory(config.HistoryPath()))
+	footer := Footer{
+		Cwd:            displayCwd,
+		GitBranch:      currentGitBranch(realCwd),
+		Session:        sessionLabel(sess),
+		Model:          sess.Model,
+		ThinkingEffort: footerThinkingEffort(sess.Model, a.ReasoningEffort()),
+		Mode:           footerMode(a.Mode()),
+	}
+	if providerUnavailable(a.Provider()) {
+		footer.Model = "no provider"
+		footer.ThinkingEffort = ""
+	}
 	return &RootModel{
-		agent:    a,
-		sess:     sess,
-		styles:   DefaultStylesWithIconMode(iconMode),
-		msgs:     NewMessages(80),
-		viewport: viewport.New(80, 20),
-		editor:   ed,
-		footer: Footer{
-			Cwd:            displayCwd,
-			GitBranch:      currentGitBranch(realCwd),
-			Session:        sessionLabel(sess),
-			Model:          sess.Model,
-			ThinkingEffort: footerThinkingEffort(sess.Model, a.ReasoningEffort()),
-			Mode:           footerMode(a.Mode()),
-		},
+		agent:                       a,
+		sess:                        sess,
+		styles:                      DefaultStylesWithIconMode(iconMode),
+		msgs:                        NewMessages(80),
+		viewport:                    viewport.New(80, 20),
+		editor:                      ed,
+		footer:                      footer,
 		queue:                       &Queue{},
 		settings:                    settings,
 		subagents:                   map[string]agent.SubagentEvent{},
@@ -404,6 +410,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleShellShortcut(res, cmd)
 	}
 	if res.Send {
+		if !m.hasActiveProvider() {
+			m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+			m.refreshViewport()
+			m.layout()
+			return m, cmd
+		}
 		resolved := resolveFileReferences(res.Text, m.editor.Cwd(), m.sess.Provider, m.sess.Model)
 		displayText := res.Text
 		text := resolved.Text
@@ -518,6 +530,12 @@ func formatUserMessageForDisplay(text string, imageCount int) string {
 }
 
 func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cmd {
+	if !m.hasActiveProvider() {
+		m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+		m.refreshViewport()
+		m.layout()
+		return nil
+	}
 	m.warnImageSupport(imagesFromBlocks(attachments))
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancel = cancel
@@ -573,6 +591,22 @@ func (m *RootModel) startSubagentContinuationTurn() tea.Cmd {
 	return m.startTurn(subagentContinuationPrompt, nil)
 }
 
+func providerUnavailable(p ai.Provider) bool {
+	_, ok := p.(*unavailable.Provider)
+	return ok
+}
+
+func (m *RootModel) hasActiveProvider() bool {
+	return !providerUnavailable(m.agent.Provider())
+}
+
+func (m *RootModel) noProviderNotice() string {
+	if m.hasActiveProvider() {
+		return ""
+	}
+	return "No active provider configured.\nUse /providers to choose one, or /settings to add API keys.\nCodex requires: rune login codex"
+}
+
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	if strings.HasPrefix(cmd, "/skill:") {
 		slug := strings.TrimPrefix(cmd, "/skill:")
@@ -601,6 +635,10 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/model":
 		initCmd = m.openModelPicker()
 	case "/thinking":
+		if !m.hasActiveProvider() {
+			m.msgs.OnInfo("(no active provider configured; use /providers first)")
+			break
+		}
 		levels := thinkingLevelsForModel(m.sess.Model)
 		if len(levels) == 0 {
 			m.msgs.OnInfo(fmt.Sprintf("(thinking levels for %s are unknown)", m.sess.Model))
@@ -733,6 +771,11 @@ func footerMode(mode agent.Mode) string {
 }
 
 func (m *RootModel) openModelPicker() tea.Cmd {
+	if !m.hasActiveProvider() {
+		m.msgs.OnInfo("(no active provider configured; use /providers first)")
+		m.refreshViewport()
+		return nil
+	}
 	if providers.Normalize(m.sess.Provider) != providers.Ollama {
 		return m.openModal(modal.NewModelPicker(providers.Models(m.sess.Provider), m.sess.Model))
 	}
@@ -986,7 +1029,7 @@ func (m *RootModel) layout() {
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
 	if m.msgs.IsEmpty() {
-		m.viewport.SetContent(renderSplash(m.width, m.viewport.Height, m.styles, m.version))
+		m.viewport.SetContent(renderSplashWithNotice(m.width, m.viewport.Height, m.styles, m.version, m.noProviderNotice()))
 	} else {
 		m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, m.showToolResults, time.Now()))
 	}
@@ -1184,7 +1227,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.SettingsModal:
 		switch v := payload.(type) {
 		case modal.SettingsAction:
-			if providers.Normalize(v.Settings.Provider) != m.sess.Provider {
+			if v.Settings.Provider != m.sess.Provider {
 				return m.switchProvider(v.Settings.Provider)
 			}
 			m.applySettings(v.Settings)
@@ -1201,7 +1244,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				return m.openModal(modal.NewSecretInput("Runpod API key", "runpod_api_key"))
 			}
 		case modal.Settings:
-			if providers.Normalize(v.Provider) != m.sess.Provider {
+			if v.Provider != m.sess.Provider {
 				return m.switchProvider(v.Provider)
 			}
 			m.applySettings(v)
@@ -1334,23 +1377,32 @@ func (m *RootModel) saveSessionIfStarted() {
 }
 
 func (m *RootModel) switchProvider(provider string) tea.Cmd {
-	provider = providers.Normalize(provider)
+	provider = strings.TrimSpace(provider)
+	if provider == "none" {
+		provider = ""
+	}
+	if provider != "" {
+		provider = providers.Normalize(provider)
+	}
 	if provider == m.sess.Provider {
 		return nil
 	}
 	loadedSettings, _ := config.LoadSettings(config.SettingsPath())
 	loadedSettings = config.NormalizeSettings(loadedSettings)
-	model := loadedSettings.CodexModel
-	switch provider {
-	case providers.Groq:
-		model = loadedSettings.GroqModel
-	case providers.Ollama:
-		model = loadedSettings.OllamaModel
-	case providers.Runpod:
-		model = loadedSettings.RunpodModel
-	}
-	if model == "" {
-		model = providers.DefaultModel(provider)
+	model := ""
+	if provider != "" {
+		model = loadedSettings.CodexModel
+		switch provider {
+		case providers.Groq:
+			model = loadedSettings.GroqModel
+		case providers.Ollama:
+			model = loadedSettings.OllamaModel
+		case providers.Runpod:
+			model = loadedSettings.RunpodModel
+		}
+		if model == "" {
+			model = providers.DefaultModel(provider)
+		}
 	}
 	p, err := buildTUIProvider(provider)
 	if err != nil {
@@ -1362,6 +1414,9 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	m.sess.Provider = provider
 	m.sess.Model = model
 	m.footer.Model = model
+	if provider == "" {
+		m.footer.Model = "no provider"
+	}
 	m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
@@ -1388,14 +1443,24 @@ func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	}
 	m.clampThinkingForCurrentModel()
 	m.refreshFooterThinkingEffort()
+	if provider == "" {
+		m.footer.ThinkingEffort = ""
+	}
 	m.saveProviderSettings()
 	m.saveSessionIfStarted()
-	m.msgs.OnInfo(fmt.Sprintf("(provider: %s, model: %s)", provider, model))
+	if provider == "" {
+		m.msgs.OnInfo("(no active provider configured)")
+	} else {
+		m.msgs.OnInfo(fmt.Sprintf("(provider: %s, model: %s)", provider, model))
+	}
 	m.refreshViewport()
 	return nil
 }
 
 func buildTUIProvider(provider string) (ai.Provider, error) {
+	if strings.TrimSpace(provider) == "" {
+		return unavailable.New("no active provider configured"), nil
+	}
 	switch providers.Normalize(provider) {
 	case providers.Groq:
 		endpoint := groq.DefaultEndpoint
@@ -1456,14 +1521,14 @@ func (m *RootModel) saveProviderSettings() {
 	s := configFromModalSettings(m.settings)
 	s.Provider = m.sess.Provider
 	switch m.sess.Provider {
+	case providers.Codex:
+		s.CodexModel = m.sess.Model
 	case providers.Groq:
 		s.GroqModel = m.sess.Model
 	case providers.Ollama:
 		s.OllamaModel = m.sess.Model
 	case providers.Runpod:
 		s.RunpodModel = m.sess.Model
-	default:
-		s.CodexModel = m.sess.Model
 	}
 	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
@@ -1504,11 +1569,14 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.sess = s
 	m.footer.Session = sessionLabel(s)
 	m.footer.Model = s.Model
+	if strings.TrimSpace(s.Provider) == "" {
+		m.footer.Model = "no provider"
+	}
 	m.rebuildMessagesFromSession()
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
 	p := m.agent.Provider()
-	if providers.Normalize(s.Provider) != providers.Normalize(oldProvider) {
+	if s.Provider != oldProvider {
 		if np, err := buildTUIProvider(s.Provider); err == nil {
 			p = np
 		} else {

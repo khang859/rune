@@ -1,6 +1,6 @@
 # Providers
 
-rune supports multiple LLM providers. Select one with:
+rune supports multiple LLM providers. On first run, no provider is active; `rune` still opens the TUI and the splash screen points you to `/providers` and `/settings`. Select one with:
 
 ```bash
 rune --provider codex

@@ -53,6 +53,7 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_DIR", runeDir)
 	t.Setenv("RUNE_CODEX_ENDPOINT", codex.URL+"/codex/responses")
 	t.Setenv("RUNE_OAUTH_TOKEN_URL", refresh.URL+"/oauth/token")
+	t.Setenv("RUNE_PROVIDER", "codex")
 
 	store := oauth.NewStore(filepath.Join(runeDir, "auth.json"))
 	_ = store.Set("openai-codex", oauth.Credentials{

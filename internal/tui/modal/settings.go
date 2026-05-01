@@ -80,8 +80,12 @@ const (
 
 func NewSettings(cur Settings) Modal {
 	cur = normalizeSettings(cur)
+	provider := cur.Provider
+	if provider == "" {
+		provider = "none"
+	}
 	return &SettingsModal{cur: cur, rows: []settingsRow{
-		newSettingsRow("Provider", "provider", []string{"codex", "groq", "ollama", "runpod"}, cur.Provider),
+		newSettingsRow("Provider", "provider", []string{"none", "codex", "groq", "ollama", "runpod"}, provider),
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
@@ -103,9 +107,6 @@ func NewSettings(cur Settings) Modal {
 }
 
 func normalizeSettings(s Settings) Settings {
-	if s.Provider == "" {
-		s.Provider = "codex"
-	}
 	if s.Effort == "" {
 		s.Effort = "medium"
 	}
@@ -209,9 +210,16 @@ func (s *SettingsModal) cycleSelected(delta int) {
 	row.value = (row.value + delta + len(row.options)) % len(row.options)
 }
 
+func selectedProviderValue(provider string) string {
+	if provider == "none" {
+		return ""
+	}
+	return provider
+}
+
 func (s *SettingsModal) selectedSettings() Settings {
 	return Settings{
-		Provider:              s.rows[settingsRowProvider].options[s.rows[settingsRowProvider].value],
+		Provider:              selectedProviderValue(s.rows[settingsRowProvider].options[s.rows[settingsRowProvider].value]),
 		Effort:                s.rows[settingsRowEffort].options[s.rows[settingsRowEffort].value],
 		IconMode:              s.rows[settingsRowIconMode].options[s.rows[settingsRowIconMode].value],
 		ActivityMode:          s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],

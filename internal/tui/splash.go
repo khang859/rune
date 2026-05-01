@@ -15,6 +15,10 @@ const splashTagline = "✦ speak your incantation ✦"
 // Returns "" when the area is too small to display the art legibly — the
 // viewport then falls back to its natural empty state.
 func renderSplash(width, height int, styles Styles, version string) string {
+	return renderSplashWithNotice(width, height, styles, version, "")
+}
+
+func renderSplashWithNotice(width, height int, styles Styles, version, notice string) string {
 	const minWidth = 38  // wordmark is 35 cols; 3 for breathing room
 	const minHeight = 10 // 6 art rows + blank + tagline + version + breathing room
 	if width < minWidth || height < minHeight {
@@ -23,6 +27,10 @@ func renderSplash(width, height int, styles Styles, version string) string {
 	art := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("11")).Render(splashWordmark)
 	tag := styles.Info.Render(splashTagline)
 	versionLine := styles.Info.Render("rune " + version)
-	body := lipgloss.JoinVertical(lipgloss.Center, art, "", tag, versionLine)
+	parts := []string{art, "", tag, versionLine}
+	if notice != "" {
+		parts = append(parts, "", styles.Info.Render(notice))
+	}
+	body := lipgloss.JoinVertical(lipgloss.Center, parts...)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, body)
 }

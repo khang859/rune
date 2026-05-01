@@ -8,6 +8,7 @@ import (
 
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/agentdef"
+	"github.com/khang859/rune/internal/ai/unavailable"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
@@ -20,16 +21,19 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
+	settings, _ := config.LoadSettings(config.SettingsPath())
 	selection, err := buildProvider(ctx, providerOverride, modelOverride)
 	if err != nil {
-		return err
+		selection.AI = unavailable.New("no active provider configured")
+		if settings.Provider != "" || providerOverride != "" || os.Getenv("RUNE_PROVIDER") != "" {
+			return err
+		}
 	}
 
 	sess := session.New(selection.Model)
 	sess.Provider = selection.Provider
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
-	settings, _ := config.LoadSettings(config.SettingsPath())
 	reg := tools.NewRegistry()
 	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
 	tools.RegisterBuiltins(reg, opts)

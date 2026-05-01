@@ -4,8 +4,8 @@ import "testing"
 
 func TestDefaultSettingsIncludesProvider(t *testing.T) {
 	s := DefaultSettings()
-	if s.Provider != "codex" {
-		t.Fatalf("provider = %q, want codex", s.Provider)
+	if s.Provider != "" {
+		t.Fatalf("provider = %q, want no active provider", s.Provider)
 	}
 	if s.CodexModel != "gpt-5.5" {
 		t.Fatalf("codex model = %q", s.CodexModel)
@@ -52,7 +52,7 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 
 func TestNormalizeSettingsFillsProviderDefaults(t *testing.T) {
 	s := NormalizeSettings(Settings{})
-	if s.Provider != "codex" || s.CodexModel == "" || s.GroqModel == "" || s.OllamaModel == "" || s.RunpodModel == "" || s.OllamaEndpoint == "" {
+	if s.Provider != "" || s.CodexModel == "" || s.GroqModel == "" || s.OllamaModel == "" || s.RunpodModel == "" || s.OllamaEndpoint == "" {
 		t.Fatalf("settings = %+v", s)
 	}
 }

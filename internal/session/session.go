@@ -38,12 +38,11 @@ type Node struct {
 func New(model string) *Session {
 	root := &Node{ID: newID(), Created: time.Now()}
 	return &Session{
-		ID:       newID(),
-		Created:  time.Now(),
-		Provider: "codex",
-		Model:    model,
-		Root:     root,
-		Active:   root,
+		ID:      newID(),
+		Created: time.Now(),
+		Model:   model,
+		Root:    root,
+		Active:  root,
 	}
 }
 

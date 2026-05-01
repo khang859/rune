@@ -16,6 +16,7 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
+	"github.com/khang859/rune/internal/ai/unavailable"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
@@ -679,6 +680,26 @@ func TestRoot_SessionSlashCommandIsInfoNotError(t *testing.T) {
 	}
 	if !strings.Contains(last.text, "session id=") || !strings.Contains(last.text, "model=gpt-5.5") {
 		t.Fatalf("unexpected /session text: %q", last.text)
+	}
+}
+
+func TestRoot_NoProviderBlocksSend(t *testing.T) {
+	s := session.New("")
+	a := agent.New(unavailable.New("no active provider configured"), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.editor.SetValue("hello")
+
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+
+	if len(s.PathToActive()) != 0 {
+		t.Fatalf("send without provider should not append to session, got %d messages", len(s.PathToActive()))
+	}
+	if m.streaming {
+		t.Fatal("send without provider should not start streaming")
+	}
+	if !strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "no active provider configured") {
+		t.Fatalf("missing no-provider message: %q", m.msgs.Render(m.styles, false, false, time.Time{}))
 	}
 }
 

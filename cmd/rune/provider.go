@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/codex"
@@ -29,6 +30,10 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 	}
 	if providerOverride != "" {
 		provider = providerOverride
+	}
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return providerSelection{}, fmt.Errorf("no active provider configured (use `rune --provider <id>` or choose one in /providers)")
 	}
 	provider = providers.Normalize(provider)
 

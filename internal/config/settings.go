@@ -60,7 +60,6 @@ func (a AutoCompact) EnabledValue() bool {
 
 func DefaultSettings() Settings {
 	return Settings{
-		Provider:        "codex",
 		CodexModel:      "gpt-5.5",
 		GroqModel:       "llama-3.3-70b-versatile",
 		OllamaModel:     "llama3.2",
@@ -92,11 +91,8 @@ func LoadSettings(path string) (Settings, error) {
 
 func NormalizeSettings(s Settings) Settings {
 	d := DefaultSettings()
-	if s.Provider == "" {
-		s.Provider = d.Provider
-	}
-	if s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" && s.Provider != "runpod" {
-		s.Provider = d.Provider
+	if s.Provider != "" && s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" && s.Provider != "runpod" {
+		s.Provider = ""
 	}
 	if s.CodexModel == "" {
 		s.CodexModel = d.CodexModel
