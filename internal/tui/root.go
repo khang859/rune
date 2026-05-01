@@ -77,6 +77,7 @@ type RootModel struct {
 	skills           map[string]string
 	pendingSkillBody string
 	mcpStatuses      []mcp.Status
+	version          string
 
 	// Ctrl+C requires a double press to exit. The first press clears the
 	// editor (and closes a modal / cancels a streaming turn), primes the
@@ -159,6 +160,10 @@ func (m *RootModel) SetMCPStatuses(statuses []mcp.Status) {
 		m.mcpStatuses[i] = st
 		m.mcpStatuses[i].Tools = append([]string(nil), st.Tools...)
 	}
+}
+
+func (m *RootModel) SetVersion(version string) {
+	m.version = version
 }
 
 func (m *RootModel) Init() tea.Cmd {
@@ -944,7 +949,7 @@ func (m *RootModel) layout() {
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
 	if m.msgs.IsEmpty() {
-		m.viewport.SetContent(renderSplash(m.width, m.viewport.Height, m.styles))
+		m.viewport.SetContent(renderSplash(m.width, m.viewport.Height, m.styles, m.version))
 	} else {
 		m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, m.showToolResults, time.Now()))
 	}

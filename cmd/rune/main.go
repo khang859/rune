@@ -76,7 +76,7 @@ func main() {
 		}
 		return
 	}
-	if err := runInteractive(ctx, *provider, *model); err != nil {
+	if err := runInteractive(ctx, *provider, *model, Version); err != nil {
 		runelog.Error("interactive", "err", err.Error())
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

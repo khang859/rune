@@ -16,7 +16,7 @@ import (
 	"github.com/khang859/rune/internal/tui"
 )
 
-func runInteractive(ctx context.Context, providerOverride, modelOverride string) error {
+func runInteractive(ctx context.Context, providerOverride, modelOverride, version string) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
@@ -65,5 +65,5 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride string)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 
-	return tui.Run(a, sess, skills, mgr.Statuses())
+	return tui.Run(a, sess, skills, mgr.Statuses(), version)
 }

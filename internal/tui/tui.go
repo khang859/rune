@@ -12,8 +12,9 @@ import (
 	"github.com/khang859/rune/internal/skill"
 )
 
-func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status) error {
+func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
 	m := NewRootModel(a, s)
+	m.SetVersion(version)
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())

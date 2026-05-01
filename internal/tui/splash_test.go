@@ -6,12 +6,15 @@ import (
 )
 
 func TestRenderSplashShowsWordmarkAndTagline(t *testing.T) {
-	out := renderSplash(80, 20, DefaultStyles())
+	out := renderSplash(80, 20, DefaultStyles(), "1.2.3")
 	if !strings.Contains(out, "██████") {
 		t.Fatalf("wordmark missing:\n%s", out)
 	}
 	if !strings.Contains(out, "speak your incantation") {
 		t.Fatalf("tagline missing:\n%s", out)
+	}
+	if !strings.Contains(out, "rune 1.2.3") {
+		t.Fatalf("version missing:\n%s", out)
 	}
 }
 
@@ -24,7 +27,7 @@ func TestRenderSplashHidesWhenTooSmall(t *testing.T) {
 		{0, 0},   // pre-layout
 	}
 	for _, c := range cases {
-		if got := renderSplash(c.w, c.h, DefaultStyles()); got != "" {
+		if got := renderSplash(c.w, c.h, DefaultStyles(), "1.2.3"); got != "" {
 			t.Fatalf("expected empty splash for %dx%d, got:\n%s", c.w, c.h, got)
 		}
 	}
