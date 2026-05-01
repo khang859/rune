@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Rune — Minimal terminal coding agent</title>
+    <meta
+      name="description"
+      content="Rune is a minimal terminal coding agent in Go with local tools, plan mode, sessions, skills, subagents, MCP, and Codex/Groq/Ollama provider support."
+    />
+    <link rel="icon" type="image/png" href="images/rune-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Rune — Minimal terminal coding agent" />
+    <meta
+      property="og:description"
+      content="A small, fast Go-based coding agent for your terminal with tools, plan mode, sessions, skills, subagents, MCP, and multiple providers."
+    />
+    <meta property="og:image" content="https://khang859.github.io/rune/images/rune-hero.png" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Rune — Minimal terminal coding agent" />
+    <meta
+      name="twitter:description"
+      content="A small, fast Go-based coding agent for your terminal with tools, plan mode, sessions, skills, subagents, MCP, and multiple providers."
+    />
+    <meta name="twitter:image" content="https://khang859.github.io/rune/images/rune-hero.png" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #070a12;
+        --bg-soft: #0c1220;
+        --panel: rgba(13, 20, 35, 0.78);
+        --panel-solid: #111a2c;
+        --border: rgba(143, 178, 255, 0.18);
+        --border-strong: rgba(101, 218, 255, 0.36);
+        --text: #eef5ff;
+        --muted: #a8b3c7;
+        --muted-2: #768299;
+        --cyan: #63e6ff;
+        --blue: #6b8cff;
+        --amber: #ffbf69;
+        --green: #8dffb6;
+        --shadow: 0 26px 80px rgba(0, 0, 0, 0.5);
+        --radius: 24px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 78% 8%, rgba(99, 230, 255, 0.18), transparent 34rem),
+          radial-gradient(circle at 14% 22%, rgba(255, 191, 105, 0.13), transparent 28rem),
+          radial-gradient(circle at 55% 78%, rgba(107, 140, 255, 0.12), transparent 38rem),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.6;
+      }
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+        background-size: 52px 52px;
+        mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.7), transparent 80%);
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .shell {
+        width: min(1160px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 26px 0;
+      }
+
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        font-size: 1.28rem;
+      }
+
+      .brand-mark {
+        width: 42px;
+        height: 42px;
+        border: 1px solid var(--border-strong);
+        border-radius: 14px;
+        background:
+          linear-gradient(135deg, rgba(99, 230, 255, 0.24), rgba(255, 191, 105, 0.12)),
+          #09111f;
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 28px rgba(99, 230, 255, 0.16);
+        overflow: hidden;
+      }
+
+      .brand-mark img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+
+      .brand-mark span {
+        color: var(--cyan);
+        font-family: "JetBrains Mono", monospace;
+        font-weight: 800;
+      }
+
+      .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      .nav-links a {
+        padding: 10px 12px;
+        border-radius: 999px;
+        transition: 160ms ease;
+      }
+
+      .nav-links a:hover {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1fr 0.88fr;
+        align-items: center;
+        gap: 56px;
+        padding: 64px 0 70px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--cyan);
+        border: 1px solid rgba(99, 230, 255, 0.24);
+        background: rgba(99, 230, 255, 0.08);
+        border-radius: 999px;
+        padding: 8px 13px;
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.78rem;
+        font-weight: 600;
+      }
+
+      .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow: 0 0 18px var(--green);
+      }
+
+      h1 {
+        max-width: 760px;
+        margin: 24px 0 20px;
+        font-size: clamp(3.1rem, 8vw, 6.8rem);
+        line-height: 0.9;
+        letter-spacing: -0.085em;
+      }
+
+      .gradient-text {
+        color: transparent;
+        background: linear-gradient(100deg, #fff, var(--cyan) 46%, var(--amber));
+        -webkit-background-clip: text;
+        background-clip: text;
+      }
+
+      .hero-copy {
+        max-width: 660px;
+        color: var(--muted);
+        font-size: clamp(1.05rem, 2vw, 1.27rem);
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 14px;
+        margin-top: 30px;
+      }
+
+      .button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 48px;
+        padding: 0 18px;
+        border-radius: 14px;
+        border: 1px solid var(--border);
+        font-weight: 700;
+        transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+      }
+
+      .button:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-strong);
+      }
+
+      .button.primary {
+        color: #031018;
+        background: linear-gradient(135deg, var(--cyan), #9af5ff);
+        border-color: rgba(255, 255, 255, 0.18);
+        box-shadow: 0 12px 38px rgba(99, 230, 255, 0.22);
+      }
+
+      .button.secondary {
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.06);
+      }
+
+      .terminal-card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background:
+          linear-gradient(180deg, rgba(255, 255, 255, 0.07), transparent),
+          rgba(8, 13, 24, 0.9);
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+
+      .terminal-top {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 15px 18px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        border-radius: 50%;
+      }
+
+      .dot.red { background: #ff6464; }
+      .dot.amber { background: var(--amber); }
+      .dot.green { background: var(--green); }
+
+      .terminal-title {
+        margin-left: 8px;
+        color: var(--muted-2);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.8rem;
+      }
+
+      pre {
+        margin: 0;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      code,
+      pre {
+        font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      }
+
+      .terminal-body {
+        padding: 24px;
+        color: #d9e8ff;
+        font-size: 0.94rem;
+      }
+
+      .prompt { color: var(--cyan); }
+      .comment { color: #78859d; }
+      .ok { color: var(--green); }
+      .warn { color: var(--amber); }
+
+      .hero-art {
+        position: relative;
+      }
+
+      .hero-art::before {
+        content: "ᚱ";
+        position: absolute;
+        right: -28px;
+        top: -46px;
+        color: rgba(99, 230, 255, 0.13);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 13rem;
+        font-weight: 800;
+        z-index: -1;
+        transform: rotate(12deg);
+      }
+
+      .image-card {
+        aspect-ratio: 16 / 9;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 40%, rgba(99, 230, 255, 0.24), transparent 35%),
+          linear-gradient(135deg, #101a2d, #070a12);
+        box-shadow: var(--shadow);
+      }
+
+      .image-card img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .section {
+        padding: 84px 0;
+      }
+
+      .section-header {
+        max-width: 760px;
+        margin-bottom: 30px;
+      }
+
+      .section-kicker {
+        color: var(--amber);
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      h2 {
+        margin: 10px 0 12px;
+        font-size: clamp(2rem, 4vw, 3.3rem);
+        line-height: 1;
+        letter-spacing: -0.06em;
+      }
+
+      .section-header p {
+        color: var(--muted);
+        font-size: 1.08rem;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 18px;
+      }
+
+      .feature {
+        min-height: 220px;
+        padding: 24px;
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--panel);
+        backdrop-filter: blur(20px);
+      }
+
+      .feature-icon {
+        width: 42px;
+        height: 42px;
+        display: grid;
+        place-items: center;
+        border-radius: 14px;
+        margin-bottom: 18px;
+        background: rgba(99, 230, 255, 0.1);
+        border: 1px solid rgba(99, 230, 255, 0.2);
+        color: var(--cyan);
+        font-family: "JetBrains Mono", monospace;
+        font-weight: 800;
+      }
+
+      .feature h3 {
+        margin: 0 0 8px;
+        font-size: 1.05rem;
+      }
+
+      .feature p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.96rem;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 0.9fr 1.1fr;
+        gap: 26px;
+        align-items: stretch;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--panel);
+        box-shadow: 0 16px 54px rgba(0, 0, 0, 0.24);
+        padding: 26px;
+      }
+
+      .provider-list {
+        display: grid;
+        gap: 14px;
+        margin-top: 22px;
+      }
+
+      .provider {
+        display: flex;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 16px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .provider strong {
+        display: block;
+        margin-bottom: 2px;
+      }
+
+      .provider span {
+        color: var(--muted);
+        font-size: 0.93rem;
+      }
+
+      .check {
+        color: var(--green);
+        font-family: "JetBrains Mono", monospace;
+        font-weight: 800;
+      }
+
+      .docs-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 14px;
+      }
+
+      .doc-link {
+        padding: 18px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--muted);
+        transition: 160ms ease;
+      }
+
+      .doc-link strong {
+        display: block;
+        color: var(--text);
+        margin-bottom: 4px;
+      }
+
+      .doc-link:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-strong);
+        color: var(--text);
+      }
+
+      .cta {
+        text-align: center;
+        padding: 70px 26px;
+        border: 1px solid var(--border-strong);
+        border-radius: 34px;
+        background:
+          radial-gradient(circle at 50% 0%, rgba(99, 230, 255, 0.18), transparent 38rem),
+          rgba(13, 20, 35, 0.78);
+        box-shadow: var(--shadow);
+      }
+
+      .cta p {
+        max-width: 650px;
+        margin: 0 auto 26px;
+        color: var(--muted);
+      }
+
+      footer {
+        padding: 54px 0 44px;
+        color: var(--muted-2);
+        font-size: 0.94rem;
+      }
+
+      footer .shell {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        flex-wrap: wrap;
+      }
+
+      footer a {
+        color: var(--muted);
+      }
+
+      @media (max-width: 920px) {
+        .hero,
+        .split {
+          grid-template-columns: 1fr;
+        }
+
+        .hero {
+          padding-top: 36px;
+        }
+
+        .grid,
+        .docs-grid {
+          grid-template-columns: repeat(2, 1fr);
+        }
+      }
+
+      @media (max-width: 640px) {
+        .shell {
+          width: min(100% - 28px, 1160px);
+        }
+
+        .nav {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .nav-links {
+          flex-wrap: wrap;
+        }
+
+        .grid,
+        .docs-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .section {
+          padding: 58px 0;
+        }
+
+        .terminal-body {
+          font-size: 0.82rem;
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="shell nav">
+      <a class="brand" href="#top" aria-label="Rune home">
+        <span class="brand-mark">
+          <img src="images/rune-icon.png" alt="" onerror="this.remove(); this.parentElement.append('ᚱ');" />
+        </span>
+        <span>rune</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="#features">Features</a>
+        <a href="#providers">Providers</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/khang859/rune">GitHub</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="shell hero">
+        <div>
+          <div class="eyebrow"><span class="pulse"></span> minimal terminal coding agent</div>
+          <h1>Code with an agent that stays in your <span class="gradient-text">terminal.</span></h1>
+          <p class="hero-copy">
+            Rune is a small, fast coding agent written in Go. It ships with local file and shell tools,
+            safe plan mode, branching sessions, markdown skills, custom subagents, MCP plugins, and
+            Codex/Groq/Ollama provider support.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="#install">Install Rune →</a>
+            <a class="button secondary" href="https://github.com/khang859/rune">View on GitHub</a>
+          </div>
+        </div>
+
+        <div class="hero-art">
+          <div class="image-card" aria-label="Rune hero artwork">
+            <img src="images/rune-hero.png" alt="Glowing terminal prompt with rune glyphs" />
+          </div>
+        </div>
+      </section>
+
+      <section id="install" class="shell split section">
+        <div class="panel">
+          <span class="section-kicker">Quick start</span>
+          <h2>Install, log in, run.</h2>
+          <p>
+            The installer downloads the latest GitHub release for macOS or Linux. You can also install
+            from source with <code>go install github.com/khang859/rune/cmd/rune@latest</code>.
+          </p>
+        </div>
+
+        <div class="terminal-card">
+          <div class="terminal-top">
+            <span class="dot red"></span>
+            <span class="dot amber"></span>
+            <span class="dot green"></span>
+            <span class="terminal-title">~/dev $ rune</span>
+          </div>
+          <pre class="terminal-body"><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/khang859/rune/main/install.sh | sh
+<span class="ok">Installed rune</span>
+
+<span class="prompt">$</span> rune login codex
+<span class="comment"># opens a browser to auth via your ChatGPT account</span>
+
+<span class="prompt">$</span> rune
+<span class="warn">/plan</span>   <span class="comment"># think safely before editing</span>
+<span class="warn">/act</span>    <span class="comment"># implement when ready</span></code></pre>
+        </div>
+      </section>
+
+      <section id="features" class="shell section">
+        <div class="section-header">
+          <span class="section-kicker">What it does</span>
+          <h2>A focused agent loop with the pieces you actually need.</h2>
+          <p>
+            Rune keeps the core workflow compact: understand the repo, make surgical edits, run targeted
+            checks, and preserve context across sessions.
+          </p>
+        </div>
+
+        <div class="grid">
+          <article class="feature">
+            <div class="feature-icon">rw</div>
+            <h3>Local tools</h3>
+            <p>Read, write, edit, and run shell commands with repository-aware context and focused diffs.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">/p</div>
+            <h3>Plan mode</h3>
+            <p>Enter a safe planning state where edits and bash are disabled until you approve the path forward.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">⎇</div>
+            <h3>Branching sessions</h3>
+            <p>Jump through the conversation tree, resume old work, and compact long histories when needed.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">sk</div>
+            <h3>Skills</h3>
+            <p>Drop markdown skills into your home or project directory to teach Rune repeatable workflows.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">ag</div>
+            <h3>Subagents</h3>
+            <p>Define specialized agents for exploration, validation, reviews, or any project-specific role.</p>
+          </article>
+          <article class="feature">
+            <div class="feature-icon">mcp</div>
+            <h3>MCP plugins</h3>
+            <p>Connect external tools through Model Context Protocol configuration in <code>~/.rune/mcp.json</code>.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="providers" class="shell split section">
+        <div class="panel">
+          <span class="section-kicker">Providers</span>
+          <h2>Use hosted models or local ones.</h2>
+          <p>
+            Codex is the default provider. Groq and Ollama are available when you want fast hosted inference
+            or a fully local model.
+          </p>
+          <div class="provider-list">
+            <div class="provider"><span class="check">✓</span><span><strong>Codex</strong>OAuth login via your ChatGPT account.</span></div>
+            <div class="provider"><span class="check">✓</span><span><strong>Groq</strong>API-key based provider for fast hosted models.</span></div>
+            <div class="provider"><span class="check">✓</span><span><strong>Ollama</strong>Run local models such as <code>llama3.2</code>.</span></div>
+          </div>
+        </div>
+
+        <div class="terminal-card">
+          <div class="terminal-top">
+            <span class="dot red"></span>
+            <span class="dot amber"></span>
+            <span class="dot green"></span>
+            <span class="terminal-title">providers</span>
+          </div>
+          <pre class="terminal-body"><code><span class="prompt">$</span> rune --provider groq
+<span class="comment"># or configure in the TUI with /providers</span>
+
+<span class="prompt">$</span> export GROQ_API_KEY="..."
+<span class="prompt">$</span> rune --provider groq
+
+<span class="prompt">$</span> ollama pull llama3.2
+<span class="prompt">$</span> rune --provider ollama --model llama3.2</code></pre>
+        </div>
+      </section>
+
+      <section id="docs" class="shell section">
+        <div class="section-header">
+          <span class="section-kicker">Learn more</span>
+          <h2>Docs for the workflows behind Rune.</h2>
+          <p>Start with the key concepts, then customize Rune with skills, subagents, MCP, and providers.</p>
+        </div>
+        <div class="docs-grid">
+          <a class="doc-link" href="architecture.md"><strong>Architecture</strong>How Rune is put together.</a>
+          <a class="doc-link" href="plan-mode.md"><strong>Plan Mode</strong>Safe planning before acting.</a>
+          <a class="doc-link" href="providers.md"><strong>Providers</strong>Codex, Groq, and Ollama.</a>
+          <a class="doc-link" href="mcp.md"><strong>MCP</strong>Plugin configuration.</a>
+          <a class="doc-link" href="skills.md"><strong>Skills</strong>Reusable markdown workflows.</a>
+          <a class="doc-link" href="subagents.md"><strong>Subagents</strong>Specialized helper agents.</a>
+          <a class="doc-link" href="keybindings.md"><strong>Keybindings</strong>Interactive TUI controls.</a>
+          <a class="doc-link" href="web.md"><strong>Web tools</strong>Search and fetch options.</a>
+        </div>
+      </section>
+
+      <section class="shell section">
+        <div class="cta">
+          <span class="section-kicker">Open source</span>
+          <h2>Bring a coding agent to any terminal.</h2>
+          <p>
+            Rune is MIT licensed and designed to stay small, understandable, and useful for real development work.
+          </p>
+          <div class="actions" style="justify-content: center">
+            <a class="button primary" href="https://github.com/khang859/rune">Star on GitHub</a>
+            <a class="button secondary" href="#install">Copy install command</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="shell">
+        <span>© 2026 Rune. MIT licensed.</span>
+        <span><a href="https://github.com/khang859/rune">github.com/khang859/rune</a></span>
+      </div>
+    </footer>
+  </body>
+</html>
