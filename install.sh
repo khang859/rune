@@ -124,7 +124,8 @@ esac
 
 info ""
 info "Next steps:"
-info "  rune login codex"
 info "  rune"
+info "  # then choose/configure a provider with /providers or /settings"
+info "  # Codex users can run: rune login codex"
 info ""
 info "To update later, rerun this installer."
