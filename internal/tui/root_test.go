@@ -1346,6 +1346,76 @@ func (blockingTUIProvider) Stream(ctx context.Context, req ai.Request) (<-chan a
 	return out, nil
 }
 
+func TestRoot_ArcaneActivityRailRendersBesideMessages(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.msgs.OnInfo("hello")
+	m.streaming = true
+	m.layout()
+	m.refreshViewport()
+
+	out := m.View()
+	if !strings.Contains(out, "╎✦╎") {
+		t.Fatalf("arcane activity rail not rendered: %q", out)
+	}
+	if m.viewport.Width != 76 {
+		t.Fatalf("viewport width = %d, want 76", m.viewport.Width)
+	}
+
+	before := m.renderArcaneActivityRail(8)
+	m.activityFrame++
+	after := m.renderArcaneActivityRail(8)
+	if before == after {
+		t.Fatalf("arcane activity rail did not animate: before=%q after=%q", before, after)
+	}
+}
+
+func TestRoot_ArcaneActivityRailUsesNerdFontGlyphs(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.settings.IconMode = string(IconModeNerd)
+	m.styles.Icons = IconSetForMode(m.settings.IconMode)
+	m.streaming = true
+
+	rail := m.renderArcaneActivityRail(4)
+	if !strings.Contains(rail, "┃"+m.styles.Icons.Thinking+"┃") || !strings.Contains(rail, "┃"+m.styles.Icons.Invoke+"┃") {
+		t.Fatalf("nerd font rail did not use nerd glyphs: %q", rail)
+	}
+}
+
+func TestRoot_ArcaneActivityRailHiddenForSimpleAndNarrow(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.msgs.OnInfo("hello")
+	m.streaming = true
+	m.settings.ActivityMode = "simple"
+	m.layout()
+	m.refreshViewport()
+	if strings.Contains(m.View(), "╎✦╎") {
+		t.Fatalf("arcane activity rail rendered in simple mode: %q", m.View())
+	}
+	if m.viewport.Width != 80 {
+		t.Fatalf("viewport width = %d, want 80", m.viewport.Width)
+	}
+
+	m.settings.ActivityMode = "arcane"
+	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24})
+	m.layout()
+	m.refreshViewport()
+	if strings.Contains(m.View(), "╎✦╎") {
+		t.Fatalf("arcane activity rail rendered at narrow width: %q", m.View())
+	}
+	if m.viewport.Width != 79 {
+		t.Fatalf("viewport width = %d, want 79", m.viewport.Width)
+	}
+}
+
 func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
@@ -1434,7 +1504,7 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	ev.Task.Summary = "## Summary\nall done"
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out = m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "returned") || !strings.Contains(out, "findings added to") || !strings.Contains(out, "context") {
+	if !strings.Contains(out, "returned") || !strings.Contains(out, "findings added") || !strings.Contains(out, "context") {
 		t.Fatalf("completed familiar not rendered collapsed: %q", out)
 	}
 	if strings.Contains(out, "all done") {
