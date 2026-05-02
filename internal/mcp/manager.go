@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/khang859/rune/internal/tools"
 )
@@ -37,15 +38,18 @@ type Status struct {
 	Error       string
 }
 
+const defaultStartupTimeout = 5 * time.Second
+
 type Manager struct {
-	path     string
-	clients  map[string]*Client
-	statuses map[string]Status
-	mu       sync.Mutex
+	path           string
+	startupTimeout time.Duration
+	clients        map[string]*Client
+	statuses       map[string]Status
+	mu             sync.Mutex
 }
 
 func NewManager(path string) *Manager {
-	return &Manager{path: path, clients: map[string]*Client{}, statuses: map[string]Status{}}
+	return &Manager{path: path, startupTimeout: defaultStartupTimeout, clients: map[string]*Client{}, statuses: map[string]Status{}}
 }
 
 func (m *Manager) Start(ctx context.Context, reg *tools.Registry) error {
@@ -62,28 +66,33 @@ func (m *Manager) Start(ctx context.Context, reg *tools.Registry) error {
 	}
 	for name, sc := range cfg.Servers {
 		status := Status{Name: name, Type: serverType(sc), Description: serverDescription(sc)}
+		serverCtx, cancel := m.serverStartupContext(ctx)
 		c, err := m.connect(ctx, name, sc)
 		if err != nil {
+			cancel()
 			fmt.Fprintf(os.Stderr, "[mcp] failed to connect %s: %v\n", name, err)
 			status.Error = err.Error()
 			m.setStatus(status)
 			continue
 		}
-		if err := c.Initialize(ctx); err != nil {
+		if err := c.Initialize(serverCtx); err != nil {
+			cancel()
 			fmt.Fprintf(os.Stderr, "[mcp] init %s: %v\n", name, err)
 			status.Error = err.Error()
 			m.setStatus(status)
 			_ = c.Close()
 			continue
 		}
-		ts, err := c.ListTools(ctx)
+		ts, err := c.ListTools(serverCtx)
 		if err != nil {
+			cancel()
 			fmt.Fprintf(os.Stderr, "[mcp] list %s: %v\n", name, err)
 			status.Error = err.Error()
 			m.setStatus(status)
 			_ = c.Close()
 			continue
 		}
+		cancel()
 		status.Connected = true
 		status.ToolCount = len(ts)
 		status.Tools = make([]string, 0, len(ts))
@@ -98,6 +107,13 @@ func (m *Manager) Start(ctx context.Context, reg *tools.Registry) error {
 		m.mu.Unlock()
 	}
 	return nil
+}
+
+func (m *Manager) serverStartupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if m.startupTimeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, m.startupTimeout)
 }
 
 func (m *Manager) connect(ctx context.Context, name string, sc ServerConfig) (*Client, error) {

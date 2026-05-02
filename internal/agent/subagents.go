@@ -685,7 +685,7 @@ func cleanDependencies(deps []string) []string {
 	return out
 }
 
-var subagentTypes = []string{"general", "exploration", "validator"}
+var subagentTypes = []string{"general", "exploration", "validator", "code-explorer", "code-architect", "code-reviewer"}
 
 func BuiltinSubagentTypeSet() map[string]bool {
 	out := map[string]bool{}
@@ -842,6 +842,36 @@ Validator focus:
 - Check that the plan includes appropriate tests and validation commands.
 - Identify risks, edge cases, and simpler alternatives.
 - Do not implement; return approval concerns and suggested revisions.`
+	case "code-explorer":
+		specialized = `
+
+Code-explorer focus:
+- Deeply analyze the existing codebase for the delegated feature area using read-only tools and repository evidence.
+- Find entry points such as APIs, UI components, CLI commands, background jobs, tests, and configuration.
+- Trace execution paths, data transformations, state changes, dependencies, integrations, side effects, error handling, edge cases, and performance-sensitive paths.
+- Map feature boundaries, architecture layers, conventions, abstractions, and similar existing implementations.
+- Return concrete file:line references for important evidence and a concise list of essential files the parent agent should read next.
+- Do not design or implement the feature unless the delegated task explicitly asks for lightweight implications; keep the focus on discovery.`
+	case "code-architect":
+		specialized = `
+
+Code-architect focus:
+- Design a concrete implementation blueprint grounded in existing codebase patterns, conventions, project guidelines, and similar features.
+- Identify module boundaries, abstraction layers, integration points, data flow, state management, error handling, security, performance, compatibility, and test strategy.
+- Make clear architectural choices with brief tradeoffs; avoid vague option lists when evidence supports a recommendation.
+- Specify every file to create or modify, each component's responsibility, and an ordered build sequence.
+- Include validation steps and risks the parent agent should account for before editing.
+- Do not edit files; return an actionable architecture plan for the parent agent.`
+	case "code-reviewer":
+		specialized = `
+
+Code-reviewer focus:
+- Review code changes for real bugs, logic errors, security vulnerabilities, broken tests, regressions, and meaningful convention mismatches.
+- Prefer unstaged changes from git diff when no narrower review target is provided; also check relevant project guidance such as AGENTS.md or CLAUDE.md when available.
+- Report only high-confidence, actionable issues with confidence >= 80. Avoid speculative concerns, style nitpicks, and low-signal suggestions.
+- For each issue include severity, confidence score, file:line reference, why it is a problem, and a concrete fix suggestion.
+- Group findings by severity. If there are no high-confidence issues, say that the reviewed code meets the requested standards.
+- Do not modify files; provide review findings only.`
 	}
 
 	custom := ""

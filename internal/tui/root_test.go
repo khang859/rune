@@ -262,15 +262,70 @@ func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 }
 
 func TestRoot_BaseSlashCommandsIncludeGitStatus(t *testing.T) {
-	found := false
-	for _, cmd := range baseSlashCmds {
-		if cmd == "/git-status" {
-			found = true
-			break
+	for _, want := range []string{"/git-status", "/feature-dev"} {
+		found := false
+		for _, cmd := range baseSlashCmds {
+			if cmd == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("baseSlashCmds missing %s", want)
 		}
 	}
-	if !found {
-		t.Fatal("baseSlashCmds missing /git-status")
+}
+
+func TestRoot_FeatureDevSlashCommandArmsPrompt(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/feature-dev")
+	if m.pendingSkillBody != featureDevPrompt {
+		t.Fatal("/feature-dev did not arm feature-dev prompt")
+	}
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "feature-dev armed") {
+		t.Fatalf("missing armed message: %q", out)
+	}
+}
+
+func TestRoot_FeatureDevSlashCommandWithArgumentStartsTurn(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	cmd := m.handleSlashCommand("/feature-dev add previews")
+	if cmd == nil {
+		t.Fatal("expected /feature-dev with argument to start a turn")
+	}
+	msgs := s.PathToActive()
+	if len(msgs) == 0 || msgs[0].Role != ai.RoleUser {
+		t.Fatalf("messages = %#v, want user message first", msgs)
+	}
+	text, ok := msgs[0].Content[0].(ai.TextBlock)
+	if !ok || !strings.Contains(text.Text, featureDevPrompt) || !strings.Contains(text.Text, "Feature request:\nadd previews") {
+		t.Fatalf("feature-dev prompt message = %#v", msgs[0].Content)
+	}
+}
+
+func TestRoot_FeatureDevSlashCommandWithArgumentQueuesWhenBusy(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.streaming = true
+
+	cmd := m.handleSlashCommand("/feature-dev add previews")
+	if cmd != nil {
+		t.Fatal("busy /feature-dev should queue without starting a turn")
+	}
+	if got := m.queue.Len(); got != 1 {
+		t.Fatalf("queue len = %d, want 1", got)
+	}
+	item, ok := m.queue.Pop()
+	if !ok || !strings.Contains(item.Text, featureDevPrompt) || !strings.Contains(item.Text, "Feature request:\nadd previews") {
+		t.Fatalf("queued item = %#v", item)
 	}
 }
 

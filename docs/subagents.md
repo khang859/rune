@@ -7,6 +7,9 @@ Built-in types:
 - `general`
 - `exploration`
 - `validator`
+- `code-explorer` — read-only codebase discovery with file:line evidence and essential files to inspect.
+- `code-architect` — architecture planning grounded in existing patterns, files, data flow, and tests.
+- `code-reviewer` — high-confidence review findings for bugs, regressions, security issues, and meaningful convention mismatches.
 
 Use the `spawn_subagent` tool with `agent_type` to choose a type.
 
@@ -19,7 +22,7 @@ Declare custom subagent types as Markdown files in either:
 ./.rune/agents/*.md
 ```
 
-Global agents are loaded first, then project agents. If both define the same custom name, the project definition wins. Built-in names (`general`, `exploration`, `validator`) are reserved.
+Global agents are loaded first, then project agents. If both define the same custom name, the project definition wins. Built-in names (`general`, `exploration`, `validator`, `code-explorer`, `code-architect`, `code-reviewer`) are reserved.
 
 Example:
 

@@ -204,6 +204,40 @@ func TestManager_UnknownPlanToolAllowlistDoesNotAllowMCPTool(t *testing.T) {
 	}
 }
 
+func TestManager_StartupTimeoutRecordsFailedStatus(t *testing.T) {
+	done := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-done:
+		case <-r.Context().Done():
+		}
+	}))
+	defer func() {
+		close(done)
+		srv.Close()
+	}()
+
+	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
+	cfg := fmt.Sprintf(`{"servers":{"hung":{"type":"http","url":%q}}}`, srv.URL)
+	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
+
+	reg := tools.NewRegistry()
+	mgr := NewManager(cfgPath)
+	mgr.startupTimeout = 20 * time.Millisecond
+
+	start := time.Now()
+	if err := mgr.Start(context.Background(), reg); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("startup timeout took too long: %s", elapsed)
+	}
+	statuses := mgr.Statuses()
+	if len(statuses) != 1 || statuses[0].Name != "hung" || statuses[0].Connected || statuses[0].Error == "" {
+		t.Fatalf("statuses = %#v", statuses)
+	}
+}
+
 func TestManager_RecordsFailedStatus(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "mcp.json")
 	cfg := `{"servers":{"missing":{"command":"definitely-not-a-real-mcp-binary"}}}`

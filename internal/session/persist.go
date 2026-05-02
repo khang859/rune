@@ -34,16 +34,51 @@ type wireNode struct {
 }
 
 func (s *Session) Save() error {
+	path, w, err := s.snapshotForSave()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	_ = os.Chmod(filepath.Dir(path), 0o700)
+	b, err := json.MarshalIndent(w, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	_ = os.Chmod(path, 0o600)
+	return nil
+}
+
+func (s *Session) snapshotForSave() (string, wireSession, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if s.path == "" {
-		return fmt.Errorf("session path is empty; set with SetPath or Load")
+		return "", wireSession{}, fmt.Errorf("session path is empty; set with SetPath or Load")
 	}
-	if err := os.MkdirAll(filepath.Dir(s.path), 0o700); err != nil {
-		return err
-	}
-	_ = os.Chmod(filepath.Dir(s.path), 0o700)
 	w := wireSession{
 		ID:        s.ID,
 		Name:      s.Name,
@@ -73,34 +108,7 @@ func (s *Session) Save() error {
 		}
 		w.Nodes = append(w.Nodes, wn)
 	})
-	b, err := json.MarshalIndent(w, "", "  ")
-	if err != nil {
-		return err
-	}
-	tmp := s.path + ".tmp"
-	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(b); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Sync(); err != nil {
-		f.Close()
-		os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(tmp)
-		return err
-	}
-	if err := os.Rename(tmp, s.path); err != nil {
-		return err
-	}
-	_ = os.Chmod(s.path, 0o600)
-	return nil
+	return s.path, w, nil
 }
 
 func Load(path string) (*Session, error) {

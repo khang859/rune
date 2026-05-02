@@ -263,12 +263,27 @@ func (e *Editor) handleKey(k tea.KeyMsg) (Result, tea.Cmd, bool) {
 			e.slash.Down()
 			return Result{}, nil, true
 		case tea.KeyEnter, tea.KeyTab:
+			text := strings.TrimSpace(e.ta.Value())
+			if k.Type == tea.KeyEnter && knownSlashCommandWithArgs(text, e.slashCmds) {
+				e.closeOverlay()
+				e.ta.Reset()
+				e.updateHeight()
+				if e.hist != nil {
+					e.hist.Push(text)
+				}
+				return Result{SlashCommand: text}, nil, true
+			}
 			sel := e.slash.Selected()
 			if sel == "" {
 				e.closeOverlay()
 				if k.Type == tea.KeyEnter && !isShiftEnter(k) {
 					return e.submit(), nil, true
 				}
+				return Result{}, nil, true
+			}
+			if k.Type == tea.KeyTab && slashCommandAllowsArgs(sel) {
+				e.replaceCurrentWordWith(sel + " ")
+				e.closeOverlay()
 				return Result{}, nil, true
 			}
 			e.closeOverlay()
@@ -423,6 +438,23 @@ func (e *Editor) replaceCurrentRefWith(s string) {
 
 func (e *Editor) replaceCurrentWordWith(s string) {
 	e.replaceCurrentRefWith(s)
+}
+
+func slashCommandWithArgs(text, cmd string) bool {
+	return strings.HasPrefix(text, cmd+" ")
+}
+
+func knownSlashCommandWithArgs(text string, cmds []string) bool {
+	for _, cmd := range cmds {
+		if slashCommandAllowsArgs(cmd) && slashCommandWithArgs(text, cmd) {
+			return true
+		}
+	}
+	return false
+}
+
+func slashCommandAllowsArgs(cmd string) bool {
+	return cmd == "/feature-dev"
 }
 
 func isShiftEnter(k tea.KeyMsg) bool {

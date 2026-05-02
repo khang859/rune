@@ -59,7 +59,7 @@ func TestSubagentSupervisor_DefaultsToGeneral(t *testing.T) {
 }
 
 func TestSubagentSupervisor_AcceptsPlanningTypes(t *testing.T) {
-	for _, typ := range []string{"exploration", "validator"} {
+	for _, typ := range []string{"exploration", "validator", "code-explorer", "code-architect", "code-reviewer"} {
 		t.Run(typ, func(t *testing.T) {
 			p := faux.New().Reply("ok").Done()
 			a := New(p, tools.NewRegistry(), session.New("gpt-test"), "")
@@ -86,6 +86,38 @@ func TestSubagentSystemPromptSpecializesPlanningTypes(t *testing.T) {
 	}
 	if got := subagentSystemPrompt("validator", SubagentDefinition{}); !strings.Contains(got, "Validator focus") || !strings.Contains(got, "Review the proposed plan") {
 		t.Fatalf("validator prompt missing specialization:\n%s", got)
+	}
+	if got := subagentSystemPrompt("code-explorer", SubagentDefinition{}); !strings.Contains(got, "Code-explorer focus") || !strings.Contains(got, "essential files") || !strings.Contains(got, "file:line") {
+		t.Fatalf("code-explorer prompt missing specialization:\n%s", got)
+	}
+	if got := subagentSystemPrompt("code-architect", SubagentDefinition{}); !strings.Contains(got, "Code-architect focus") || !strings.Contains(got, "implementation blueprint") || !strings.Contains(got, "every file") {
+		t.Fatalf("code-architect prompt missing specialization:\n%s", got)
+	}
+	if got := subagentSystemPrompt("code-reviewer", SubagentDefinition{}); !strings.Contains(got, "Code-reviewer focus") || !strings.Contains(got, "confidence >= 80") || !strings.Contains(got, "git diff") {
+		t.Fatalf("code-reviewer prompt missing specialization:\n%s", got)
+	}
+}
+
+func TestBuiltinSubagentTypeSetIncludesFeatureDevTypes(t *testing.T) {
+	want := []string{"general", "exploration", "validator", "code-explorer", "code-architect", "code-reviewer"}
+	if !reflect.DeepEqual(subagentTypes, want) {
+		t.Fatalf("subagentTypes = %#v, want %#v", subagentTypes, want)
+	}
+	set := BuiltinSubagentTypeSet()
+	for _, typ := range want {
+		if !set[typ] {
+			t.Fatalf("BuiltinSubagentTypeSet missing %q: %#v", typ, set)
+		}
+	}
+	defs := normalizeSubagentDefinitions(map[string]SubagentDefinition{
+		"code-explorer": {Name: "code-explorer", Instructions: "override"},
+		"custom":        {Name: "custom", Instructions: "ok"},
+	})
+	if _, ok := defs["code-explorer"]; ok {
+		t.Fatalf("reserved built-in name was not filtered: %#v", defs)
+	}
+	if _, ok := defs["custom"]; !ok {
+		t.Fatalf("custom definition was filtered: %#v", defs)
 	}
 }
 

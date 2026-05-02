@@ -88,10 +88,13 @@ func TestSpawnSubagentSpecAdvertisesDependencies(t *testing.T) {
 	}
 }
 
-func TestSpawnSubagentSpecAdvertisesPlanningTypes(t *testing.T) {
+func TestSpawnSubagentSpecAdvertisesBuiltinTypes(t *testing.T) {
 	spec := (SpawnSubagent{}).Spec()
-	if !strings.Contains(spec.Description, "exploration") || !strings.Contains(spec.Description, "validator") {
-		t.Fatalf("description missing planning types: %q", spec.Description)
+	want := []string{"general", "exploration", "validator", "code-explorer", "code-architect", "code-reviewer"}
+	for _, typ := range want {
+		if !strings.Contains(spec.Description, typ) {
+			t.Fatalf("description missing built-in type %q: %q", typ, spec.Description)
+		}
 	}
 	var schema struct {
 		Properties map[string]struct {
@@ -102,8 +105,10 @@ func TestSpawnSubagentSpecAdvertisesPlanningTypes(t *testing.T) {
 		t.Fatalf("schema unmarshal: %v", err)
 	}
 	agentType := schema.Properties["agent_type"]
-	if !strings.Contains(agentType.Description, "exploration") || !strings.Contains(agentType.Description, "validator") {
-		t.Fatalf("agent_type description missing planning types: %q", agentType.Description)
+	for _, typ := range want {
+		if !strings.Contains(agentType.Description, typ) {
+			t.Fatalf("agent_type description missing built-in type %q: %q", typ, agentType.Description)
+		}
 	}
 }
 

@@ -97,7 +97,7 @@ var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/act", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys", "/skill-creator",
+	"/compact", "/reload", "/hotkeys", "/skill-creator", "/feature-dev",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -560,6 +560,44 @@ func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cm
 
 const subagentContinuationPrompt = "A subagent has completed. Review the subagent result that was added to your context and continue the user's task. If actions are needed, take them; otherwise briefly report the conclusion."
 
+const featureDevPrompt = `You are running Rune's /feature-dev workflow for a non-trivial feature request.
+
+Follow this workflow:
+
+1. Discovery
+   - Understand the requested feature and summarize the goal, constraints, and success criteria.
+   - If the request is unclear, ask exactly one clarifying question at a time and wait.
+   - Prefer repository evidence over assumptions.
+
+2. Codebase exploration
+   - Spawn 2-3 code-explorer subagents with distinct focuses such as entry points, data flow, similar features, tests, UI/CLI/API integration, persistence, or configuration.
+   - Ask each code-explorer to return file:line evidence and essential files for the parent agent to read.
+   - Let subagents run; do not immediately duplicate delegated work unless a small amount of context is needed to synthesize findings.
+   - After subagents complete, read the key files yourself before designing.
+
+3. Clarifying questions
+   - Identify blocking ambiguity around scope, edge cases, integration points, compatibility, validation, data migration, permissions, or user experience.
+   - Ask specific questions before architecture design when decisions cannot be resolved from the repository.
+
+4. Architecture design
+   - Use code-architect subagents for architecture options or focused design analysis when useful.
+   - Present approaches and tradeoffs when they matter, make a clear recommendation, and provide an implementation plan.
+   - Ask the user to approve the implementation plan before editing files or running mutating commands.
+
+5. Implementation
+   - Respect Plan Mode / Act Mode semantics. Do not use mutating tools before explicit approval.
+   - Keep changes surgical, preserve user work, and follow existing project style.
+   - Add or update tests when practical.
+   - Do not rely on TodoWrite; maintain progress with concise status updates.
+
+6. Quality review
+   - After implementation, spawn code-reviewer subagents for focused reviews.
+   - Ask reviewers to report only high-confidence, actionable issues with confidence >= 80.
+   - Consolidate findings and fix approved issues.
+
+7. Summary
+   - Summarize what changed, files modified, validation run, and remaining risks.`
+
 const skillCreatorPrompt = `You are helping the user create or improve a rune skill.
 
 Rune skills are single Markdown files placed in ~/.rune/skills/ or ./.rune/skills/. The filename without .md becomes the slash command slug, for example refactor-step.md becomes /skill:refactor-step. Rune prepends the entire skill body to the user's next submitted message. Rune skills currently have no schema, no front matter, no skill folders, no bundled scripts, and no automatic progressive-disclosure references.
@@ -614,8 +652,11 @@ func (m *RootModel) noProviderNotice() string {
 }
 
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
-	if strings.HasPrefix(cmd, "/skill:") {
-		slug := strings.TrimPrefix(cmd, "/skill:")
+	cmd = strings.TrimSpace(cmd)
+	name, arg, hasArg := strings.Cut(cmd, " ")
+	arg = strings.TrimSpace(arg)
+	if strings.HasPrefix(name, "/skill:") && !hasArg {
+		slug := strings.TrimPrefix(name, "/skill:")
 		if body, ok := m.skills[slug]; ok {
 			m.pendingSkillBody = body
 			m.msgs.OnInfo(fmt.Sprintf("(skill %q armed; will be prepended to your next message)", slug))
@@ -626,14 +667,14 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.layout()
 		return nil
 	}
-	if strings.HasPrefix(cmd, "/subagent-cancel ") {
-		m.cancelSubagentsCommand(strings.TrimSpace(strings.TrimPrefix(cmd, "/subagent-cancel ")))
+	if name == "/subagent-cancel" && hasArg {
+		m.cancelSubagentsCommand(arg)
 		m.refreshViewport()
 		m.layout()
 		return nil
 	}
 	var initCmd tea.Cmd
-	switch cmd {
+	switch name {
 	case "/quit":
 		return tea.Quit
 	case "/providers":
@@ -678,6 +719,25 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/skill-creator":
 		m.pendingSkillBody = skillCreatorPrompt
 		m.msgs.OnInfo("(skill-creator armed; describe the skill you want to create or improve)")
+	case "/feature-dev":
+		if arg == "" {
+			m.pendingSkillBody = featureDevPrompt
+			m.msgs.OnInfo("(feature-dev armed; describe the feature you want to build)")
+			break
+		}
+		if !m.hasActiveProvider() {
+			m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+			break
+		}
+		text := featureDevPrompt + "\n\nFeature request:\n" + arg
+		if m.streaming || m.compacting {
+			m.queue.Push(QueueItem{Text: text})
+			m.msgs.OnInfo(queueMessage(m.queue.Len(), 0))
+			break
+		}
+		m.msgs.AppendUser(text)
+		m.refreshViewport()
+		initCmd = m.startTurn(text, nil)
 	case "/new", "/clear":
 		m.startNewSession()
 	case "/name":

@@ -190,6 +190,37 @@ func TestEditor_SlashNoMatchSubmitsAsText(t *testing.T) {
 	}
 }
 
+func TestEditor_TabCompletesFeatureDevWithoutCommitting(t *testing.T) {
+	e := New(t.TempDir(), []string{"/feature-dev", "/new"})
+	for _, r := range "/fea" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyTab})
+	if res.SlashCommand != "" {
+		t.Fatalf("Tab must not commit slash command, got %q", res.SlashCommand)
+	}
+	if res.Send {
+		t.Fatalf("Tab must not submit as normal text: %#v", res)
+	}
+	if got := e.ta.Value(); got != "/feature-dev " {
+		t.Fatalf("textarea after Tab = %q, want %q", got, "/feature-dev ")
+	}
+}
+
+func TestEditor_SlashCommandWithArgsCommitsRawCommand(t *testing.T) {
+	e := New(t.TempDir(), []string{"/feature-dev", "/new"})
+	for _, r := range "/feature-dev add previews" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.SlashCommand != "/feature-dev add previews" {
+		t.Fatalf("SlashCommand = %q, want raw command with args", res.SlashCommand)
+	}
+	if res.Send {
+		t.Fatalf("slash command with args must not submit as normal text: %#v", res)
+	}
+}
+
 func TestRowsFor(t *testing.T) {
 	const w = 12 // wrapWidth = 12 - promptWidth(2) = 10
 	cases := []struct {

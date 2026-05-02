@@ -23,7 +23,7 @@ func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, sk
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
+	defer fmt.Print(ansi.PopKittyKeyboard(1))
 	_, err := p.Run()
-	fmt.Print(ansi.PopKittyKeyboard(1))
 	return err
 }

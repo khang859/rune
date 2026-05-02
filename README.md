@@ -51,9 +51,10 @@ Type `/` in the editor to see all commands. Highlights:
 - `/cancel-plan` — clear pending plan state while staying in plan mode
 - `/skill:<name>` — invoke a markdown skill
 - `/skill-creator` — get guided help drafting or improving a rune skill
+- `/feature-dev` — start a guided feature-development workflow with specialist subagents
 - `/quit` — exit
 
-See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mode details, and `/hotkeys` for in-app help.
+See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mode details, `docs/feature-dev.md` for the feature workflow, and `/hotkeys` for in-app help.
 
 ## Customization
 
