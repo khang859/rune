@@ -644,24 +644,6 @@ func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
 	}
 }
 
-func TestRoot_SwapSessionFallsBackToShortIDWhenNameEmpty(t *testing.T) {
-	s := session.New("gpt-5")
-	s.Name = "named-session"
-	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
-	m := NewRootModel(a, s)
-
-	ns := session.New("gpt-5")
-	m.swapSession(ns)
-
-	want := ns.ID
-	if len(want) > 8 {
-		want = want[:8]
-	}
-	if m.footer.Session != want {
-		t.Fatalf("expected footer session %q, got %q", want, m.footer.Session)
-	}
-}
-
 func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
@@ -749,9 +731,6 @@ func TestRoot_AutoNamesSessionOnFirstTurn(t *testing.T) {
 	if s.Name != "fix resume session naming" {
 		t.Fatalf("session name = %q", s.Name)
 	}
-	if m.footer.Session != "fix resume session naming" {
-		t.Fatalf("footer session = %q", m.footer.Session)
-	}
 	loaded, err := session.Load(s.Path())
 	if err != nil {
 		t.Fatal(err)
@@ -773,9 +752,6 @@ func TestRoot_NameSlashCommandSetsSessionName(t *testing.T) {
 
 	if s.Name != "useful resume fix" {
 		t.Fatalf("session name = %q", s.Name)
-	}
-	if m.footer.Session != "useful resume fix" {
-		t.Fatalf("footer session = %q", m.footer.Session)
 	}
 	loaded, err := session.Load(s.Path())
 	if err != nil {

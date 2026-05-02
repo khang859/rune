@@ -212,6 +212,9 @@ func TestEditor_SlashCommandWithArgsCommitsRawCommand(t *testing.T) {
 	for _, r := range "/feature-dev add previews" {
 		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
+	if e.Mode() != ModeNormal {
+		t.Fatalf("slash menu should close once an arg-taking command has args, got mode %v", e.Mode())
+	}
 	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if res.SlashCommand != "/feature-dev add previews" {
 		t.Fatalf("SlashCommand = %q, want raw command with args", res.SlashCommand)

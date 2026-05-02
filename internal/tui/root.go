@@ -128,7 +128,6 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	footer := Footer{
 		Cwd:            displayCwd,
 		GitBranch:      currentGitBranch(realCwd),
-		Session:        sessionLabel(sess),
 		Model:          sess.Model,
 		ThinkingEffort: footerThinkingEffort(sess.Model, a.ReasoningEffort()),
 		Mode:           footerMode(a.Mode()),
@@ -533,7 +532,6 @@ func (m *RootModel) maybeAutoNameSession(text string) {
 		return
 	}
 	m.sess.Name = name
-	m.footer.Session = sessionLabel(m.sess)
 }
 
 func autoSessionName(text string) string {
@@ -796,7 +794,6 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			break
 		}
 		m.sess.Name = strings.TrimSpace(arg)
-		m.footer.Session = sessionLabel(m.sess)
 		m.saveSessionIfStarted()
 		m.msgs.OnInfo(fmt.Sprintf("(session name: %s)", m.sess.Name))
 		m.refreshViewport()
@@ -1886,19 +1883,6 @@ func slug(s string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func sessionLabel(s *session.Session) string {
-	if s == nil {
-		return ""
-	}
-	if s.Name != "" {
-		return s.Name
-	}
-	if len(s.ID) > 8 {
-		return s.ID[:8]
-	}
-	return s.ID
-}
-
 func (m *RootModel) startSubagentListener() tea.Cmd {
 	if m.subagentCancel != nil {
 		m.subagentCancel()
@@ -1918,7 +1902,6 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.stopActiveTurn()
 	oldProvider := m.sess.Provider
 	m.sess = s
-	m.footer.Session = sessionLabel(s)
 	m.footer.Model = s.Model
 	if strings.TrimSpace(s.Provider) == "" {
 		m.footer.Model = "no provider"

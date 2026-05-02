@@ -8,7 +8,6 @@ import (
 type Footer struct {
 	Cwd            string
 	GitBranch      string
-	Session        string
 	Model          string
 	ThinkingEffort string
 	Tokens         int
@@ -26,10 +25,7 @@ func (f Footer) Render(s Styles) string {
 	if f.GitBranch != "" {
 		parts = append(parts, s.FooterSession.Render(iconLabel(s.Icons.GitBranch, f.GitBranch)))
 	}
-	parts = append(parts,
-		s.FooterSession.Render(iconLabel(s.Icons.Session, f.Session)),
-		s.FooterModel.Render(f.Model),
-	)
+	parts = append(parts, s.FooterModel.Render(f.Model))
 	if f.ThinkingEffort != "" {
 		parts = append(parts, s.FooterModel.Render(iconLabel(s.Icons.Thinking, f.ThinkingEffort)))
 	}

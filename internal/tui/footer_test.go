@@ -9,7 +9,6 @@ func TestFooter_RendersAllFields(t *testing.T) {
 	f := Footer{
 		Cwd:            "/home/x/proj",
 		GitBranch:      "main",
-		Session:        "demo",
 		Model:          "gpt-5",
 		ThinkingEffort: "medium",
 		Tokens:         1234,
@@ -17,15 +16,18 @@ func TestFooter_RendersAllFields(t *testing.T) {
 		Width:          120,
 	}
 	out := f.Render(DefaultStylesWithIconMode("nerd"))
-	for _, want := range []string{"ᚱ rune", " /home/x/proj", " main", " demo", "gpt-5", " medium", "󰆙 1.2k tok", "󰊚 42% ctx"} {
+	for _, want := range []string{"ᚱ rune", " /home/x/proj", " main", "gpt-5", " medium", "󰆙 1.2k tok", "󰊚 42% ctx"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("footer missing %q:\n%s", want, out)
 		}
 	}
+	if strings.Contains(out, "demo") {
+		t.Fatalf("footer rendered session name:\n%s", out)
+	}
 }
 
 func TestFooter_RendersPlanMode(t *testing.T) {
-	f := Footer{Cwd: "/p", Session: "s", Model: "gpt-5", Mode: "plan", Width: 120}
+	f := Footer{Cwd: "/p", Model: "gpt-5", Mode: "plan", Width: 120}
 	out := f.Render(DefaultStylesWithIconMode("unicode"))
 	if !strings.Contains(out, "plan") {
 		t.Fatalf("footer missing plan mode:\n%s", out)
@@ -35,7 +37,6 @@ func TestFooter_RendersPlanMode(t *testing.T) {
 func TestFooter_OmitsThinkingWhenEmpty(t *testing.T) {
 	f := Footer{
 		Cwd:        "/home/x/proj",
-		Session:    "demo",
 		Model:      "gpt-5.4-mini",
 		Tokens:     1234,
 		ContextPct: 42,

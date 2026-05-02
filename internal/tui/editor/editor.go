@@ -344,6 +344,9 @@ func (e *Editor) submit() Result {
 	if e.hist != nil {
 		e.hist.Push(text)
 	}
+	if knownSlashCommandWithArgs(text, e.slashCmds) {
+		return Result{SlashCommand: text}
+	}
 	if strings.HasPrefix(text, "!!") {
 		cmd := strings.TrimPrefix(text, "!!")
 		return Result{ShellCommand: cmd, ShellMode: ShellModeInsert}
@@ -377,6 +380,10 @@ func (e *Editor) maybeOpenOverlay() {
 		e.fp.SetQuery(strings.TrimPrefix(word, "@"))
 		e.mode = ModeFilePicker
 	case strings.HasPrefix(line, "/"):
+		if knownSlashCommandWithArgs(strings.TrimSpace(line), e.slashCmds) {
+			e.closeOverlay()
+			return
+		}
 		if e.slash == nil {
 			e.slash = NewSlashMenu(e.slashCmds)
 		}
