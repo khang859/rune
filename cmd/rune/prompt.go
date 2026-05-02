@@ -34,6 +34,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	tools.RegisterBuiltins(reg, opts)
 
 	cwd, _ := os.Getwd()
+	sess.Cwd = cwd
 	home, _ := os.UserHomeDir()
 	customAgents, err := (&agentdef.Loader{
 		Roots: []string{

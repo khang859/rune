@@ -22,6 +22,25 @@ type Summary struct {
 	Path         string
 	MessageCount int
 	Model        string
+	Cwd          string
+}
+
+func ListSessionsForCWD(dir, cwd string) ([]Summary, error) {
+	want := normalizeCwd(cwd)
+	if want == "" {
+		return nil, nil
+	}
+	summaries, err := ListSessions(dir)
+	if err != nil {
+		return nil, err
+	}
+	out := summaries[:0]
+	for _, s := range summaries {
+		if normalizeCwd(s.Cwd) == want {
+			out = append(out, s)
+		}
+	}
+	return out, nil
 }
 
 func ListSessions(dir string) ([]Summary, error) {
@@ -66,6 +85,7 @@ func ListSessions(dir string) ([]Summary, error) {
 			Path:         p,
 			MessageCount: msgCount,
 			Model:        w.Model,
+			Cwd:          normalizeCwd(w.Cwd),
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

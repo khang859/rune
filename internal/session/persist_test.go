@@ -13,6 +13,7 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s := New("gpt-5")
 	s.Name = "demo"
+	s.Cwd = filepath.Join(dir, "project")
 	s.SetPath(filepath.Join(dir, s.ID+".json"))
 	s.Append(userMsg("hi"))
 	s.Append(asstMsg("hello"))
@@ -34,6 +35,9 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	}
 	if loaded.Name != "demo" {
 		t.Fatalf("name = %q", loaded.Name)
+	}
+	if loaded.Cwd != filepath.Join(dir, "project") {
+		t.Fatalf("cwd = %q", loaded.Cwd)
 	}
 	if got := len(loaded.PathToActive()); got != 2 {
 		t.Fatalf("path len = %d", got)

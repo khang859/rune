@@ -45,6 +45,7 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	defer mgr.Shutdown()
 
 	cwd, _ := os.Getwd()
+	sess.Cwd = cwd
 	home, _ := os.UserHomeDir()
 	skills, _ := (&skill.Loader{
 		Roots: []string{

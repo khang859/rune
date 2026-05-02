@@ -102,6 +102,9 @@ var baseSlashCmds = []string{
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	realCwd, _ := os.Getwd()
+	if sess != nil && strings.TrimSpace(sess.Cwd) == "" {
+		sess.Cwd = realCwd
+	}
 	loadedSettings, err := config.LoadSettings(config.SettingsPath())
 	if err != nil {
 		loadedSettings = config.DefaultSettings()
@@ -746,7 +749,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		}
 		initCmd = m.openModal(modal.NewTree(m.sess))
 	case "/resume":
-		items, _ := session.ListSessions(config.SessionsDir())
+		items, _ := session.ListSessionsForCWD(config.SessionsDir(), m.editor.Cwd())
 		initCmd = m.openModal(modal.NewResume(items))
 	case "/settings":
 		initCmd = m.openModal(modal.NewSettings(m.settings))
@@ -813,6 +816,7 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewForkTree(m.sess))
 	case "/clone":
 		nc := m.sess.Clone()
+		nc.Cwd = m.editor.Cwd()
 		nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
 		_ = nc.Save()
 		m.swapSession(nc)
@@ -1595,6 +1599,7 @@ func (m *RootModel) startNewSession() {
 func (m *RootModel) newEmptySession() *session.Session {
 	nc := session.New(m.sess.Model)
 	nc.Provider = m.sess.Provider
+	nc.Cwd = m.editor.Cwd()
 	nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
 	return nc
 }

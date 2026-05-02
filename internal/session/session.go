@@ -17,6 +17,7 @@ type Session struct {
 	Created   time.Time
 	Provider  string
 	Model     string
+	Cwd       string
 	Root      *Node
 	Active    *Node
 	Subagents []SubagentTask
@@ -89,6 +90,7 @@ func (s *Session) Clone() *Session {
 	provider := s.Provider
 	model := s.Model
 	name := s.Name
+	cwd := s.Cwd
 	var msgs []ai.Message
 	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
 		msgs = append([]ai.Message{n.Message}, msgs...)
@@ -98,6 +100,7 @@ func (s *Session) Clone() *Session {
 	nc := New(model)
 	nc.Provider = provider
 	nc.Name = name
+	nc.Cwd = cwd
 	// Copy the active path: walk up to root, reverse, replay Append.
 	for _, m := range msgs {
 		nc.Append(m)

@@ -17,6 +17,7 @@ type wireSession struct {
 	Created   string         `json:"created"`
 	Provider  string         `json:"provider,omitempty"`
 	Model     string         `json:"model"`
+	Cwd       string         `json:"cwd,omitempty"`
 	RootID    string         `json:"root_id"`
 	ActiveID  string         `json:"active_id"`
 	Nodes     []wireNode     `json:"nodes"`
@@ -86,6 +87,7 @@ func (s *Session) snapshotForSave() (string, wireSession, error) {
 		Created:   s.Created.Format("2006-01-02T15:04:05Z07:00"),
 		Provider:  normalizeProvider(s.Provider),
 		Model:     s.Model,
+		Cwd:       normalizeCwd(s.Cwd),
 		RootID:    s.Root.ID,
 		ActiveID:  s.Active.ID,
 		Subagents: cloneSubagentTasks(s.Subagents),
@@ -146,6 +148,7 @@ func Load(path string) (*Session, error) {
 		Created:   created,
 		Provider:  normalizeProvider(w.Provider),
 		Model:     w.Model,
+		Cwd:       normalizeCwd(w.Cwd),
 		Root:      nodes[w.RootID],
 		Active:    nodes[w.ActiveID],
 		Subagents: cloneSubagentTasks(w.Subagents),
@@ -167,4 +170,15 @@ func normalizeProvider(provider string) string {
 	default:
 		return "codex"
 	}
+}
+
+func normalizeCwd(cwd string) string {
+	cwd = strings.TrimSpace(cwd)
+	if cwd == "" {
+		return ""
+	}
+	if abs, err := filepath.Abs(cwd); err == nil {
+		cwd = abs
+	}
+	return filepath.Clean(cwd)
 }

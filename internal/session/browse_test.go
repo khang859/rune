@@ -13,6 +13,7 @@ func TestListSessions_ReadsSummaries(t *testing.T) {
 	dir := t.TempDir()
 	s := New("gpt-5")
 	s.Name = "demo"
+	s.Cwd = filepath.Join(dir, "project")
 	s.SetPath(filepath.Join(dir, s.ID+".json"))
 	s.Append(userMsg("hi"))
 	if err := s.Save(); err != nil {
@@ -40,6 +41,52 @@ func TestListSessions_ReadsSummaries(t *testing.T) {
 	}
 	if summaries[0].MessageCount < 1 {
 		t.Fatalf("message_count = %d", summaries[0].MessageCount)
+	}
+	if summaries[0].Cwd != filepath.Join(dir, "project") {
+		t.Fatalf("cwd = %q", summaries[0].Cwd)
+	}
+}
+
+func TestListSessionsForCWD_FiltersByExactCWD(t *testing.T) {
+	dir := t.TempDir()
+	project := filepath.Join(dir, "project")
+	otherProject := filepath.Join(dir, "other")
+
+	match := New("gpt-5")
+	match.Name = "match"
+	match.Cwd = project
+	match.SetPath(filepath.Join(dir, match.ID+".json"))
+	match.Append(userMsg("matching project"))
+	if err := match.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	other := New("gpt-5")
+	other.Name = "other"
+	other.Cwd = otherProject
+	other.SetPath(filepath.Join(dir, other.ID+".json"))
+	other.Append(userMsg("other project"))
+	if err := other.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := New("gpt-5")
+	legacy.Name = "legacy"
+	legacy.SetPath(filepath.Join(dir, legacy.ID+".json"))
+	legacy.Append(userMsg("legacy project"))
+	if err := legacy.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	summaries, err := ListSessionsForCWD(dir, project)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summaries) != 1 {
+		t.Fatalf("len = %d", len(summaries))
+	}
+	if summaries[0].ID != match.ID {
+		t.Fatalf("id = %q, want %q", summaries[0].ID, match.ID)
 	}
 }
 

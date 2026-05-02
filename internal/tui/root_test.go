@@ -735,6 +735,76 @@ func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 	}
 }
 
+func TestRoot_ResumeListsOnlyCurrentCWD(t *testing.T) {
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := filepath.Join(t.TempDir(), "project")
+	otherProject := filepath.Join(t.TempDir(), "other")
+	if err := os.MkdirAll(project, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherProject, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(project); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	currentCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	current := session.New("gpt-5")
+	current.Name = "current project"
+	current.Cwd = currentCwd
+	current.SetPath(filepath.Join(config.SessionsDir(), current.ID+".json"))
+	current.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "current"}}})
+	if err := current.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	other := session.New("gpt-5")
+	other.Name = "other project"
+	other.Cwd = otherProject
+	other.SetPath(filepath.Join(config.SessionsDir(), other.ID+".json"))
+	other.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "other"}}})
+	if err := other.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy := session.New("gpt-5")
+	legacy.Name = "legacy global"
+	legacy.SetPath(filepath.Join(config.SessionsDir(), legacy.ID+".json"))
+	legacy.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "legacy"}}})
+	if err := legacy.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	s := session.New("gpt-5")
+	s.Cwd = currentCwd
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.handleSlashCommand("/resume")
+
+	if m.modal == nil {
+		t.Fatal("expected resume modal")
+	}
+	view := m.modal.View(80, 24)
+	if !strings.Contains(view, "current project") {
+		t.Fatalf("expected current project session in resume modal:\n%s", view)
+	}
+	if strings.Contains(view, "other project") || strings.Contains(view, "legacy global") {
+		t.Fatalf("resume modal included non-current sessions:\n%s", view)
+	}
+}
+
 func TestRoot_SlashCommandInfoFlushesToViewportImmediately(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

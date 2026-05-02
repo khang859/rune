@@ -52,6 +52,7 @@ func TestSession_ForkCreatesBranch(t *testing.T) {
 
 func TestSession_CloneCopiesActiveBranch(t *testing.T) {
 	s := New("gpt-5")
+	s.Cwd = "/tmp/project"
 	s.Append(userMsg("a"))
 	s.Append(asstMsg("b"))
 	c := s.Clone()
@@ -60,6 +61,9 @@ func TestSession_CloneCopiesActiveBranch(t *testing.T) {
 	}
 	if len(c.PathToActive()) != 2 {
 		t.Fatalf("cloned path len = %d", len(c.PathToActive()))
+	}
+	if c.Cwd != "/tmp/project" {
+		t.Fatalf("cloned cwd = %q", c.Cwd)
 	}
 	// Mutating original must not affect clone.
 	s.Append(userMsg("c"))
