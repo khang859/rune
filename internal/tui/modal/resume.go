@@ -9,7 +9,7 @@ import (
 	"github.com/khang859/rune/internal/session"
 )
 
-const resumePageSize = 10
+const resumePageSize = 7
 
 type Resume struct {
 	items []session.Summary
@@ -62,15 +62,36 @@ func (r *Resume) View(width, height int) string {
 	start, end := r.pageBounds()
 	rows := make([]choiceRow, end-start)
 	for i, it := range r.items[start:end] {
-		name := it.Name
-		if name == "" {
-			name = "(unnamed)"
-		}
-		rows[i] = choiceRow{Label: name, Value: fmt.Sprintf("%d msgs — %s", it.MessageCount, it.Created.Format("2006-01-02 15:04"))}
+		rows[i] = choiceRow{Label: resumeLabel(it), Value: resumeValue(it), Detail: resumeDetail(it)}
 	}
 	page, pages := r.pageInfo()
 	help := fmt.Sprintf("Page %d/%d · ↑/↓ choose rune · PgUp/PgDown page · Enter bind · Esc dismiss", page, pages)
 	return renderChoiceModal(width, height, "✦ Resume Session ✦", "Saved Sessions", help, rows, r.sel-start)
+}
+
+func resumeLabel(it session.Summary) string {
+	if it.Name != "" {
+		return it.Name
+	}
+	return "(unnamed)"
+}
+
+func resumeValue(it session.Summary) string {
+	ts := it.Updated
+	label := "updated"
+	if ts.IsZero() {
+		ts = it.Created
+		label = "created"
+	}
+	model := it.Model
+	if model == "" {
+		model = "unknown model"
+	}
+	return fmt.Sprintf("%d msgs — %s — %s %s", it.MessageCount, model, label, ts.Format("2006-01-02 15:04"))
+}
+
+func resumeDetail(it session.Summary) string {
+	return it.Preview
 }
 
 func (r *Resume) pageBounds() (int, int) {

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/khang859/rune/internal/ai"
 )
@@ -122,7 +123,8 @@ func Load(path string) (*Session, error) {
 	}
 	nodes := map[string]*Node{}
 	for _, wn := range w.Nodes {
-		n := &Node{ID: wn.ID, Usage: wn.Usage, CompactedCount: wn.CompactedCount}
+		created, _ := time.Parse(time.RFC3339, wn.Created)
+		n := &Node{ID: wn.ID, Usage: wn.Usage, Created: created, CompactedCount: wn.CompactedCount}
 		if wn.HasMessage {
 			n.Message = wn.Message
 		}
@@ -137,9 +139,11 @@ func Load(path string) (*Session, error) {
 			n.Children = append(n.Children, nodes[cid])
 		}
 	}
+	created, _ := time.Parse(time.RFC3339, w.Created)
 	return &Session{
 		ID:        w.ID,
 		Name:      w.Name,
+		Created:   created,
 		Provider:  normalizeProvider(w.Provider),
 		Model:     w.Model,
 		Root:      nodes[w.RootID],

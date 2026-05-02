@@ -524,6 +524,54 @@ func queueMessage(n, images int) string {
 	return fmt.Sprintf("queued (%d in queue)", n)
 }
 
+func (m *RootModel) maybeAutoNameSession(text string) {
+	if m == nil || m.sess == nil || strings.TrimSpace(m.sess.Name) != "" {
+		return
+	}
+	name := autoSessionName(text)
+	if name == "" {
+		return
+	}
+	m.sess.Name = name
+	m.footer.Session = sessionLabel(m.sess)
+}
+
+func autoSessionName(text string) string {
+	text = stripFileBlocks(text)
+	if _, after, ok := strings.Cut(text, "Feature request:"); ok {
+		text = after
+	}
+	text = strings.Join(strings.Fields(text), " ")
+	text = strings.Trim(text, " \t\n\r\"'`")
+	if text == "" || strings.HasPrefix(text, "I ran `") || strings.HasPrefix(text, "You are running Rune's") {
+		return ""
+	}
+	return truncateRunes(text, 60)
+}
+
+func stripFileBlocks(text string) string {
+	for {
+		start := strings.Index(text, "<file ")
+		if start < 0 {
+			return text
+		}
+		end := strings.Index(text[start:], "</file>")
+		if end < 0 {
+			return text[:start]
+		}
+		end += start + len("</file>")
+		text = text[:start] + " " + text[end:]
+	}
+}
+
+func truncateRunes(s string, limit int) string {
+	if limit <= 0 || len([]rune(s)) <= limit {
+		return s
+	}
+	runes := []rune(s)
+	return strings.TrimSpace(string(runes[:limit-1])) + "…"
+}
+
 func formatUserMessageForDisplay(text string, imageCount int) string {
 	if imageCount == 0 {
 		return text
@@ -553,6 +601,7 @@ func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cm
 	content = append(content, attachments...)
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	ch := m.agent.Run(ctx, msg)
+	m.maybeAutoNameSession(text)
 	m.saveSessionIfStarted()
 	m.eventCh = ch
 	return tea.Batch(nextEventCmd(ch), m.startActivityTick())
@@ -741,7 +790,16 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	case "/new", "/clear":
 		m.startNewSession()
 	case "/name":
-		m.msgs.OnTurnError(fmt.Errorf("(use /settings or future inline prompt)"))
+		if strings.TrimSpace(arg) == "" {
+			m.msgs.OnInfo("(usage: /name <session name>)")
+			m.refreshViewport()
+			break
+		}
+		m.sess.Name = strings.TrimSpace(arg)
+		m.footer.Session = sessionLabel(m.sess)
+		m.saveSessionIfStarted()
+		m.msgs.OnInfo(fmt.Sprintf("(session name: %s)", m.sess.Name))
+		m.refreshViewport()
 	case "/session":
 		m.msgs.OnInfo(fmt.Sprintf("session id=%s name=%q provider=%s model=%s", m.sess.ID, m.sess.Name, m.sess.Provider, m.sess.Model))
 	case "/fork":

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type settingsViewStyles struct {
@@ -61,8 +62,9 @@ func centeredModal(width, height int, contentWidth int, body string) string {
 }
 
 type choiceRow struct {
-	Label string
-	Value string
+	Label  string
+	Value  string
+	Detail string
 }
 
 func renderChoiceModal(width, height int, title, section, help string, rows []choiceRow, selected int) string {
@@ -95,18 +97,29 @@ func renderChoiceModal(width, height int, title, section, help string, rows []ch
 			labelStyle = styles.SelectedLabel
 			valueStyle = styles.SelectedValue
 		}
-		if row.Value != "" {
-			fmt.Fprintf(&sb, "%s%s %s\n", selector, labelStyle.Render(row.Label), valueStyle.Render(row.Value))
-			continue
+		labelWidth := labelStyle.GetWidth()
+		valueWidth := contentWidth - 3 - labelWidth
+		if valueWidth < 10 {
+			valueWidth = 10
 		}
-		fmt.Fprintf(&sb, "%s%s\n", selector, labelStyle.Render(row.Label))
+		label := labelStyle.Render(ansi.Truncate(row.Label, labelWidth, "…"))
+		if row.Value != "" {
+			value := valueStyle.Render(ansi.Truncate(row.Value, valueWidth, "…"))
+			fmt.Fprintf(&sb, "%s%s %s\n", selector, label, value)
+		} else {
+			fmt.Fprintf(&sb, "%s%s\n", selector, label)
+		}
+		if row.Detail != "" {
+			detail := styles.Value.Render(ansi.Truncate(row.Detail, valueWidth, "…"))
+			fmt.Fprintf(&sb, "%s%s %s\n", styles.Gutter.Render("  "), styles.Label.Render(""), detail)
+		}
 	}
 	if clippedBottom {
 		sb.WriteString(styles.Gutter.Render("  …"))
 		sb.WriteByte('\n')
 	}
 	if help != "" {
-		sb.WriteByte('\n')
+		sb.WriteString("\n\n")
 		sb.WriteString(styles.Help.Render(help))
 	}
 

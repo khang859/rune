@@ -719,6 +719,73 @@ func TestRoot_SlashCommandInfoFlushesToViewportImmediately(t *testing.T) {
 	}
 }
 
+func TestAutoSessionName_ExtractsFeatureRequest(t *testing.T) {
+	text := "You are running Rune's /feature-dev workflow for a non-trivial feature request.\n\nFeature request:\nits very hard to tell which previous session i was on"
+	if got := autoSessionName(text); got != "its very hard to tell which previous session i was on" {
+		t.Fatalf("name = %q", got)
+	}
+}
+
+func TestAutoSessionName_StripsFileBlocksAndSkipsShellPrompts(t *testing.T) {
+	if got := autoSessionName("fix this <file name=\"a.go\">\npackage main\n</file> please"); got != "fix this please" {
+		t.Fatalf("name = %q", got)
+	}
+	if got := autoSessionName("I ran `ls` and it produced:\nAGENTS.md README.md"); got != "" {
+		t.Fatalf("shell prompt name = %q", got)
+	}
+}
+
+func TestRoot_AutoNamesSessionOnFirstTurn(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	cmd := m.startTurn("fix resume session naming", nil)
+	if cmd == nil {
+		t.Fatal("expected start turn command")
+	}
+	if s.Name != "fix resume session naming" {
+		t.Fatalf("session name = %q", s.Name)
+	}
+	if m.footer.Session != "fix resume session naming" {
+		t.Fatalf("footer session = %q", m.footer.Session)
+	}
+	loaded, err := session.Load(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Name != "fix resume session naming" {
+		t.Fatalf("loaded name = %q", loaded.Name)
+	}
+}
+
+func TestRoot_NameSlashCommandSetsSessionName(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hello"}}})
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/name useful resume fix")
+
+	if s.Name != "useful resume fix" {
+		t.Fatalf("session name = %q", s.Name)
+	}
+	if m.footer.Session != "useful resume fix" {
+		t.Fatalf("footer session = %q", m.footer.Session)
+	}
+	loaded, err := session.Load(s.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Name != "useful resume fix" {
+		t.Fatalf("loaded name = %q", loaded.Name)
+	}
+}
+
 func TestRoot_SessionSlashCommandIsInfoNotError(t *testing.T) {
 	s := session.New("gpt-5.5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")

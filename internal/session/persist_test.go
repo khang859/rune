@@ -16,6 +16,10 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	s.SetPath(filepath.Join(dir, s.ID+".json"))
 	s.Append(userMsg("hi"))
 	s.Append(asstMsg("hello"))
+	created := time.Date(2026, 4, 30, 9, 8, 7, 0, time.UTC)
+	s.Created = created
+	s.Root.Created = created.Add(time.Second)
+	s.Active.Created = created.Add(2 * time.Second)
 
 	if err := s.Save(); err != nil {
 		t.Fatal(err)
@@ -33,6 +37,15 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	}
 	if got := len(loaded.PathToActive()); got != 2 {
 		t.Fatalf("path len = %d", got)
+	}
+	if !loaded.Created.Equal(s.Created) {
+		t.Fatalf("created = %v, want %v", loaded.Created, s.Created)
+	}
+	if !loaded.Root.Created.Equal(s.Root.Created) {
+		t.Fatalf("root created = %v, want %v", loaded.Root.Created, s.Root.Created)
+	}
+	if !loaded.Active.Created.Equal(s.Active.Created) {
+		t.Fatalf("active created = %v, want %v", loaded.Active.Created, s.Active.Created)
 	}
 	// Parent pointers must be reconstructed.
 	if loaded.Active.Parent == nil || loaded.Active.Parent.Parent == nil {
