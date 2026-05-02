@@ -262,7 +262,7 @@ func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 }
 
 func TestRoot_BaseSlashCommandsIncludeGitStatus(t *testing.T) {
-	for _, want := range []string{"/git-status", "/feature-dev"} {
+	for _, want := range []string{"/git-status", "/feature-dev", "/plan", "/approve", "/cancel-plan"} {
 		found := false
 		for _, cmd := range baseSlashCmds {
 			if cmd == want {
@@ -272,6 +272,11 @@ func TestRoot_BaseSlashCommandsIncludeGitStatus(t *testing.T) {
 		}
 		if !found {
 			t.Fatalf("baseSlashCmds missing %s", want)
+		}
+	}
+	for _, cmd := range baseSlashCmds {
+		if cmd == "/act" {
+			t.Fatal("baseSlashCmds should not include /act")
 		}
 	}
 }
@@ -343,16 +348,60 @@ func TestRoot_PlanModeSlashCommands(t *testing.T) {
 	if a.Mode() != agent.ModePlan || m.planPending {
 		t.Fatalf("/cancel-plan should keep plan mode and clear pending: mode=%q pending=%v", a.Mode(), m.planPending)
 	}
+}
 
-	m.handleSlashCommand("/approve")
-	if a.Mode() != agent.ModeAct || a.Tools().PermissionMode() != tools.PermissionModeAct || m.footer.Mode != "" || m.planPending {
-		t.Fatalf("/approve did not switch to act mode: mode=%q toolMode=%q footer=%q pending=%v", a.Mode(), a.Tools().PermissionMode(), m.footer.Mode, m.planPending)
-	}
-
+func TestRoot_ApproveStartsImplementationInNewSessionWithLatestPlan(t *testing.T) {
+	s := session.New("gpt-5")
+	s.Provider = "groq"
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "make a plan"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "1. Edit the file\n2. Run tests"}}})
+	a := agent.New(blockingTUIProvider{}, tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
 	m.handleSlashCommand("/plan")
-	m.handleSlashCommand("/act")
-	if a.Mode() != agent.ModeAct || m.footer.Mode != "" || m.planPending {
-		t.Fatalf("/act did not switch to act mode: mode=%q footer=%q pending=%v", a.Mode(), m.footer.Mode, m.planPending)
+
+	oldID := m.sess.ID
+	cmd := m.handleSlashCommand("/approve")
+	if cmd == nil {
+		t.Fatal("/approve should start an implementation turn")
+	}
+	if m.sess.ID == oldID {
+		t.Fatal("/approve should switch to a new session")
+	}
+	if m.sess.Provider != "groq" || m.sess.Model != "gpt-5" {
+		t.Fatalf("new session provider/model = %q/%q, want groq/gpt-5", m.sess.Provider, m.sess.Model)
+	}
+	if m.agent.Mode() != agent.ModeAct || m.agent.Tools().PermissionMode() != tools.PermissionModeAct || m.footer.Mode != "" || m.planPending {
+		t.Fatalf("/approve did not enter act mode: new agent=%q toolMode=%q footer=%q pending=%v", m.agent.Mode(), m.agent.Tools().PermissionMode(), m.footer.Mode, m.planPending)
+	}
+	msgs := m.sess.PathToActive()
+	if len(msgs) != 1 || msgs[0].Role != ai.RoleUser {
+		t.Fatalf("new session messages = %#v, want one user message", msgs)
+	}
+	text, ok := msgs[0].Content[0].(ai.TextBlock)
+	if !ok || text.Text != "1. Edit the file\n2. Run tests" {
+		t.Fatalf("approved plan prompt = %#v", msgs[0].Content)
+	}
+	if !m.streaming {
+		t.Fatal("/approve should mark implementation turn as streaming")
+	}
+}
+
+func TestRoot_ApproveWithoutAssistantPlanDoesNotSwapOrStart(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.handleSlashCommand("/plan")
+
+	oldID := m.sess.ID
+	cmd := m.handleSlashCommand("/approve")
+	if cmd != nil {
+		t.Fatal("/approve without an assistant plan should not start a turn")
+	}
+	if m.sess.ID != oldID || a.Mode() != agent.ModePlan || !m.planPending {
+		t.Fatalf("/approve without plan changed state: session %s->%s mode=%q pending=%v", oldID, m.sess.ID, a.Mode(), m.planPending)
+	}
+	if got := m.msgs.Render(m.styles, false, false, time.Now()); !strings.Contains(got, "no assistant plan") {
+		t.Fatalf("missing no-plan notice: %q", got)
 	}
 }
 
@@ -382,12 +431,12 @@ func TestRoot_PlanModeBannerRendersAndReservesLayoutRow(t *testing.T) {
 		t.Fatalf("plan mode viewport height = %d, want %d", got, want)
 	}
 
-	m.handleSlashCommand("/act")
+	m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
 	if strings.Contains(m.View(), "Plan Mode: edits and bash disabled") {
-		t.Fatalf("plan mode banner remained after /act:\n%s", m.View())
+		t.Fatalf("plan mode banner remained after Shift+Tab:\n%s", m.View())
 	}
-	if got, want := m.viewport.Height, actHeight; got != want {
-		t.Fatalf("act mode viewport height = %d, want %d", got, want)
+	if !strings.Contains(m.View(), "[copy mode]") {
+		t.Fatalf("Shift+Tab from plan should enter copy mode:\n%s", m.View())
 	}
 }
 

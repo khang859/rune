@@ -46,8 +46,7 @@ Type `/` in the editor to see all commands. Highlights:
 - `/resume` — pick a previous session
 - `/compact` — summarize history
 - `/plan` — enter safe planning mode; edits and bash are disabled, and MCP tools require a read-only allowlist
-- `/act` — leave planning mode and enable implementation tools
-- `/approve` — approve a plan and return to act mode without auto-implementing
+- `/approve` — approve a plan and implement it in a new session
 - `/cancel-plan` — clear pending plan state while staying in plan mode
 - `/skill:<name>` — invoke a markdown skill
 - `/skill-creator` — get guided help drafting or improving a rune skill

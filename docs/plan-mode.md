@@ -11,7 +11,7 @@ Enter it with `/plan`. While active, rune adds stronger planning instructions to
 - Shell shortcuts (`!cmd` and `!!cmd`) are blocked in the TUI.
 - The TUI shows both a footer `plan` indicator and a Plan Mode banner while active.
 
-Plan Mode does not automatically implement after approval. Use `/approve` to return to Act Mode, then send a follow-up instruction such as “go ahead”.
+When you approve a plan, Rune starts implementation in a new session using only the approved plan as the prompt.
 
 ## Local codebase discovery
 
@@ -59,14 +59,13 @@ Only mark tools as read-only if the server cannot mutate files, databases, netwo
 ## Commands
 
 - `/plan` — enter Plan Mode.
-- `/act` — leave Plan Mode and enable implementation tools.
-- `/approve` — approve the current plan, leave Plan Mode, and wait for your next message.
+- `/approve` — approve the latest assistant plan and implement it in a new session.
 - `/cancel-plan` — clear pending plan approval state while staying in Plan Mode.
 
 The footer shows `plan` while Plan Mode is active, and the TUI displays this banner:
 
 ```text
-Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve or /act to implement
+Plan Mode: edits and bash disabled · MCP tools require read-only allowlist · /approve to implement · Shift+Tab to exit
 ```
 
 MCP tools with `read_only` or `plan_tools` metadata can be available in Plan Mode; all other MCP tools remain hidden and runtime-denied.

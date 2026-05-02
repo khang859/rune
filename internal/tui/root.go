@@ -96,7 +96,7 @@ const quitPrimeWindow = 2 * time.Second
 var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
-	"/plan", "/act", "/approve", "/cancel-plan",
+	"/plan", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys", "/skill-creator", "/feature-dev",
 }
 
@@ -470,7 +470,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *RootModel) handleShellShortcut(res editor.Result, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if m.agent.Mode() == agent.ModePlan {
-		m.msgs.OnInfo("shell shortcuts are disabled in Plan Mode; use /act to run commands")
+		m.msgs.OnInfo("shell shortcuts are disabled in Plan Mode; use Shift+Tab to exit Plan Mode before running commands")
 		m.refreshViewport()
 		m.layout()
 		return m, cmd
@@ -831,18 +831,12 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			break
 		}
 		initCmd = m.enterPlanMode("plan mode: edits and bash disabled; read-only gh available; MCP tools require read-only allowlist")
-	case "/act":
-		if !m.canChangeAgentMode() {
-			m.msgs.OnInfo("(busy — wait for current turn to finish)")
-			break
-		}
-		initCmd = m.enterActMode("act mode: implementation tools enabled")
 	case "/approve":
 		if !m.canChangeAgentMode() {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
 			break
 		}
-		initCmd = m.enterActMode("plan approved; act mode enabled — send your next message to implement")
+		initCmd = m.approvePlanAndStartImplementation()
 	case "/cancel-plan":
 		if m.streaming || m.compacting {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -1056,7 +1050,7 @@ func (m *RootModel) View() string {
 	if m.copyMode {
 		banner = m.styles.CopyModeBanner.Render("[copy mode] drag to highlight, copy with your terminal shortcut · Shift+Tab/Esc to exit")
 	} else if m.agent.Mode() == agent.ModePlan {
-		banner = m.styles.PlanModeBanner.Render("Plan Mode: edits and bash disabled · read-only gh available · MCP tools require read-only allowlist · /approve or /act to implement")
+		banner = m.styles.PlanModeBanner.Render("Plan Mode: edits and bash disabled · read-only gh available · MCP tools require read-only allowlist · /approve to implement · Shift+Tab to exit")
 	}
 	quitNotice := ""
 	if m.quitPrimed {
@@ -1584,10 +1578,38 @@ func lastAssistantText(s *session.Session) string {
 }
 
 func (m *RootModel) startNewSession() {
+	nc := m.newEmptySession()
+	m.swapSession(nc)
+}
+
+func (m *RootModel) newEmptySession() *session.Session {
 	nc := session.New(m.sess.Model)
 	nc.Provider = m.sess.Provider
 	nc.SetPath(filepath.Join(config.SessionsDir(), nc.ID+".json"))
+	return nc
+}
+
+func (m *RootModel) approvePlanAndStartImplementation() tea.Cmd {
+	if !m.planPending {
+		m.msgs.OnInfo("(no pending plan to approve)")
+		return nil
+	}
+	plan := strings.TrimSpace(lastAssistantText(m.sess))
+	if plan == "" {
+		m.msgs.OnInfo("(no assistant plan to approve yet)")
+		return nil
+	}
+	if !m.hasActiveProvider() {
+		m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+		return nil
+	}
+
+	nc := m.newEmptySession()
 	m.swapSession(nc)
+	cmd := m.enterActMode("plan approved; starting implementation in a new session")
+	m.msgs.AppendUser(plan)
+	m.refreshViewport()
+	return tea.Batch(cmd, m.startTurn(plan, nil))
 }
 
 func (m *RootModel) saveSessionIfStarted() {

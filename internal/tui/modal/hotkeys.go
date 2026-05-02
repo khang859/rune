@@ -31,8 +31,8 @@ func (Hotkeys) View(width, height int) string {
   /mcp-status     show MCP connection status
   /git-status     view git status and diffs
   /plan           enter Plan Mode (edits/bash disabled)
-  /act            leave Plan Mode
-  /approve        approve plan, return to Act Mode
+  Shift+Tab       cycle Plan/Copy modes
+  /approve        approve plan and implement in a new session
   /cancel-plan    clear pending plan state
   !cmd            run shell, send output (disabled in Plan Mode)
   !!cmd           run shell, do not send (disabled in Plan Mode)
