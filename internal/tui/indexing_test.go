@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai/faux"
@@ -23,45 +22,33 @@ func TestRuneIndexingTextIsThemed(t *testing.T) {
 	}
 }
 
-func TestRoot_IndexingEditorBoxStaysFullWidth(t *testing.T) {
+func TestRoot_IndexingAllowsTypingWhilePrewarming(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.indexing = true
 
-	lines := strings.Split(m.View(), "\n")
-	var found bool
-	for _, line := range lines {
-		if strings.Contains(line, "indexing AST/graph") {
-			found = true
-			if got, want := lipgloss.Width(line), 80; got != want {
-				t.Fatalf("indexing editor width = %d, want %d; line %q", got, want, line)
-			}
-		}
-	}
-	if !found {
-		t.Fatalf("missing indexing editor line:\n%s", m.View())
+	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
+	if got := m.editor.Value(); got != "h" {
+		t.Fatalf("editor value while indexing = %q, want h", got)
 	}
 }
 
-func TestRoot_IndexingBlocksTypingUntilDone(t *testing.T) {
+func TestRoot_IndexingKeepsEditorVisible(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.indexing = true
-	m.editor.Blur()
+	m.editor.SetValue("hello")
 
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
-	if got := m.editor.Value(); got != "" {
-		t.Fatalf("editor accepted input while indexing: %q", got)
+	view := m.View()
+	if strings.Contains(view, "hold your incantation") || strings.Contains(view, "indexing AST/graph") {
+		t.Fatalf("indexing should not replace the editor while prewarming:\n%s", view)
 	}
-
-	m.Update(codeIndexDoneMsg{})
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("h")})
-	if got := m.editor.Value(); got != "h" {
-		t.Fatalf("editor value after indexing = %q, want h", got)
+	if !strings.Contains(view, "hello") {
+		t.Fatalf("editor content should remain visible while indexing:\n%s", view)
 	}
 }
 

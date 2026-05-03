@@ -186,7 +186,6 @@ func (m *RootModel) SetVersion(version string) {
 
 func (m *RootModel) Init() tea.Cmd {
 	m.indexing = true
-	m.editor.Blur()
 	return tea.Batch(enableKittyKeyboard, m.startSubagentListener(), m.startCodeIndex(), m.startActivityTick())
 }
 
@@ -403,12 +402,6 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.modal.Update(msg)
 		m.modal = next
 		return m, cmd
-	}
-
-	if m.indexing {
-		if _, ok := msg.(tea.KeyMsg); ok {
-			return m, nil
-		}
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok {
@@ -1068,13 +1061,10 @@ func (m *RootModel) View() string {
 	case editor.ShellModeSend:
 		box = m.styles.EditorBoxShellSend
 	}
-	if m.copyMode || m.indexing {
+	if m.copyMode {
 		box = m.styles.EditorBoxDim
 	}
 	edView := m.editor.View(m.width)
-	if m.indexing {
-		edView = m.indexingEditorView()
-	}
 	edArea := box.Render(edView)
 	hint := m.editorScrollHint()
 	overlay := ""
@@ -1118,14 +1108,6 @@ func (m *RootModel) View() string {
 	}
 	out += "\n" + foot
 	return out
-}
-
-func (m *RootModel) indexingEditorView() string {
-	text := "indexing AST/graph — hold your incantation…"
-	if m.width > 4 {
-		return m.styles.Info.Width(m.width - 4).Render(text)
-	}
-	return m.styles.Info.Render(text)
 }
 
 func (m *RootModel) editorScrollHint() string {
@@ -2371,11 +2353,11 @@ func activityMotionText(text string, frame int) string {
 func runeIndexingText(frame int) string {
 	runes := []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ"}
 	phrases := []string{
-		"scrying the codebase",
-		"binding AST sigils",
-		"tracing graph ley lines",
-		"mapping symbols",
-		"awakening the index",
+		"scrying the codebase in the background",
+		"binding AST sigils in the background",
+		"tracing graph ley lines in the background",
+		"mapping symbols in the background",
+		"awakening the index in the background",
 	}
 	return runes[frame%len(runes)] + " " + phrases[(frame/12)%len(phrases)]
 }

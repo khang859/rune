@@ -55,6 +55,7 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*Index, error) 
 	if maxFiles <= 0 {
 		maxFiles = 5000
 	}
+	ignore := loadIgnoreMatcher(abs)
 
 	count := 0
 	err = filepath.WalkDir(abs, func(path string, d fs.DirEntry, walkErr error) error {
@@ -64,20 +65,20 @@ func (b *Builder) Build(ctx context.Context, opts BuildOptions) (*Index, error) 
 		if walkErr != nil {
 			return nil
 		}
-		if d.IsDir() {
-			if path != abs && shouldSkipDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if count >= maxFiles {
-			return nil
-		}
 		rel, err := filepath.Rel(abs, path)
 		if err != nil {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
+		if d.IsDir() {
+			if path != abs && (shouldSkipDir(d.Name()) || ignore.ignored(rel, true)) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if count >= maxFiles || ignore.ignored(rel, false) {
+			return nil
+		}
 		adapter, ok := AdapterForPath(rel, b.adapters)
 		if !ok || (len(allowed) > 0 && !allowed[adapter.ID]) {
 			return nil
