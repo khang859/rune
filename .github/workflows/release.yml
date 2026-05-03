@@ -32,6 +32,9 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.runner, 'ubuntu-')
+        run: sudo apt-get update && sudo apt-get install -y libx11-dev
       - name: Build release asset
         run: |
           mkdir -p dist
