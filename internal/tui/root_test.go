@@ -74,6 +74,7 @@ func TestRoot_AutoCompactsAtConfiguredContextThreshold(t *testing.T) {
 	m.currentTokens = 272000 * 80 / 100
 	m.footer.Tokens = m.currentTokens
 	m.eventCh = make(chan agent.Event)
+	m.streaming = true
 
 	_, cmd := m.Update(AgentChannelDoneMsg{Ch: m.eventCh})
 	if cmd == nil {
@@ -81,6 +82,38 @@ func TestRoot_AutoCompactsAtConfiguredContextThreshold(t *testing.T) {
 	}
 	if !m.compacting {
 		t.Fatal("expected compacting flag after auto-compact trigger")
+	}
+}
+
+func TestRoot_RunsPendingSubagentContinuationAfterAutoCompact(t *testing.T) {
+	s := session.New("gpt-5.5")
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u1"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "a1"}}})
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "u2"}}})
+	a := agent.New(faux.New().Reply("summary").Done().Reply("continued").Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.currentTokens = 272000 * 90 / 100
+	m.footer.Tokens = m.currentTokens
+	m.eventCh = make(chan agent.Event)
+	m.streaming = true
+	m.pendingSubagentContinuation = true
+
+	_, cmd := m.Update(AgentChannelDoneMsg{Ch: m.eventCh})
+	if cmd == nil {
+		t.Fatal("expected auto-compact command after streaming turn")
+	}
+	compactMsg := cmd().(tea.BatchMsg)[0]().(compactDoneMsg)
+
+	_, cmd = m.Update(compactMsg)
+	if cmd == nil {
+		t.Fatal("expected pending subagent continuation to start after compact")
+	}
+	if m.pendingSubagentContinuation {
+		t.Fatal("pending subagent continuation should be consumed")
+	}
+	if !m.streaming {
+		t.Fatal("expected subagent continuation turn to be streaming")
 	}
 }
 
