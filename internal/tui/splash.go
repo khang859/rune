@@ -29,7 +29,7 @@ func renderSplashWithNotice(width, height int, styles Styles, version, notice st
 	versionLine := styles.Info.Render("rune " + version)
 	parts := []string{art, "", tag, versionLine}
 	if notice != "" {
-		parts = append(parts, "", styles.Info.Render(notice))
+		parts = append(parts, "", styles.Activity.Render(notice))
 	}
 	body := lipgloss.JoinVertical(lipgloss.Center, parts...)
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, body)

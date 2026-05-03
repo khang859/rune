@@ -17,6 +17,7 @@ import (
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
 	"github.com/khang859/rune/internal/ai/unavailable"
+	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
@@ -235,6 +236,7 @@ func TestRoot_SavesAssistantMessageWhenTurnCompletes(t *testing.T) {
 }
 
 func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
+	prewarmCodeIndexForCwd(t)
 	f := faux.New().Reply("hello back").Done()
 	s := session.New("gpt-5")
 	a := agent.New(f, tools.NewRegistry(), s, "")
@@ -243,6 +245,7 @@ func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
 	tm := teatest.NewTestModel(t, m, teatest.WithInitialTermSize(80, 24))
 
 	tm.Send(tea.WindowSizeMsg{Width: 80, Height: 24})
+	tm.Send(codeIndexDoneMsg{})
 	typeText(tm, "hi")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
 
@@ -253,6 +256,17 @@ func TestRoot_TextOnlyTurnRendersAssistantText(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(2*time.Second))
+}
+
+func prewarmCodeIndexForCwd(t *testing.T) {
+	t.Helper()
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := codeindex.DefaultCache().Set(codeindex.BuildOptions{Root: cwd}, codeindex.New(cwd)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestNormalizeShiftEnterCSIU(t *testing.T) {
@@ -1509,7 +1523,7 @@ func TestRoot_ArcaneActivityRailRendersBesideMessages(t *testing.T) {
 	m.refreshViewport()
 
 	out := m.View()
-	if !strings.Contains(out, "╎✦╎") {
+	if !strings.Contains(out, "╎ᚱ╎") {
 		t.Fatalf("arcane activity rail not rendered: %q", out)
 	}
 	if m.viewport.Width != 76 {
@@ -1524,7 +1538,7 @@ func TestRoot_ArcaneActivityRailRendersBesideMessages(t *testing.T) {
 	}
 }
 
-func TestRoot_ArcaneActivityRailUsesNerdFontGlyphs(t *testing.T) {
+func TestRoot_ArcaneActivityRailUsesRunesInNerdFontMode(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
@@ -1534,8 +1548,8 @@ func TestRoot_ArcaneActivityRailUsesNerdFontGlyphs(t *testing.T) {
 	m.streaming = true
 
 	rail := m.renderArcaneActivityRail(4)
-	if !strings.Contains(rail, "┃"+m.styles.Icons.Thinking+"┃") || !strings.Contains(rail, "┃"+m.styles.Icons.Invoke+"┃") {
-		t.Fatalf("nerd font rail did not use nerd glyphs: %q", rail)
+	if !strings.Contains(rail, "┃ᚱ┃") || !strings.Contains(rail, "┃ᚢ┃") {
+		t.Fatalf("nerd font rail did not use runes: %q", rail)
 	}
 }
 
@@ -1549,7 +1563,7 @@ func TestRoot_ArcaneActivityRailHiddenForSimpleAndNarrow(t *testing.T) {
 	m.settings.ActivityMode = "simple"
 	m.layout()
 	m.refreshViewport()
-	if strings.Contains(m.View(), "╎✦╎") {
+	if strings.Contains(m.View(), "╎ᚱ╎") {
 		t.Fatalf("arcane activity rail rendered in simple mode: %q", m.View())
 	}
 	if m.viewport.Width != 80 {
@@ -1560,7 +1574,7 @@ func TestRoot_ArcaneActivityRailHiddenForSimpleAndNarrow(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 79, Height: 24})
 	m.layout()
 	m.refreshViewport()
-	if strings.Contains(m.View(), "╎✦╎") {
+	if strings.Contains(m.View(), "╎ᚱ╎") {
 		t.Fatalf("arcane activity rail rendered at narrow width: %q", m.View())
 	}
 	if m.viewport.Width != 79 {

@@ -23,6 +23,7 @@ import (
 	"github.com/khang859/rune/internal/ai/ollama"
 	"github.com/khang859/rune/internal/ai/runpod"
 	"github.com/khang859/rune/internal/ai/unavailable"
+	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/providers"
@@ -68,6 +69,8 @@ type RootModel struct {
 	clipboardErr    error
 	copyMode        bool
 	planPending     bool
+	indexing        bool
+	indexingErr     error
 
 	showThinking    bool
 	showToolResults bool
@@ -182,7 +185,9 @@ func (m *RootModel) SetVersion(version string) {
 }
 
 func (m *RootModel) Init() tea.Cmd {
-	return tea.Batch(enableKittyKeyboard, m.startSubagentListener())
+	m.indexing = true
+	m.editor.Blur()
+	return tea.Batch(enableKittyKeyboard, m.startSubagentListener(), m.startCodeIndex(), m.startActivityTick())
 }
 
 func enableKittyKeyboard() tea.Msg {
@@ -286,7 +291,23 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activityFrame%activityPhraseChangeFrames == 0 {
 			m.activityPhrase = nextActivityPhraseIndex(m.activityPhrase, len(m.activityPhrases()))
 		}
+		if m.indexing && m.msgs.IsEmpty() {
+			m.refreshViewport()
+		}
 		return m, m.startActivityTick()
+
+	case codeIndexDoneMsg:
+		m.indexing = false
+		m.indexingErr = v.err
+		if !m.showActivity() {
+			m.stopActivityTick()
+		}
+		if !m.copyMode && m.modal == nil {
+			m.editor.Focus()
+		}
+		m.layout()
+		m.refreshViewport()
+		return m, nil
 
 	case AgentEventMsg:
 		if v.Ch != m.eventCh {
@@ -382,6 +403,12 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		next, cmd := m.modal.Update(msg)
 		m.modal = next
 		return m, cmd
+	}
+
+	if m.indexing {
+		if _, ok := msg.(tea.KeyMsg); ok {
+			return m, nil
+		}
 	}
 
 	if k, ok := msg.(tea.KeyMsg); ok {
@@ -1041,10 +1068,14 @@ func (m *RootModel) View() string {
 	case editor.ShellModeSend:
 		box = m.styles.EditorBoxShellSend
 	}
-	if m.copyMode {
+	if m.copyMode || m.indexing {
 		box = m.styles.EditorBoxDim
 	}
-	edArea := box.Render(m.editor.View(m.width))
+	edView := m.editor.View(m.width)
+	if m.indexing {
+		edView = m.indexingEditorView()
+	}
+	edArea := box.Render(edView)
 	hint := m.editorScrollHint()
 	overlay := ""
 	switch m.editor.Mode() {
@@ -1087,6 +1118,14 @@ func (m *RootModel) View() string {
 	}
 	out += "\n" + foot
 	return out
+}
+
+func (m *RootModel) indexingEditorView() string {
+	text := "indexing AST/graph — hold your incantation…"
+	if m.width > 4 {
+		return m.styles.Info.Width(m.width - 4).Render(text)
+	}
+	return m.styles.Info.Render(text)
 }
 
 func (m *RootModel) editorScrollHint() string {
@@ -1204,13 +1243,23 @@ func (m *RootModel) layout() {
 func (m *RootModel) refreshViewport() {
 	atBottom := m.viewport.AtBottom()
 	if m.msgs.IsEmpty() {
-		m.viewport.SetContent(renderSplashWithNotice(m.width, m.viewport.Height, m.styles, m.version, m.noProviderNotice()))
+		m.viewport.SetContent(renderSplashWithNotice(m.width, m.viewport.Height, m.styles, m.version, m.splashNotice()))
 	} else {
 		m.viewport.SetContent(m.msgs.Render(m.styles, m.showThinking, m.showToolResults, time.Now()))
 	}
 	if atBottom {
 		m.viewport.GotoBottom()
 	}
+}
+
+func (m *RootModel) splashNotice() string {
+	if m.indexing {
+		return runeIndexingText(m.activityFrame)
+	}
+	if m.indexingErr != nil {
+		return "code index sigils failed — continuing without prewarm"
+	}
+	return m.noProviderNotice()
 }
 
 func (m *RootModel) handleSubagentEvent(e agent.SubagentEvent) {
@@ -2136,6 +2185,16 @@ func (m *RootModel) handleCtrlC() (tea.Model, tea.Cmd) {
 
 type activityTickMsg struct{ seq int }
 
+type codeIndexDoneMsg struct{ err error }
+
+func (m *RootModel) startCodeIndex() tea.Cmd {
+	root := m.editor.Cwd()
+	return func() tea.Msg {
+		_, err := codeindex.BuildCached(context.Background(), codeindex.BuildOptions{Root: root})
+		return codeIndexDoneMsg{err: err}
+	}
+}
+
 const (
 	activityTickInterval       = 120 * time.Millisecond
 	activityPhraseChangeFrames = 14
@@ -2162,7 +2221,7 @@ func (m *RootModel) stopActivityTick() {
 }
 
 func (m *RootModel) showActivity() bool {
-	return (m.streaming || m.compacting || m.activeSubagentCount() > 0) && m.settings.ActivityMode != "off"
+	return (m.indexing || m.streaming || m.compacting || m.activeSubagentCount() > 0) && m.settings.ActivityMode != "off"
 }
 
 func (m *RootModel) activeSubagentCount() int {
@@ -2193,14 +2252,14 @@ func (m *RootModel) renderArcaneActivityRail(height int) string {
 	if height <= 0 {
 		return ""
 	}
-	glyphs := []string{"✦", "│", "·", "⟐", "│", "✧", "·", "│", "◌", "│", "·", "⟡"}
+	glyphs := []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ", "ᛇ", "ᛉ", "ᛏ", "ᛒ"}
 	leftEdge, rightEdge := "╎", "╎"
 	switch IconMode(m.settings.IconMode) {
 	case IconModeASCII:
 		glyphs = []string{"*", "|", ".", "+", "|", "*", ".", "|", "o", "|", ".", "+"}
 		leftEdge, rightEdge = ":", ":"
 	case IconModeNerd:
-		glyphs = []string{m.styles.Icons.Thinking, "│", "·", m.styles.Icons.Invoke, "│", m.styles.Icons.Familiar, "·", "│", m.styles.Icons.Tool, "│", "·", "✦"}
+		glyphs = []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ", "ᛇ", "ᛉ", "ᛏ", "ᛒ"}
 		leftEdge, rightEdge = "┃", "┃"
 	}
 	lines := make([]string, 0, height)
@@ -2216,7 +2275,9 @@ func (m *RootModel) renderActivityLine() string {
 		return ""
 	}
 	left := ""
-	if m.streaming || m.compacting {
+	if m.indexing {
+		left = runeIndexingText(m.activityFrame)
+	} else if m.streaming || m.compacting {
 		phrases := m.activityPhrases()
 		left = activityMotionText(phrases[m.activityPhrase%len(phrases)], m.activityFrame)
 	}
@@ -2305,6 +2366,18 @@ func activityMotionText(text string, frame int) string {
 	dots := []string{"", ".", "..", "..."}
 	base := strings.TrimRight(strings.TrimSpace(text), ".…")
 	return base + dots[frame%len(dots)]
+}
+
+func runeIndexingText(frame int) string {
+	runes := []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ"}
+	phrases := []string{
+		"scrying the codebase",
+		"binding AST sigils",
+		"tracing graph ley lines",
+		"mapping symbols",
+		"awakening the index",
+	}
+	return runes[frame%len(runes)] + " " + phrases[(frame/12)%len(phrases)]
 }
 
 // subagentSpinnerText prefixes the subagent indicator with a fixed-width

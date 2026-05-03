@@ -106,6 +106,10 @@ func RegisterBuiltins(r *Registry, opts BuiltinOptions) {
 	r.Register(Read{})
 	r.Register(ListFiles{})
 	r.Register(SearchFiles{})
+	r.Register(CodeIndexSummary{})
+	r.Register(CodeFindSymbol{})
+	r.Register(CodeSymbolContext{})
+	r.Register(CodeGraphNeighbors{})
 	r.Register(GitStatus{})
 	r.Register(GitDiff{})
 	r.Register(GH{})
@@ -159,7 +163,7 @@ func (r *Registry) toolAllowed(name string) bool {
 		return true
 	}
 	switch name {
-	case "read", "list_files", "search_files", "git_status", "git_diff", "gh", "web_search", "web_fetch", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
+	case "read", "list_files", "search_files", "code_index_summary", "code_find_symbol", "code_symbol_context", "code_graph_neighbors", "git_status", "git_diff", "gh", "web_search", "web_fetch", "spawn_subagent", "list_subagents", "get_subagent_result", "cancel_subagent":
 		return true
 	}
 	if t, ok := r.tools[name]; ok {
