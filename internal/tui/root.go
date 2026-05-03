@@ -255,6 +255,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshViewport()
 			return m, m.startTurn(item.Text, item.Attachments)
 		}
+		if m.pendingSubagentContinuation {
+			m.pendingSubagentContinuation = false
+			return m, m.startSubagentContinuationTurn()
+		}
 		return m, nil
 
 	case tea.WindowSizeMsg:
@@ -305,14 +309,14 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.saveSessionIfStarted()
-		compactCmd := m.maybeStartAutoCompact()
 		m.streaming = false
 		m.eventCh = nil
 		m.cancel = nil
+		compactCmd := m.maybeStartAutoCompact()
 		if !m.showActivity() {
 			m.stopActivityTick()
 		}
-		if !m.copyMode {
+		if !m.copyMode && !m.compacting {
 			m.editor.Focus()
 		}
 		m.layout()
