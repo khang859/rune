@@ -68,6 +68,28 @@ func TestImageInputSupport_Ollama(t *testing.T) {
 	}
 }
 
+func TestToolUseSupport(t *testing.T) {
+	cases := []struct {
+		provider string
+		model    string
+		want     ToolSupport
+	}{
+		{Ollama, "gemma3", ToolUnsupported},
+		{Ollama, "gemma2:9b", ToolUnsupported},
+		{Ollama, "gemma-3-27b", ToolUnsupported},
+		{Ollama, "llama3.2", ToolUnknown},
+		{Ollama, "qwen3:8b", ToolUnknown},
+		{Codex, "gpt-5.5", ToolUnknown},
+		{Groq, "llama-3.3-70b-versatile", ToolUnknown},
+		{Runpod, "openai/gpt-oss-120b", ToolUnknown},
+	}
+	for _, tc := range cases {
+		if got := ToolUseSupport(tc.provider, tc.model); got != tc.want {
+			t.Fatalf("%s/%s tool support = %s, want %s", tc.provider, tc.model, got, tc.want)
+		}
+	}
+}
+
 func TestImageInputSupport_Runpod(t *testing.T) {
 	cases := []struct {
 		model string

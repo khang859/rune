@@ -1732,7 +1732,11 @@ func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
 	if provider == "" {
 		m.msgs.OnInfo("(no active provider configured)")
 	} else {
-		m.msgs.OnInfo(fmt.Sprintf("(provider: %s, model: %s)", provider, model))
+		info := fmt.Sprintf("(provider: %s, model: %s)", provider, model)
+		if providers.ToolUseSupport(provider, model) == providers.ToolUnsupported {
+			info += " — chat-only model, agent tools disabled"
+		}
+		m.msgs.OnInfo(info)
 	}
 	m.refreshViewport()
 	return nil

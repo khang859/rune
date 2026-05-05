@@ -6,6 +6,8 @@ type ImageSupport string
 
 type DocumentSupport string
 
+type ToolSupport string
+
 const (
 	ImageUnsupported ImageSupport = "unsupported"
 	ImageSupported   ImageSupport = "supported"
@@ -14,6 +16,10 @@ const (
 	DocumentUnsupported DocumentSupport = "unsupported"
 	DocumentSupported   DocumentSupport = "supported"
 	DocumentUnknown     DocumentSupport = "unknown"
+
+	ToolUnsupported ToolSupport = "unsupported"
+	ToolSupported   ToolSupport = "supported"
+	ToolUnknown     ToolSupport = "unknown"
 )
 
 func PDFInputSupport(provider, model string) DocumentSupport {
@@ -98,6 +104,40 @@ func looksLikeOpenAIVisionModel(model string) bool {
 		"chatgpt-4o",
 	} {
 		if strings.HasPrefix(model, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// ToolUseSupport reports whether the (provider, model) pair is known to support
+// the function/tool-calling protocol used by the agent loop. Returning
+// ToolUnsupported tells callers to drop tools from the request entirely;
+// chat-only models like Google's Gemma family reject requests that include a
+// tools array. ToolUnknown means we should send tools and let the provider
+// decide.
+func ToolUseSupport(provider, model string) ToolSupport {
+	model = strings.ToLower(strings.TrimSpace(model))
+	switch Normalize(provider) {
+	case Ollama:
+		if looksLikeChatOnlyOllamaModel(model) {
+			return ToolUnsupported
+		}
+		return ToolUnknown
+	default:
+		return ToolUnknown
+	}
+}
+
+// looksLikeChatOnlyOllamaModel matches Ollama tags for model families that
+// don't implement function calling. Keep this list narrow — false positives
+// silently strip tools and break the agent.
+func looksLikeChatOnlyOllamaModel(model string) bool {
+	chatOnlyHints := []string{
+		"gemma",
+	}
+	for _, hint := range chatOnlyHints {
+		if strings.Contains(model, hint) {
 			return true
 		}
 	}

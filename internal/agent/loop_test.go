@@ -57,6 +57,57 @@ func TestRun_TextOnlyTurn(t *testing.T) {
 	}
 }
 
+// captureToolsProvider records each Stream call's req.Tools and replies with
+// a trivial text-only turn so the loop terminates cleanly.
+type captureToolsProvider struct {
+	gotTools [][]ai.ToolSpec
+}
+
+func (p *captureToolsProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	p.gotTools = append(p.gotTools, append([]ai.ToolSpec(nil), req.Tools...))
+	out := make(chan ai.Event, 4)
+	out <- ai.TextDelta{Text: "ok"}
+	out <- ai.Usage{Input: 1, Output: 1}
+	out <- ai.Done{Reason: "stop"}
+	close(out)
+	return out, nil
+}
+
+func TestRun_OmitsToolsForChatOnlyModel(t *testing.T) {
+	p := &captureToolsProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+
+	s := session.New("gemma3")
+	s.Provider = "ollama"
+	a := New(p, reg, s, "")
+
+	collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if len(p.gotTools) != 1 {
+		t.Fatalf("expected 1 stream call, got %d", len(p.gotTools))
+	}
+	if len(p.gotTools[0]) != 0 {
+		t.Fatalf("expected no tools sent for chat-only model, got %d: %v", len(p.gotTools[0]), p.gotTools[0])
+	}
+}
+
+func TestRun_SendsToolsForToolCapableModel(t *testing.T) {
+	p := &captureToolsProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+
+	s := session.New("llama3.2")
+	s.Provider = "ollama"
+	a := New(p, reg, s, "")
+
+	collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if len(p.gotTools) != 1 || len(p.gotTools[0]) == 0 {
+		t.Fatalf("expected tools to be sent for tool-capable model, got %#v", p.gotTools)
+	}
+}
+
 func TestRun_DispatchesToolThenContinues(t *testing.T) {
 	f := faux.New().
 		CallTool("read", `{"path":"/tmp/x"}`).Done().

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/providers"
 )
 
 const eventBuffer = 64
@@ -44,11 +45,15 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
 		}
+		var toolSpecs []ai.ToolSpec
+		if providers.ToolUseSupport(a.session.Provider, a.session.Model) != providers.ToolUnsupported {
+			toolSpecs = a.tools.Specs()
+		}
 		req := ai.Request{
 			Model:     a.session.Model,
 			System:    sys,
 			Messages:  a.session.PathToActive(),
-			Tools:     a.tools.Specs(),
+			Tools:     toolSpecs,
 			Reasoning: ai.ReasoningConfig{Effort: a.effort},
 		}
 		events, err := a.provider.Stream(ctx, req)
