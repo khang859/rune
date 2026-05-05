@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/khang859/rune/internal/ai"
+	"golang.org/x/net/html"
 )
 
 const defaultWebFetchMaxBytes int64 = 200000
@@ -57,11 +58,6 @@ func (w WebFetch) Run(ctx context.Context, args json.RawMessage) (Result, error)
 			return Result{Output: fmt.Sprintf("header %q is not allowed", http.CanonicalHeaderKey(k)), IsError: true}, nil
 		}
 	}
-	if !w.AllowPrivate {
-		if err := rejectPrivateHost(ctx, u.Hostname()); err != nil {
-			return Result{Output: err.Error(), IsError: true}, nil
-		}
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
 	if err != nil {
 		return Result{Output: err.Error(), IsError: true}, nil
@@ -72,12 +68,7 @@ func (w WebFetch) Run(ctx context.Context, args json.RawMessage) (Result, error)
 	}
 	c := w.Client
 	if c == nil {
-		c = &http.Client{Timeout: 15 * time.Second, CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 10 {
-				return fmt.Errorf("stopped after 10 redirects")
-			}
-			return nil
-		}}
+		c = w.buildClient()
 	}
 	resp, err := c.Do(req)
 	if err != nil {
@@ -108,6 +99,15 @@ func (w WebFetch) Run(ctx context.Context, args json.RawMessage) (Result, error)
 		b.WriteString("[body omitted: response appears to be binary]\n")
 		return Result{Output: b.String()}, nil
 	}
+	if isHTMLContentType(ct) {
+		text := extractReadableHTML(data)
+		b.WriteString("[html sanitized: scripts, styles, and markup stripped]\n\n")
+		b.WriteString(text)
+		if truncated {
+			fmt.Fprintf(&b, "\n[truncated after %d bytes of raw HTML. Re-run web_fetch with a higher max_bytes up to %d.]\n", a.MaxBytes, hardWebFetchMaxBytes)
+		}
+		return Result{Output: b.String()}, nil
+	}
 	b.Write(data)
 	if truncated {
 		fmt.Fprintf(&b, "\n[truncated after %d bytes. Re-run web_fetch with a smaller target or higher max_bytes up to %d.]\n", a.MaxBytes, hardWebFetchMaxBytes)
@@ -121,6 +121,154 @@ func sensitiveHeader(k string) bool {
 	}
 	return false
 }
+func isHTMLContentType(ct string) bool {
+	mt, _, _ := mime.ParseMediaType(ct)
+	switch mt {
+	case "text/html", "application/xhtml+xml":
+		return true
+	}
+	return false
+}
+
+var skipHTMLElements = map[string]bool{
+	"script": true, "style": true, "noscript": true, "svg": true,
+	"iframe": true, "template": true, "canvas": true, "math": true,
+}
+
+func extractReadableHTML(data []byte) string {
+	doc, err := html.Parse(bytes.NewReader(data))
+	if err != nil {
+		return string(data)
+	}
+	var title string
+	var buf strings.Builder
+	var walk func(n *html.Node, inBody bool)
+	walk = func(n *html.Node, inBody bool) {
+		switch n.Type {
+		case html.CommentNode:
+			return
+		case html.ElementNode:
+			if skipHTMLElements[n.Data] {
+				return
+			}
+			if n.Data == "title" && n.FirstChild != nil && n.FirstChild.Type == html.TextNode {
+				title = strings.TrimSpace(n.FirstChild.Data)
+				return
+			}
+			if n.Data == "body" {
+				inBody = true
+			}
+			if inBody && n.Data == "a" {
+				var linkText strings.Builder
+				collectText(n, &linkText)
+				txt := strings.TrimSpace(collapseWS(linkText.String()))
+				href := attr(n, "href")
+				if txt != "" {
+					buf.WriteString(txt)
+					if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") {
+						buf.WriteString(" (")
+						buf.WriteString(href)
+						buf.WriteString(")")
+					}
+					buf.WriteByte(' ')
+				}
+				return
+			}
+			if inBody && isBlockElement(n.Data) {
+				buf.WriteByte('\n')
+			}
+		case html.TextNode:
+			if inBody {
+				t := collapseWS(n.Data)
+				if t != "" {
+					buf.WriteString(t)
+				}
+			}
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c, inBody)
+		}
+		if n.Type == html.ElementNode && inBody && isBlockElement(n.Data) {
+			buf.WriteByte('\n')
+		}
+	}
+	walk(doc, false)
+	out := normalizeBlankLines(buf.String())
+	if title != "" {
+		return "Title: " + title + "\n\n" + out
+	}
+	return out
+}
+
+func collectText(n *html.Node, b *strings.Builder) {
+	if n.Type == html.TextNode {
+		b.WriteString(n.Data)
+		return
+	}
+	if n.Type == html.ElementNode && skipHTMLElements[n.Data] {
+		return
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		collectText(c, b)
+	}
+}
+
+func attr(n *html.Node, key string) string {
+	for _, a := range n.Attr {
+		if a.Key == key {
+			return a.Val
+		}
+	}
+	return ""
+}
+
+func isBlockElement(tag string) bool {
+	switch tag {
+	case "p", "div", "br", "hr", "li", "ul", "ol", "tr", "table",
+		"section", "article", "header", "footer", "nav", "aside", "main",
+		"h1", "h2", "h3", "h4", "h5", "h6", "blockquote", "pre", "figure":
+		return true
+	}
+	return false
+}
+
+func collapseWS(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	prevSpace := false
+	for _, r := range s {
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' {
+			if !prevSpace {
+				b.WriteByte(' ')
+				prevSpace = true
+			}
+			continue
+		}
+		b.WriteRune(r)
+		prevSpace = false
+	}
+	return b.String()
+}
+
+func normalizeBlankLines(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	blanks := 0
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			blanks++
+			if blanks <= 1 {
+				out = append(out, "")
+			}
+			continue
+		}
+		blanks = 0
+		out = append(out, ln)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
+}
+
 func isBinaryContentType(ct string) bool {
 	mt, _, _ := mime.ParseMediaType(ct)
 	if mt == "" {
@@ -141,19 +289,64 @@ func looksBinary(b []byte) bool {
 	}
 	return bytes.IndexByte(b, 0) >= 0
 }
-func rejectPrivateHost(ctx context.Context, host string) error {
-	if strings.EqualFold(host, "localhost") {
-		return fmt.Errorf("private/local URLs are blocked by default")
+func isBlockedIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsUnspecified() ||
+		ip.Equal(net.ParseIP("169.254.169.254"))
+}
+
+func (w WebFetch) buildClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	allowPrivate := w.AllowPrivate
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			if !allowPrivate && strings.EqualFold(host, "localhost") {
+				return nil, fmt.Errorf("private/local addresses are blocked by default")
+			}
+			ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+			if err != nil {
+				return nil, fmt.Errorf("resolve host: %v", err)
+			}
+			var lastErr error
+			for _, ipa := range ips {
+				if !allowPrivate && isBlockedIP(ipa.IP) {
+					lastErr = fmt.Errorf("private/local addresses are blocked by default")
+					continue
+				}
+				ipStr := ipa.IP.String()
+				if ipa.Zone != "" {
+					ipStr = ipStr + "%" + ipa.Zone
+				}
+				conn, derr := dialer.DialContext(ctx, network, net.JoinHostPort(ipStr, port))
+				if derr == nil {
+					return conn, nil
+				}
+				lastErr = derr
+			}
+			if lastErr == nil {
+				lastErr = fmt.Errorf("no addresses for %s", host)
+			}
+			return nil, lastErr
+		},
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: 15 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	}
-	ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return fmt.Errorf("resolve host: %v", err)
+	return &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return fmt.Errorf("unsupported redirect scheme: %s", req.URL.Scheme)
+			}
+			return nil
+		},
 	}
-	for _, ipa := range ips {
-		ip := ipa.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() || ip.Equal(net.ParseIP("169.254.169.254")) {
-			return fmt.Errorf("private/local URLs are blocked by default")
-		}
-	}
-	return nil
 }

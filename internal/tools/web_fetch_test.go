@@ -69,6 +69,52 @@ func TestWebFetchBlocksPrivateByDefault(t *testing.T) {
 	}
 }
 
+func TestWebFetchSanitizesHTML(t *testing.T) {
+	body := `<!doctype html><html><head><title>Hello</title>` +
+		`<script>var x=1;alert('pwn')</script>` +
+		`<style>body{color:red}</style></head>` +
+		`<body><h1>Heading</h1>` +
+		`<p>Visible paragraph.</p>` +
+		`<noscript>js disabled</noscript>` +
+		`<script>more junk</script>` +
+		`<a href="https://example.com/foo">click here</a>` +
+		`</body></html>`
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte(body))
+	}))
+	defer ts.Close()
+	res, err := (WebFetch{AllowPrivate: true}).Run(context.Background(), mustJSON(map[string]any{"url": ts.URL}))
+	if err != nil || res.IsError {
+		t.Fatalf("Run = %+v, %v", res, err)
+	}
+	for _, want := range []string{"[html sanitized", "Title: Hello", "Heading", "Visible paragraph.", "click here (https://example.com/foo)"} {
+		if !strings.Contains(res.Output, want) {
+			t.Fatalf("output missing %q: %s", want, res.Output)
+		}
+	}
+	for _, bad := range []string{"alert('pwn')", "color:red", "var x=1", "more junk", "js disabled"} {
+		if strings.Contains(res.Output, bad) {
+			t.Fatalf("output should not contain %q: %s", bad, res.Output)
+		}
+	}
+}
+
+func TestWebFetchBlocksRedirectToNonHTTPScheme(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", "file:///etc/passwd")
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer ts.Close()
+	res, err := (WebFetch{AllowPrivate: true}).Run(context.Background(), mustJSON(map[string]any{"url": ts.URL}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(res.Output, "unsupported redirect scheme") {
+		t.Fatalf("expected redirect scheme block, got %+v", res)
+	}
+}
+
 func mustJSON(v any) json.RawMessage {
 	b, err := json.Marshal(v)
 	if err != nil {
