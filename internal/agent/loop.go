@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/providers"
 )
 
@@ -46,7 +47,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			sys += "\n\n" + RuntimeContext()
 		}
 		var toolSpecs []ai.ToolSpec
-		if providers.ToolUseSupport(a.session.Provider, a.session.Model) != providers.ToolUnsupported {
+		if providers.ToolUseSupportWithSettings(a.session.Provider, a.session.Model, config.Settings{ModelCapabilities: a.modelCapabilities}) != providers.ToolUnsupported {
 			toolSpecs = a.tools.Specs()
 		}
 		req := ai.Request{

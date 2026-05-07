@@ -6,25 +6,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
 type Settings struct {
-	Provider        string            `json:"provider,omitempty"`
-	ActiveProfile   string            `json:"active_profile,omitempty"`
-	Profiles        []ProviderProfile `json:"profiles,omitempty"`
-	CodexModel      string            `json:"codex_model,omitempty"`
-	GroqModel       string            `json:"groq_model,omitempty"`
-	OllamaModel     string            `json:"ollama_model,omitempty"`
-	RunpodModel     string            `json:"runpod_model,omitempty"`
-	OllamaEndpoint  string            `json:"ollama_endpoint,omitempty"`
-	RunpodEndpoint  string            `json:"runpod_endpoint,omitempty"`
-	ReasoningEffort string            `json:"reasoning_effort,omitempty"`
-	IconMode        string            `json:"icon_mode,omitempty"`
-	ActivityMode    string            `json:"activity_mode,omitempty"`
-	AutoCompact     AutoCompact       `json:"auto_compact,omitempty"`
-	Web             WebSettings       `json:"web,omitempty"`
-	Subagents       SubagentSettings  `json:"subagents,omitempty"`
+	Provider          string                       `json:"provider,omitempty"`
+	ActiveProfile     string                       `json:"active_profile,omitempty"`
+	Profiles          []ProviderProfile            `json:"profiles,omitempty"`
+	CodexModel        string                       `json:"codex_model,omitempty"`
+	GroqModel         string                       `json:"groq_model,omitempty"`
+	OllamaModel       string                       `json:"ollama_model,omitempty"`
+	RunpodModel       string                       `json:"runpod_model,omitempty"`
+	OllamaEndpoint    string                       `json:"ollama_endpoint,omitempty"`
+	RunpodEndpoint    string                       `json:"runpod_endpoint,omitempty"`
+	ReasoningEffort   string                       `json:"reasoning_effort,omitempty"`
+	IconMode          string                       `json:"icon_mode,omitempty"`
+	ActivityMode      string                       `json:"activity_mode,omitempty"`
+	AutoCompact       AutoCompact                  `json:"auto_compact,omitempty"`
+	Web               WebSettings                  `json:"web,omitempty"`
+	Subagents         SubagentSettings             `json:"subagents,omitempty"`
+	ModelCapabilities map[string]ModelCapabilities `json:"model_capabilities,omitempty"`
 }
 
 type ProviderProfile struct {
@@ -49,12 +51,31 @@ type SubagentSettings struct {
 	MaxCompletedRetain int   `json:"max_completed_retain,omitempty"`
 }
 
+type ModelCapabilities struct {
+	Tools string `json:"tools,omitempty"`
+}
+
 type AutoCompact struct {
 	Enabled      *bool `json:"enabled,omitempty"`
 	ThresholdPct int   `json:"threshold_pct,omitempty"`
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// DefaultSubagentConcurrency returns the default subagent worker count for
+// this host. Each subagent can saturate a core, so we scale with NumCPU but
+// cap at 8 to avoid surprising users on large workstations who didn't ask
+// for that level of parallelism. Always at least 1.
+func DefaultSubagentConcurrency() int {
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	if n > 8 {
+		return 8
+	}
+	return n
+}
 
 func (s SubagentSettings) EnabledValue() bool {
 	if s.Enabled == nil {
@@ -82,7 +103,7 @@ func DefaultSettings() Settings {
 		ActivityMode:    "arcane",
 		AutoCompact:     AutoCompact{Enabled: boolPtr(true), ThresholdPct: 80},
 		Web:             WebSettings{FetchEnabled: true, SearchEnabled: "auto", SearchProvider: "auto"},
-		Subagents:       SubagentSettings{Enabled: boolPtr(true), MaxConcurrent: 4, DefaultTimeoutSecs: 600, MaxCompletedRetain: 100},
+		Subagents:       SubagentSettings{Enabled: boolPtr(true), MaxConcurrent: DefaultSubagentConcurrency(), DefaultTimeoutSecs: 600, MaxCompletedRetain: 100},
 	}
 }
 
@@ -107,6 +128,7 @@ func NormalizeSettings(s Settings) Settings {
 		s.Provider = ""
 	}
 	s.Profiles = NormalizeProviderProfiles(s.Profiles)
+	s.ModelCapabilities = NormalizeModelCapabilities(s.ModelCapabilities)
 	if s.ActiveProfile != "" && FindProviderProfile(s.Profiles, s.ActiveProfile) == nil {
 		s.ActiveProfile = ""
 	}
@@ -175,6 +197,22 @@ func NormalizeProviderProfiles(profiles []ProviderProfile) []ProviderProfile {
 		}
 		seen[p.ID] = true
 		out = append(out, p)
+	}
+	return out
+}
+
+func NormalizeModelCapabilities(caps map[string]ModelCapabilities) map[string]ModelCapabilities {
+	out := map[string]ModelCapabilities{}
+	for key, cap := range caps {
+		key = strings.TrimSpace(key)
+		cap.Tools = strings.ToLower(strings.TrimSpace(cap.Tools))
+		if key == "" || (cap.Tools != "auto" && cap.Tools != "on" && cap.Tools != "off") {
+			continue
+		}
+		out[key] = cap
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

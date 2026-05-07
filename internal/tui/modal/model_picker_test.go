@@ -13,7 +13,7 @@ func TestModelPicker_PicksHighlighted(t *testing.T) {
 	next, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	_ = next
 	msg := cmd().(ResultMsg)
-	if got := msg.Payload.(string); got != "gpt-5-codex" {
+	if got := msg.Payload.(ModelChoice).Model; got != "gpt-5-codex" {
 		t.Fatalf("payload = %q", got)
 	}
 }
@@ -24,5 +24,15 @@ func TestModelPicker_EscCancels(t *testing.T) {
 	msg := cmd().(ResultMsg)
 	if !msg.Cancel {
 		t.Fatal("expected cancel")
+	}
+}
+
+func TestModelPicker_CyclesToolOverride(t *testing.T) {
+	p := NewModelPicker([]string{"qwen3"}, "qwen3")
+	_, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})
+	_, cmd := p.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	choice := cmd().(ResultMsg).Payload.(ModelChoice)
+	if choice.Tools != "off" {
+		t.Fatalf("tools = %q, want off", choice.Tools)
 	}
 }

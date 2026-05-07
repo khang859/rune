@@ -1,6 +1,10 @@
 package providers
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/khang859/rune/internal/config"
+)
 
 type ImageSupport string
 
@@ -108,6 +112,34 @@ func looksLikeOpenAIVisionModel(model string) bool {
 		}
 	}
 	return false
+}
+
+// ModelCapabilityKey returns the exact settings key for a provider/model pair.
+func ModelCapabilityKey(provider, model string) string {
+	provider = Normalize(provider)
+	model = strings.TrimSpace(model)
+	if provider == "" || model == "" {
+		return model
+	}
+	return provider + ":" + model
+}
+
+// ToolUseSupportWithSettings applies per-model settings overrides before
+// falling back to provider/model detection. Exact provider:model overrides take
+// precedence over plain model-name overrides.
+func ToolUseSupportWithSettings(provider, model string, settings config.Settings) ToolSupport {
+	caps := config.NormalizeModelCapabilities(settings.ModelCapabilities)
+	for _, key := range []string{ModelCapabilityKey(provider, model), strings.TrimSpace(model)} {
+		if cap, ok := caps[key]; ok {
+			switch cap.Tools {
+			case "on":
+				return ToolSupported
+			case "off":
+				return ToolUnsupported
+			}
+		}
+	}
+	return ToolUseSupport(provider, model)
 }
 
 // ToolUseSupport reports whether the (provider, model) pair is known to support

@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -e
+go test -timeout 10s -count=1 ./...

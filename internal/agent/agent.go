@@ -18,13 +18,14 @@ const (
 )
 
 type Agent struct {
-	provider  ai.Provider
-	tools     *tools.Registry
-	session   *session.Session
-	system    string
-	effort    string
-	mode      Mode
-	subagents *SubagentSupervisor
+	provider          ai.Provider
+	tools             *tools.Registry
+	session           *session.Session
+	system            string
+	effort            string
+	mode              Mode
+	modelCapabilities map[string]config.ModelCapabilities
+	subagents         *SubagentSupervisor
 }
 
 func New(p ai.Provider, t *tools.Registry, s *session.Session, systemPrompt string) *Agent {
@@ -99,6 +100,10 @@ func (a *Agent) RegisterSubagentToolsEnabled(enabled bool) {
 
 func (a *Agent) ReasoningEffort() string          { return a.effort }
 func (a *Agent) SetReasoningEffort(effort string) { a.effort = effort }
+
+func (a *Agent) SetModelCapabilities(caps map[string]config.ModelCapabilities) {
+	a.modelCapabilities = config.NormalizeModelCapabilities(caps)
+}
 
 func (a *Agent) Mode() Mode {
 	if a.mode == "" {

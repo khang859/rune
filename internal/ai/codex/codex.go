@@ -3,6 +3,7 @@ package codex
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,6 +70,9 @@ func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- 
 			return err
 		}
 		wait := p.retryBaseDelay * (1 << attempt)
+		if ce, ok := err.(classifiedErr); ok && ce.retryAfter > wait {
+			wait = ce.retryAfter
+		}
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
@@ -82,8 +86,9 @@ func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- 
 // retry / heal behavior, and so streamWithRetry can decide whether to retry
 // internally. Errors without classification surface as ErrFatal.
 type classifiedErr struct {
-	err   error
-	class ai.ErrorClass
+	err        error
+	class      ai.ErrorClass
+	retryAfter time.Duration
 }
 
 func (e classifiedErr) Error() string { return e.err.Error() }
@@ -130,7 +135,8 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	if err != nil {
 		return classifiedErr{err: err, class: ai.ErrTransient}
 	}
-	defer resp.Body.Close()
+	respBody := ai.IdleTimeoutReader(resp.Body, ai.DefaultStreamIdleTimeout)
+	defer respBody.Close()
 
 	if resp.StatusCode == http.StatusUnauthorized {
 		if rerr := p.auth.Refresh(ctx); rerr != nil {
@@ -139,23 +145,31 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 		return classifiedErr{err: fmt.Errorf("401 unauthorized, refreshed and retrying"), class: ai.ErrTransient}
 	}
 	if resp.StatusCode == 429 {
-		b, _ := io.ReadAll(resp.Body)
-		return classifiedErr{err: fmt.Errorf("status 429: %s", string(b)), class: ai.ErrRateLimit}
+		b, _ := io.ReadAll(respBody)
+		ra := ai.ParseRetryAfter(resp.Header.Get("Retry-After"))
+		return classifiedErr{err: fmt.Errorf("status 429: %s", string(b)), class: ai.ErrRateLimit, retryAfter: ra}
 	}
 	if resp.StatusCode >= 500 {
-		b, _ := io.ReadAll(resp.Body)
-		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, string(b)), class: ai.ErrServer}
+		b, _ := io.ReadAll(respBody)
+		ra := ai.ParseRetryAfter(resp.Header.Get("Retry-After"))
+		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, string(b)), class: ai.ErrServer, retryAfter: ra}
 	}
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
-		body := string(b)
+		b, _ := io.ReadAll(respBody)
+		errBody := string(b)
 		class := ai.ErrFatal
-		if isOrphanOutputRejection(body) {
+		if isOrphanOutputRejection(errBody) {
 			class = ai.ErrOrphanOutput
 		}
-		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, body), class: class}
+		return classifiedErr{err: fmt.Errorf("status %d: %s", resp.StatusCode, errBody), class: class}
 	}
-	return parseSSE(ctx, resp.Body, out)
+	if err := parseSSE(ctx, respBody, out); err != nil {
+		if errors.Is(err, ai.ErrStreamIdleTimeout) {
+			return classifiedErr{err: err, class: ai.ErrTransient}
+		}
+		return err
+	}
+	return nil
 }
 
 // isOrphanOutputRejection matches the OpenAI Responses 400 returned when an

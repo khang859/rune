@@ -9,6 +9,7 @@ import (
 
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
+	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 )
@@ -105,6 +106,40 @@ func TestRun_SendsToolsForToolCapableModel(t *testing.T) {
 
 	if len(p.gotTools) != 1 || len(p.gotTools[0]) == 0 {
 		t.Fatalf("expected tools to be sent for tool-capable model, got %#v", p.gotTools)
+	}
+}
+
+func TestRun_ModelCapabilityOverrideDisablesTools(t *testing.T) {
+	p := &captureToolsProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+
+	s := session.New("hf.co/example/model:Q4_K_M")
+	s.Provider = "ollama"
+	a := New(p, reg, s, "")
+	a.SetModelCapabilities(map[string]config.ModelCapabilities{"ollama:hf.co/example/model:Q4_K_M": {Tools: "off"}})
+
+	collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if len(p.gotTools) != 1 || len(p.gotTools[0]) != 0 {
+		t.Fatalf("expected tools disabled by model override, got %#v", p.gotTools)
+	}
+}
+
+func TestRun_ModelCapabilityOverrideForcesTools(t *testing.T) {
+	p := &captureToolsProvider{}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "x"})
+
+	s := session.New("gemma3")
+	s.Provider = "ollama"
+	a := New(p, reg, s, "")
+	a.SetModelCapabilities(map[string]config.ModelCapabilities{"ollama:gemma3": {Tools: "on"}})
+
+	collect(t, a.Run(context.Background(), userMsg("hi")))
+
+	if len(p.gotTools) != 1 || len(p.gotTools[0]) == 0 {
+		t.Fatalf("expected tools forced by model override, got %#v", p.gotTools)
 	}
 }
 

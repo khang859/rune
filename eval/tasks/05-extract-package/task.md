@@ -1,0 +1,1 @@
+Move the `User` type and its `Greet` method out of the root `app` package into a new subpackage at `./user/`. Update `main.go` and `main_test.go` to import `example.com/app/user` and use `user.User` instead of the local `User`. `go build ./...` and `go test ./...` must pass.

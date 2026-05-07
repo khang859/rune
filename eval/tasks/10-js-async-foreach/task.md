@@ -1,0 +1,1 @@
+`node --test` fails for `fetchAll`. Fix `fetchAll.js` so it actually awaits all `fetchOne` calls in parallel and returns the results in input order. Do not change the function signature `fetchAll(ids, fetchOne)`.

@@ -58,7 +58,8 @@ type RootModel struct {
 	autoContinueSubagentResults map[string]bool
 	pendingSubagentContinuation bool
 
-	currentTokens int
+	currentTokens   int
+	warnedNearLimit bool
 
 	modal           modal.Modal
 	settings        modal.Settings
@@ -251,6 +252,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.saveSessionIfStarted()
 			m.msgs.OnInfo(fmt.Sprintf("(compacted %d messages)", v.count))
+			m.warnedNearLimit = false
 		}
 		m.layout()
 		m.refreshViewport()
@@ -333,6 +335,9 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.eventCh = nil
 		m.cancel = nil
 		compactCmd := m.maybeStartAutoCompact()
+		if compactCmd == nil {
+			m.maybeWarnApproachingLimit()
+		}
 		if !m.showActivity() {
 			m.stopActivityTick()
 		}
@@ -953,11 +958,11 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 		m.refreshViewport()
 		return nil
 	}
+	settings, _ := config.LoadSettings(config.SettingsPath())
 	if providers.Normalize(m.sess.Provider) != providers.Ollama {
-		return m.openModal(modal.NewModelPicker(providers.Models(m.sess.Provider), m.sess.Model))
+		return m.openModal(modal.NewModelPickerWithCapabilities(providers.Models(m.sess.Provider), m.sess.Model, modelToolOverrides(m.sess.Provider, providers.Models(m.sess.Provider), settings)))
 	}
 	items := providers.Models(providers.Ollama)
-	settings, _ := config.LoadSettings(config.SettingsPath())
 	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providers.Ollama, ProfileOverride: providers.Profile(m.activeProfile)})
 	endpoint := resolved.Endpoint
 	store := config.NewSecretStore(config.SecretsPath())
@@ -971,7 +976,7 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 	if keyErr != nil {
 		m.msgs.OnInfo(fmt.Sprintf("(could not load Ollama API key: %v; choose custom or run `ollama pull <model>`)", keyErr))
 		m.refreshViewport()
-		return m.openModal(modal.NewOllamaModelPicker(items, m.sess.Model))
+		return m.openModal(modal.NewOllamaModelPickerWithCapabilities(items, m.sess.Model, modelToolOverrides(m.sess.Provider, items, settings)))
 	}
 	if models, err := ollama.ListModels(context.Background(), endpoint, key); err == nil && len(models) > 0 {
 		items = models
@@ -979,7 +984,24 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 		m.msgs.OnInfo(fmt.Sprintf("(could not list Ollama models: %v; choose custom or run `ollama pull <model>`)", err))
 		m.refreshViewport()
 	}
-	return m.openModal(modal.NewOllamaModelPicker(items, m.sess.Model))
+	return m.openModal(modal.NewOllamaModelPickerWithCapabilities(items, m.sess.Model, modelToolOverrides(m.sess.Provider, items, settings)))
+}
+
+func modelToolOverrides(provider string, models []string, settings config.Settings) map[string]string {
+	out := map[string]string{}
+	settings = config.NormalizeSettings(settings)
+	for _, model := range models {
+		if model == modal.ModelPickerCustom {
+			continue
+		}
+		for _, key := range []string{providers.ModelCapabilityKey(provider, model), strings.TrimSpace(model)} {
+			if cap, ok := settings.ModelCapabilities[key]; ok && cap.Tools != "" {
+				out[model] = cap.Tools
+				break
+			}
+		}
+	}
+	return out
 }
 
 func (m *RootModel) showSubagentsInfo() {
@@ -1417,6 +1439,19 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			return m.switchProvider(id)
 		}
 	case *modal.ModelPicker:
+		if choice, ok := payload.(modal.ModelChoice); ok {
+			if choice.Model == modal.ModelPickerCustom {
+				return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
+			}
+			m.sess.Model = choice.Model
+			m.footer.Model = choice.Model
+			m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+			m.clampThinkingForCurrentModel()
+			m.refreshFooterThinkingEffort()
+			m.saveProviderSettings()
+			m.saveModelToolOverride(choice.Model, choice.Tools)
+			m.saveSessionIfStarted()
+		}
 		if id, ok := payload.(string); ok {
 			if id == modal.ModelPickerCustom {
 				return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
@@ -1710,6 +1745,7 @@ func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
 	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
+	m.agent.SetModelCapabilities(loadedSettings.ModelCapabilities)
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
@@ -1733,8 +1769,8 @@ func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
 		m.msgs.OnInfo("(no active provider configured)")
 	} else {
 		info := fmt.Sprintf("(provider: %s, model: %s)", provider, model)
-		if providers.ToolUseSupport(provider, model) == providers.ToolUnsupported {
-			info += " — chat-only model, agent tools disabled"
+		if providers.ToolUseSupportWithSettings(provider, model, loadedSettings) == providers.ToolUnsupported {
+			info += " — agent tools disabled"
 		}
 		m.msgs.OnInfo(info)
 	}
@@ -1807,7 +1843,9 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 func (m *RootModel) replaceActiveProvider(p ai.Provider) {
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
+	settings, _ := config.LoadSettings(config.SettingsPath())
 	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
+	m.agent.SetModelCapabilities(settings.ModelCapabilities)
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
@@ -1858,6 +1896,34 @@ func (m *RootModel) saveProviderSettings() {
 	if err := providers.SaveResolvedSelection(config.SettingsPath(), s, resolved); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
 	}
+}
+
+func (m *RootModel) saveModelToolOverride(model, toolsMode string) {
+	model = strings.TrimSpace(model)
+	toolsMode = strings.ToLower(strings.TrimSpace(toolsMode))
+	if model == "" || model == modal.ModelPickerCustom {
+		return
+	}
+	s, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		s = config.DefaultSettings()
+	}
+	s = config.NormalizeSettings(s)
+	if s.ModelCapabilities == nil {
+		s.ModelCapabilities = map[string]config.ModelCapabilities{}
+	}
+	key := providers.ModelCapabilityKey(m.sess.Provider, model)
+	if toolsMode == "" || toolsMode == "auto" {
+		delete(s.ModelCapabilities, key)
+	} else {
+		s.ModelCapabilities[key] = config.ModelCapabilities{Tools: toolsMode}
+	}
+	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return
+	}
+	m.agent.SetModelCapabilities(s.ModelCapabilities)
+	m.msgs.OnInfo(fmt.Sprintf("(model: %s, tools: %s)", model, toolsMode))
 }
 
 func (m *RootModel) openEditActiveProfile() tea.Cmd {
@@ -2002,6 +2068,7 @@ func (m *RootModel) swapSession(s *session.Session) {
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
 	m.pendingSubagentContinuation = false
+	m.warnedNearLimit = false
 	_ = m.startSubagentListener()
 	m.clampThinkingForCurrentModel()
 	m.refreshFooterThinkingEffort()
@@ -2084,6 +2151,39 @@ func (m *RootModel) maybeStartAutoCompact() tea.Cmd {
 	m.refreshViewport()
 	m.layout()
 	return tea.Batch(m.startCompact(), m.startActivityTick())
+}
+
+// autoCompactWarnGap is how far below the auto-compact threshold the
+// pre-warning fires. With a default 80% threshold the warning hits at 65%.
+const autoCompactWarnGap = 15
+
+// maybeWarnApproachingLimit surfaces a one-shot notice when context usage
+// has crossed the warn line but not yet the auto-compact threshold. It does
+// nothing if auto-compact is disabled (no automatic action to warn about),
+// already warned for this cut, or already within compaction range. The flag
+// is reset in compactDoneMsg so a fresh long session can warn again.
+func (m *RootModel) maybeWarnApproachingLimit() {
+	if m.compacting || m.streaming || !m.settingsAutoCompactEnabled() || m.currentTokens <= 0 {
+		return
+	}
+	threshold := m.settingsAutoCompactThreshold()
+	if threshold <= 0 {
+		return
+	}
+	warn := threshold - autoCompactWarnGap
+	if warn < 1 {
+		return
+	}
+	pct := ctxPctForModel(m.sess.Model, m.currentTokens)
+	if pct < warn || pct >= threshold {
+		return
+	}
+	if m.warnedNearLimit {
+		return
+	}
+	m.warnedNearLimit = true
+	m.msgs.OnInfo(fmt.Sprintf("(context at %d%% — auto-compact will run at %d%%)", pct, threshold))
+	m.refreshViewport()
 }
 
 func (m *RootModel) settingsAutoCompactEnabled() bool {

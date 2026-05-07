@@ -68,6 +68,7 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
+	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 
 	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version)

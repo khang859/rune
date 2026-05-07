@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,6 +76,9 @@ func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- 
 			return err
 		}
 		wait := p.retryBaseDelay * (1 << attempt)
+		if ce, ok := err.(classifiedErr); ok && ce.retryAfter > wait {
+			wait = ce.retryAfter
+		}
 		select {
 		case <-time.After(wait):
 		case <-ctx.Done():
@@ -85,8 +89,9 @@ func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- 
 }
 
 type classifiedErr struct {
-	err   error
-	class ai.ErrorClass
+	err        error
+	class      ai.ErrorClass
+	retryAfter time.Duration
 }
 
 func (e classifiedErr) Error() string { return e.err.Error() }
@@ -123,28 +128,36 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	if err != nil {
 		return classifiedErr{err: err, class: ai.ErrTransient}
 	}
-	defer resp.Body.Close()
+	respBody := ai.IdleTimeoutReader(resp.Body, ai.DefaultStreamIdleTimeout)
+	defer respBody.Close()
 
 	if resp.StatusCode >= 400 {
-		b, _ := io.ReadAll(resp.Body)
+		b, _ := io.ReadAll(respBody)
 		details := parseErrorBody(b)
 		msg := details.formatted()
 		if msg == "" {
 			msg = string(b)
 		}
 		err := fmt.Errorf("status %d: %s", resp.StatusCode, msg)
+		ra := ai.ParseRetryAfter(resp.Header.Get("Retry-After"))
 		switch {
 		case resp.StatusCode == http.StatusTooManyRequests:
-			return classifiedErr{err: err, class: ai.ErrRateLimit}
+			return classifiedErr{err: err, class: ai.ErrRateLimit, retryAfter: ra}
 		case resp.StatusCode >= 500 || resp.StatusCode == 498:
-			return classifiedErr{err: err, class: ai.ErrServer}
+			return classifiedErr{err: err, class: ai.ErrServer, retryAfter: ra}
 		case details.isToolGenerationFailed():
 			return classifiedErr{err: err, class: ai.ErrToolGenerationFailed}
 		default:
 			return classifiedErr{err: err, class: ai.ErrFatal}
 		}
 	}
-	return parseSSE(ctx, resp.Body, out)
+	if err := parseSSE(ctx, respBody, out); err != nil {
+		if errors.Is(err, ai.ErrStreamIdleTimeout) {
+			return classifiedErr{err: err, class: ai.ErrTransient}
+		}
+		return err
+	}
+	return nil
 }
 
 // errorDetails captures fields Groq attaches to a 4xx response.

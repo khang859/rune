@@ -1,6 +1,10 @@
 package providers
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/khang859/rune/internal/config"
+)
 
 func TestPDFInputSupport(t *testing.T) {
 	cases := []struct {
@@ -87,6 +91,22 @@ func TestToolUseSupport(t *testing.T) {
 		if got := ToolUseSupport(tc.provider, tc.model); got != tc.want {
 			t.Fatalf("%s/%s tool support = %s, want %s", tc.provider, tc.model, got, tc.want)
 		}
+	}
+}
+
+func TestToolUseSupportWithSettings(t *testing.T) {
+	settings := config.Settings{ModelCapabilities: map[string]config.ModelCapabilities{
+		"ollama:gemma3": {Tools: "on"},
+		"qwen3:8b":      {Tools: "off"},
+	}}
+	if got := ToolUseSupportWithSettings(Ollama, "gemma3", settings); got != ToolSupported {
+		t.Fatalf("gemma3 override = %s, want supported", got)
+	}
+	if got := ToolUseSupportWithSettings(Ollama, "qwen3:8b", settings); got != ToolUnsupported {
+		t.Fatalf("qwen3 fallback override = %s, want unsupported", got)
+	}
+	if got := ToolUseSupportWithSettings(Ollama, "llama3.2", settings); got != ToolUnknown {
+		t.Fatalf("llama3.2 default = %s, want unknown", got)
 	}
 }
 

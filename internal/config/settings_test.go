@@ -39,8 +39,8 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 	if !s.Subagents.EnabledValue() {
 		t.Fatal("subagents should be enabled by default")
 	}
-	if s.Subagents.MaxConcurrent != 4 {
-		t.Fatalf("MaxConcurrent = %d, want 4", s.Subagents.MaxConcurrent)
+	if want := DefaultSubagentConcurrency(); s.Subagents.MaxConcurrent != want {
+		t.Fatalf("MaxConcurrent = %d, want %d", s.Subagents.MaxConcurrent, want)
 	}
 	if s.Subagents.DefaultTimeoutSecs != 600 {
 		t.Fatalf("DefaultTimeoutSecs = %d, want 600", s.Subagents.DefaultTimeoutSecs)
@@ -85,6 +85,17 @@ func TestNormalizeSettingsPreservesRunpod(t *testing.T) {
 	}
 }
 
+func TestNormalizeSettingsPreservesValidModelCapabilities(t *testing.T) {
+	s := NormalizeSettings(Settings{ModelCapabilities: map[string]ModelCapabilities{
+		" ollama:qwen3 ": {Tools: " OFF "},
+		"bad":            {Tools: "sometimes"},
+		"":               {Tools: "on"},
+	}})
+	if len(s.ModelCapabilities) != 1 || s.ModelCapabilities["ollama:qwen3"].Tools != "off" {
+		t.Fatalf("model capabilities = %+v", s.ModelCapabilities)
+	}
+}
+
 func TestNormalizeSettingsFillsAutoCompactDefaults(t *testing.T) {
 	s := NormalizeSettings(Settings{})
 	if !s.AutoCompact.EnabledValue() {
@@ -100,8 +111,8 @@ func TestNormalizeSettingsFillsSubagentDefaults(t *testing.T) {
 	if !s.Subagents.EnabledValue() {
 		t.Fatal("subagents should default to enabled")
 	}
-	if s.Subagents.MaxConcurrent != 4 {
-		t.Fatalf("MaxConcurrent = %d, want 4", s.Subagents.MaxConcurrent)
+	if want := DefaultSubagentConcurrency(); s.Subagents.MaxConcurrent != want {
+		t.Fatalf("MaxConcurrent = %d, want %d", s.Subagents.MaxConcurrent, want)
 	}
 	if s.Subagents.DefaultTimeoutSecs != 600 {
 		t.Fatalf("DefaultTimeoutSecs = %d, want 600", s.Subagents.DefaultTimeoutSecs)
