@@ -14,9 +14,9 @@ import (
 //   - `images` on the user message (no OpenAI content-parts wrapper)
 //   - tool result messages keyed by `tool_name` instead of `tool_call_id`
 type payload struct {
-	Model    string         `json:"model"`
-	Messages []messageWire  `json:"messages"`
-	Stream   bool           `json:"stream"`
+	Model    string        `json:"model"`
+	Messages []messageWire `json:"messages"`
+	Stream   bool          `json:"stream"`
 	// Think is a pointer so we only emit the field when the user opts in.
 	// Sending `think: false` unconditionally pushes an unknown field to models
 	// that don't understand it (notably GPT-OSS, which expects a string).

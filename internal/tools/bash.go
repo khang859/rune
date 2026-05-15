@@ -95,10 +95,10 @@ func newCapWriter(maxBytes int) *capWriter {
 	headCap := maxBytes / 2
 	tailCap := maxBytes - headCap
 	return &capWriter{
-		tail:    make([]byte, tailCap),
+		tail:     make([]byte, tailCap),
 		maxBytes: maxBytes,
-		headCap: headCap,
-		tailCap: tailCap,
+		headCap:  headCap,
+		tailCap:  tailCap,
 	}
 }
 
