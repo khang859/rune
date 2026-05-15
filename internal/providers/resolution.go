@@ -10,7 +10,7 @@ import (
 
 const (
 	DefaultGroqEndpoint      = "https://api.groq.com/openai/v1/chat/completions"
-	DefaultOllamaEndpoint    = "http://localhost:11434/v1/chat/completions"
+	DefaultOllamaEndpoint    = "http://localhost:11434/api/chat"
 	DefaultRunpodEndpoint    = "https://api.runpod.ai/v2/gpt-oss-120b/openai/v1/chat/completions"
 	QwenRunpodPublicEndpoint = "https://api.runpod.ai/v2/qwen3-32b-awq/openai/v1/chat/completions"
 )
@@ -20,6 +20,11 @@ type ResolvedProvider struct {
 	ProfileID string
 	Model     string
 	Endpoint  string
+	// OllamaNumCtx / OllamaThink are only meaningful when Provider == Ollama.
+	// They're resolved here so cmd/rune/provider.go and TUI builders don't
+	// each reach back into settings to recompute the per-profile override.
+	OllamaNumCtx int
+	OllamaThink  bool
 }
 
 type ResolveOptions struct {
@@ -134,7 +139,20 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 		}
 	}
 
-	return ResolvedProvider{Provider: provider, ProfileID: profileID, Model: model, Endpoint: endpoint}
+	resolved := ResolvedProvider{Provider: provider, ProfileID: profileID, Model: model, Endpoint: endpoint}
+	if provider == Ollama {
+		resolved.OllamaNumCtx = settings.OllamaNumCtx
+		resolved.OllamaThink = settings.OllamaThink
+		if profile != nil {
+			if profile.OllamaNumCtx != nil {
+				resolved.OllamaNumCtx = *profile.OllamaNumCtx
+			}
+			if profile.OllamaThink != nil {
+				resolved.OllamaThink = *profile.OllamaThink
+			}
+		}
+	}
+	return resolved
 }
 
 func EndpointForRunpodModel(model string) string {

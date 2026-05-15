@@ -59,7 +59,12 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 				return providerSelection{}, err
 			}
 		}
-		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: ollama.New(endpoint, key)}, nil
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: ollama.NewWithOptions(ollama.Options{
+			Endpoint: endpoint,
+			APIKey:   key,
+			NumCtx:   resolved.OllamaNumCtx,
+			Think:    resolved.OllamaThink,
+		})}, nil
 	case providers.Runpod:
 		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()

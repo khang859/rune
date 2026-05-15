@@ -19,8 +19,11 @@ func TestStream_NoAuthRequiredAndStreamsText(t *testing.T) {
 		if got := r.Header.Get("Content-Type"); !strings.Contains(got, "application/json") {
 			t.Fatalf("content-type = %q", got)
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		// Should not advertise SSE on the native endpoint.
+		if got := r.Header.Get("Accept"); strings.Contains(got, "text/event-stream") {
+			t.Fatalf("accept = %q, should not be SSE", got)
+		}
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"hi"},"done":true,"done_reason":"stop"}` + "\n"))
 	}))
 	defer srv.Close()
 	p := New(srv.URL)
@@ -44,8 +47,7 @@ func TestStream_SendsAuthWhenAPIKeyConfigured(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer OK" {
 			t.Fatalf("auth header = %q, want bearer", got)
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":""},"done":true}` + "\n"))
 	}))
 	defer srv.Close()
 	p := New(srv.URL, "OK")
@@ -63,11 +65,10 @@ func TestStream_RetriesRateLimit(t *testing.T) {
 		hits++
 		if hits < 3 {
 			w.WriteHeader(http.StatusTooManyRequests)
-			_, _ = w.Write([]byte(`{"error":{"message":"rate limited","type":"rate_limit_error"}}`))
+			_, _ = w.Write([]byte(`{"error":"rate limited"}`))
 			return
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":""},"done":true}` + "\n"))
 	}))
 	defer srv.Close()
 	p := New(srv.URL)
@@ -86,7 +87,7 @@ func TestStream_RetriesRateLimit(t *testing.T) {
 func TestStream_ModelNotFoundMentionsPullCommand(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = w.Write([]byte(`{"error":{"message":"model not found"}}`))
+		_, _ = w.Write([]byte(`{"error":"model not found"}`))
 	}))
 	defer srv.Close()
 	p := New(srv.URL)
@@ -106,6 +107,62 @@ func TestStream_ModelNotFoundMentionsPullCommand(t *testing.T) {
 	}
 }
 
+func TestNewWithOptions_RewritesLegacyEndpointAtRequestTime(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"no trailing slash", "/v1/chat/completions"},
+		{"with trailing slash", "/v1/chat/completions/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotPath string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":""},"done":true}` + "\n"))
+			}))
+			defer srv.Close()
+
+			p := NewWithOptions(Options{Endpoint: srv.URL + tc.in})
+			ch, err := p.Stream(context.Background(), ai.Request{Model: "m"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range ch {
+			}
+			if gotPath != "/api/chat" {
+				t.Fatalf("rewritten path = %q, want /api/chat", gotPath)
+			}
+		})
+	}
+}
+
+func TestNewWithOptions_PassesNumCtxAndThinkInPayload(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		buf := make([]byte, r.ContentLength)
+		_, _ = r.Body.Read(buf)
+		body = buf
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":""},"done":true}` + "\n"))
+	}))
+	defer srv.Close()
+
+	p := NewWithOptions(Options{Endpoint: srv.URL, NumCtx: 32768, Think: true})
+	ch, err := p.Stream(context.Background(), ai.Request{Model: "m", Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hi"}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+	s := string(body)
+	for _, want := range []string{`"think":true`, `"num_ctx":32768`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("payload missing %q:\n%s", want, s)
+		}
+	}
+}
+
 func TestListModelsUsesAPITags(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tags" {
@@ -117,6 +174,7 @@ func TestListModelsUsesAPITags(t *testing.T) {
 		_, _ = w.Write([]byte(`{"models":[{"name":"llama3.2"},{"name":"qwen3:4b"}]}`))
 	}))
 	defer srv.Close()
+	// Pass the legacy URL on purpose — ListModels should still resolve /api/tags.
 	models, err := ListModels(context.Background(), srv.URL+"/v1/chat/completions", "OK")
 	if err != nil {
 		t.Fatal(err)

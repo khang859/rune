@@ -6,6 +6,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1500,6 +1501,10 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				settings, _ := config.LoadSettings(config.SettingsPath())
 				return m.openModal(modal.NewTextInput("Ollama endpoint", "ollama_endpoint", settings.OllamaEndpoint))
 			}
+			if v.Action == "ollama_num_ctx" {
+				settings, _ := config.LoadSettings(config.SettingsPath())
+				return m.openModal(modal.NewTextInput("Ollama num_ctx (integer, negative = model default)", "ollama_num_ctx", strconv.Itoa(settings.OllamaNumCtx)))
+			}
 			if v.Action == "runpod_endpoint" {
 				settings, _ := config.LoadSettings(config.SettingsPath())
 				return m.openModal(modal.NewTextInput("Runpod endpoint", "runpod_endpoint", settings.RunpodEndpoint))
@@ -1532,6 +1537,8 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				}
 			case "ollama_endpoint":
 				m.saveEndpointSetting(providers.Ollama, res.Value)
+			case "ollama_num_ctx":
+				m.saveOllamaNumCtx(res.Value)
 			case "runpod_endpoint":
 				m.saveEndpointSetting(providers.Runpod, res.Value)
 			}
@@ -1815,7 +1822,12 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 				return nil, err
 			}
 		}
-		return ollama.New(endpoint, key), nil
+		return ollama.NewWithOptions(ollama.Options{
+			Endpoint: endpoint,
+			APIKey:   key,
+			NumCtx:   resolved.OllamaNumCtx,
+			Think:    resolved.OllamaThink,
+		}), nil
 	case providers.Runpod:
 		endpoint := resolved.Endpoint
 		key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
@@ -1853,6 +1865,44 @@ func (m *RootModel) replaceActiveProvider(p ai.Provider) {
 	m.autoContinueSubagentResults = map[string]bool{}
 	m.pendingSubagentContinuation = false
 	_ = m.startSubagentListener()
+}
+
+func (m *RootModel) saveOllamaNumCtx(raw string) {
+	s, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		s = config.DefaultSettings()
+	}
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		s.OllamaNumCtx = 0 // normalize will fill the default
+	} else {
+		v, err := strconv.Atoi(trimmed)
+		if err != nil {
+			m.msgs.OnTurnError(fmt.Errorf("settings: ollama num_ctx must be an integer, got %q", trimmed))
+			return
+		}
+		s.OllamaNumCtx = v
+	}
+	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return
+	}
+	updated, _ := config.LoadSettings(config.SettingsPath())
+	m.settings = modalSettingsFromConfig(updated, braveKeyConfigured(), tavilyKeyConfigured())
+	if m.sess.Provider == providers.Ollama {
+		if p, err := buildTUIProvider(providers.Ollama); err == nil {
+			m.replaceActiveProvider(p)
+		} else {
+			m.msgs.OnTurnError(err)
+		}
+	}
+	switch {
+	case updated.OllamaNumCtx < 0:
+		m.msgs.OnInfo("(ollama num_ctx: model default)")
+	default:
+		m.msgs.OnInfo(fmt.Sprintf("(ollama num_ctx: %d)", updated.OllamaNumCtx))
+	}
+	m.refreshViewport()
 }
 
 func (m *RootModel) saveEndpointSetting(provider, endpoint string) {

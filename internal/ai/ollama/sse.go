@@ -6,224 +6,108 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/khang859/rune/internal/ai"
 )
 
-func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
+// parseNDJSON consumes Ollama's native /api/chat stream, which is
+// newline-delimited JSON (one complete object per line) — not SSE. Each frame
+// looks like:
+//
+//	{"model":"...","message":{"role":"assistant","content":"hello","thinking":"..."},"done":false}
+//
+// terminating with a `done:true` frame that may carry the final tool_calls
+// and aggregate usage counters (prompt_eval_count, eval_count).
+func parseNDJSON(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 	scanner := bufio.NewScanner(r)
+	// Tool-call args and big assistant chunks can be large; bump well past
+	// bufio's 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	state := newStreamState()
-	var data strings.Builder
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
 		}
-		line := scanner.Text()
-		if line == "" {
-			if data.Len() > 0 {
-				if done, err := dispatchData(ctx, data.String(), out, state); done || err != nil {
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+		var f frame
+		if err := json.Unmarshal(line, &f); err != nil {
+			// Skip malformed frames rather than aborting the stream — partial
+			// lines from proxies occasionally slip through.
+			continue
+		}
+		if f.Error != "" {
+			return send(ctx, out, ai.StreamError{Err: errString(f.Error), Class: ai.ErrFatal})
+		}
+		if f.Message.Content != "" {
+			if err := send(ctx, out, ai.TextDelta{Text: f.Message.Content}); err != nil {
+				return err
+			}
+		}
+		if f.Message.Thinking != "" {
+			if err := send(ctx, out, ai.Thinking{Text: f.Message.Thinking}); err != nil {
+				return err
+			}
+		}
+		// Tool calls arrive whole, typically on the terminal `done:true` frame.
+		// Emit one ToolCall event per call.
+		for i, tc := range f.Message.ToolCalls {
+			args := tc.Function.Arguments
+			if len(args) == 0 {
+				args = json.RawMessage(`{}`)
+			}
+			if err := send(ctx, out, ai.ToolCall{
+				ID:   fmt.Sprintf("call_%d", i),
+				Name: tc.Function.Name,
+				Args: args,
+			}); err != nil {
+				return err
+			}
+		}
+		if f.Done {
+			if f.PromptEvalCount > 0 || f.EvalCount > 0 {
+				if err := send(ctx, out, ai.Usage{Input: f.PromptEvalCount, Output: f.EvalCount}); err != nil {
 					return err
 				}
 			}
-			data.Reset()
-			continue
-		}
-		if strings.HasPrefix(line, ":") || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "event:") {
-			continue
-		}
-		if strings.HasPrefix(line, "data:") {
-			if data.Len() > 0 {
-				data.WriteByte('\n')
+			reason := "stop"
+			if len(f.Message.ToolCalls) > 0 {
+				reason = "tool_use"
+			} else if f.DoneReason == "length" {
+				reason = "max_tokens"
 			}
-			data.WriteString(strings.TrimSpace(strings.TrimPrefix(line, "data:")))
-		}
-	}
-	if data.Len() > 0 {
-		_, err := dispatchData(ctx, data.String(), out, state)
-		if err != nil {
-			return err
+			return send(ctx, out, ai.Done{Reason: reason})
 		}
 	}
 	return scanner.Err()
 }
 
-type chunk struct {
-	Choices []choice  `json:"choices"`
-	Usage   *usage    `json:"usage"`
-	Error   *apiError `json:"error"`
+type frame struct {
+	Message         frameMessage `json:"message"`
+	Done            bool         `json:"done"`
+	DoneReason      string       `json:"done_reason,omitempty"`
+	PromptEvalCount int          `json:"prompt_eval_count,omitempty"`
+	EvalCount       int          `json:"eval_count,omitempty"`
+	Error           string       `json:"error,omitempty"`
 }
 
-type choice struct {
-	Delta        delta  `json:"delta"`
-	FinishReason string `json:"finish_reason"`
+type frameMessage struct {
+	Role      string          `json:"role"`
+	Content   string          `json:"content"`
+	Thinking  string          `json:"thinking,omitempty"`
+	ToolCalls []frameToolCall `json:"tool_calls,omitempty"`
 }
 
-type delta struct {
-	Content          string          `json:"content"`
-	ReasoningContent string          `json:"reasoning_content"`
-	Reasoning        string          `json:"reasoning"`
-	ReasoningText    string          `json:"reasoning_text"`
-	ToolCalls        []deltaToolCall `json:"tool_calls"`
+type frameToolCall struct {
+	Function frameToolFunction `json:"function"`
 }
 
-type deltaToolCall struct {
-	Index    int               `json:"index"`
-	ID       string            `json:"id"`
-	Type     string            `json:"type"`
-	Function deltaToolFunction `json:"function"`
-}
-
-type deltaToolFunction struct {
-	Name      string `json:"name"`
-	Arguments string `json:"arguments"`
-}
-
-type usage struct {
-	PromptTokens        int `json:"prompt_tokens"`
-	CompletionTokens    int `json:"completion_tokens"`
-	PromptTokensDetails struct {
-		CachedTokens int `json:"cached_tokens"`
-	} `json:"prompt_tokens_details"`
-}
-
-type apiError struct {
-	Message string `json:"message"`
-	Type    string `json:"type"`
-	Code    any    `json:"code"`
-}
-
-type streamState struct {
-	calls map[int]*pendingCall
-	order []int
-}
-
-type pendingCall struct {
-	id   string
-	name string
-	args strings.Builder
-}
-
-func newStreamState() *streamState { return &streamState{calls: map[int]*pendingCall{}} }
-
-func (s *streamState) update(tc deltaToolCall) {
-	idx := tc.Index
-	pc := s.calls[idx]
-	if pc == nil {
-		pc = &pendingCall{}
-		s.calls[idx] = pc
-		s.order = append(s.order, idx)
-	}
-	if tc.ID != "" {
-		pc.id = tc.ID
-	}
-	if tc.Function.Name != "" {
-		pc.name = tc.Function.Name
-	}
-	if tc.Function.Arguments != "" {
-		pc.args.WriteString(tc.Function.Arguments)
-	}
-}
-
-func (s *streamState) flush(ctx context.Context, out chan<- ai.Event) error {
-	ids := append([]int(nil), s.order...)
-	for _, idx := range ids {
-		pc := s.calls[idx]
-		if pc == nil || pc.name == "" {
-			continue
-		}
-		id := pc.id
-		if id == "" {
-			id = fmt.Sprintf("call_%d", idx)
-		}
-		args := pc.args.String()
-		if args == "" {
-			args = "{}"
-		}
-		if err := send(ctx, out, ai.ToolCall{ID: id, Name: pc.name, Args: json.RawMessage(args)}); err != nil {
-			return err
-		}
-		delete(s.calls, idx)
-	}
-	s.order = nil
-	return nil
-}
-
-func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *streamState) (bool, error) {
-	data = strings.TrimSpace(data)
-	if data == "" {
-		return false, nil
-	}
-	if data == "[DONE]" {
-		if err := state.flush(ctx, out); err != nil {
-			return true, err
-		}
-		return true, send(ctx, out, ai.Done{Reason: "stop"})
-	}
-	var ch chunk
-	if err := json.Unmarshal([]byte(data), &ch); err != nil {
-		return false, nil
-	}
-	if ch.Error != nil {
-		msg := ch.Error.Message
-		if msg == "" {
-			msg = "stream error"
-		}
-		return false, send(ctx, out, ai.StreamError{Err: errString(msg), Class: ai.ErrFatal})
-	}
-	if ch.Usage != nil {
-		if err := send(ctx, out, ai.Usage{Input: ch.Usage.PromptTokens, Output: ch.Usage.CompletionTokens, CacheRead: ch.Usage.PromptTokensDetails.CachedTokens}); err != nil {
-			return false, err
-		}
-	}
-	for _, c := range ch.Choices {
-		if c.Delta.Content != "" {
-			if err := send(ctx, out, ai.TextDelta{Text: c.Delta.Content}); err != nil {
-				return false, err
-			}
-		}
-		thinking := firstNonEmpty(c.Delta.ReasoningContent, c.Delta.Reasoning, c.Delta.ReasoningText)
-		if thinking != "" {
-			if err := send(ctx, out, ai.Thinking{Text: thinking}); err != nil {
-				return false, err
-			}
-		}
-		for _, tc := range c.Delta.ToolCalls {
-			state.update(tc)
-		}
-		switch c.FinishReason {
-		case "tool_calls", "function_call":
-			if err := state.flush(ctx, out); err != nil {
-				return false, err
-			}
-			return false, send(ctx, out, ai.Done{Reason: "tool_use"})
-		case "stop", "end":
-			if err := state.flush(ctx, out); err != nil {
-				return false, err
-			}
-			return false, send(ctx, out, ai.Done{Reason: "stop"})
-		case "length":
-			if err := state.flush(ctx, out); err != nil {
-				return false, err
-			}
-			return false, send(ctx, out, ai.Done{Reason: "max_tokens"})
-		case "content_filter":
-			return false, send(ctx, out, ai.StreamError{Err: errString("provider finish_reason: content_filter"), Class: ai.ErrFatal})
-		}
-	}
-	return false, nil
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
+type frameToolFunction struct {
+	Name      string          `json:"name"`
+	Arguments json.RawMessage `json:"arguments"`
 }
 
 func send(ctx context.Context, out chan<- ai.Event, e ai.Event) error {

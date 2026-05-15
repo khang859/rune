@@ -44,6 +44,10 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if os.Getenv("RUNE_OLLAMA_ENDPOINT") != "" {
 		ollamaEndpointStatus = "env override active"
 	}
+	ollamaNumCtxStatus := fmt.Sprintf("%d — Enter to edit", s.OllamaNumCtx)
+	if s.OllamaNumCtx < 0 {
+		ollamaNumCtxStatus = "model default — Enter to edit"
+	}
 	runpodEndpointStatus := "model default — Enter to set"
 	if strings.TrimSpace(s.RunpodEndpoint) != "" {
 		runpodEndpointStatus = "custom — Enter to edit"
@@ -77,6 +81,8 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		RunpodAPIKeyStatus:    runpodStatus,
 		ActiveProfileStatus:   activeProfileStatus,
 		OllamaEndpointStatus:  ollamaEndpointStatus,
+		OllamaNumCtxStatus:    ollamaNumCtxStatus,
+		OllamaThink:           onOff(s.OllamaThink),
 		RunpodEndpointStatus:  runpodEndpointStatus,
 	}
 }
@@ -100,6 +106,8 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		OllamaModel:       loaded.OllamaModel,
 		RunpodModel:       loaded.RunpodModel,
 		OllamaEndpoint:    loaded.OllamaEndpoint,
+		OllamaNumCtx:      loaded.OllamaNumCtx,
+		OllamaThink:       s.OllamaThink == "on",
 		RunpodEndpoint:    loaded.RunpodEndpoint,
 		ReasoningEffort:   s.Effort,
 		ModelCapabilities: loaded.ModelCapabilities,

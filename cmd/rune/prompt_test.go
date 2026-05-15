@@ -81,8 +81,7 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "" {
 			t.Errorf("auth = %q, want empty", got)
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ollama\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ollama"},"done":true,"done_reason":"stop"}` + "\n"))
 	}))
 	defer srv.Close()
 
@@ -183,8 +182,7 @@ func TestRunPrompt_UsesOllamaProfile(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer profile-token" {
 			t.Errorf("auth = %q", got)
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"profile-ollama\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"profile-ollama"},"done":true,"done_reason":"stop"}` + "\n"))
 	}))
 	defer srv.Close()
 
@@ -225,8 +223,7 @@ func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 		if got := r.Header.Get("Authorization"); got != "Bearer ollama-token" {
 			t.Errorf("auth = %q", got)
 		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ollama-auth\"},\"finish_reason\":\"stop\"}]}\n\n"))
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ollama-auth"},"done":true,"done_reason":"stop"}` + "\n"))
 	}))
 	defer srv.Close()
 

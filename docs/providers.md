@@ -127,14 +127,16 @@ Ollama model names are local/user-controlled tags, so rune accepts arbitrary mod
 
 ### Multiple Ollama servers
 
-Use `/settings` → `add ollama profile` to create a named Ollama server profile, then `edit active profile` to set its OpenAI-compatible chat completions endpoint. `/providers` shows configured profiles as separate entries such as `Ollama: Local` and `Ollama: GPU Box`, so switching servers is the same flow as switching providers. Each profile stores its own default model; `/model` updates the active profile's model.
+Use `/settings` → `add ollama profile` to create a named Ollama server profile, then `edit active profile` to set its native `/api/chat` endpoint (or paste a legacy `/v1/chat/completions` URL — rune rewrites it transparently at request time). `/providers` shows configured profiles as separate entries such as `Ollama: Local` and `Ollama: GPU Box`, so switching servers is the same flow as switching providers. Each profile stores its own default model; `/model` updates the active profile's model.
+
+Per-profile overrides for `ollama_num_ctx` (KV cache size) and `ollama_think` (enable thinking mode for Qwen3/DeepSeek-R1-style models) can be set in `settings.json` on the profile or at the top level. Defaults: `ollama_num_ctx: 16384`, `ollama_think: false`. Set `ollama_num_ctx` to a negative value to omit the option entirely and let the model's modelfile decide.
 
 Set `RUNE_PROVIDER_PROFILE=<profile-id>` to select a profile from the environment. CLI flags and provider/model environment variables still take precedence over profile defaults.
 
 ### Env overrides
 
 - `RUNE_OLLAMA_MODEL` — model default for Ollama.
-- `RUNE_OLLAMA_ENDPOINT` — override the OpenAI-compatible chat completions endpoint. Defaults to `http://localhost:11434/v1/chat/completions`.
+- `RUNE_OLLAMA_ENDPOINT` — override the native Ollama chat endpoint. Defaults to `http://localhost:11434/api/chat`. Legacy `/v1/chat/completions` URLs are rewritten transparently.
 - `RUNE_OLLAMA_API_KEY` / `OLLAMA_API_KEY` — optional bearer token for authenticated Ollama-compatible endpoints.
 
 If a selected model is not installed, run:

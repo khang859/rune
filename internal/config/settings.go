@@ -19,6 +19,8 @@ type Settings struct {
 	OllamaModel       string                       `json:"ollama_model,omitempty"`
 	RunpodModel       string                       `json:"runpod_model,omitempty"`
 	OllamaEndpoint    string                       `json:"ollama_endpoint,omitempty"`
+	OllamaNumCtx      int                          `json:"ollama_num_ctx,omitempty"`
+	OllamaThink       bool                         `json:"ollama_think,omitempty"`
 	RunpodEndpoint    string                       `json:"runpod_endpoint,omitempty"`
 	ReasoningEffort   string                       `json:"reasoning_effort,omitempty"`
 	IconMode          string                       `json:"icon_mode,omitempty"`
@@ -35,6 +37,14 @@ type ProviderProfile struct {
 	Provider string `json:"provider"`
 	Endpoint string `json:"endpoint,omitempty"`
 	Model    string `json:"model,omitempty"`
+	// OllamaNumCtx overrides Settings.OllamaNumCtx for this profile. Use a
+	// pointer so we can distinguish "unset" (inherit) from "explicit zero" —
+	// zero on the pointer target means "let Ollama choose", which is different
+	// from inheriting the package default.
+	OllamaNumCtx *int `json:"ollama_num_ctx,omitempty"`
+	// OllamaThink overrides Settings.OllamaThink. Pointer for the same
+	// inherit-vs-explicit-false reason.
+	OllamaThink *bool `json:"ollama_think,omitempty"`
 }
 
 type WebSettings struct {
@@ -91,13 +101,21 @@ func (a AutoCompact) EnabledValue() bool {
 	return *a.Enabled
 }
 
+// DefaultOllamaNumCtx caps the Ollama KV cache at a workable size by default.
+// Thinking models (Qwen3, DeepSeek-R1) loaded at their stock 128K-256K context
+// stall on first token; 16384 is wide enough for typical code conversations
+// while keeping VRAM in check.
+const DefaultOllamaNumCtx = 16384
+
 func DefaultSettings() Settings {
 	return Settings{
 		CodexModel:      "gpt-5.5",
 		GroqModel:       "llama-3.3-70b-versatile",
 		OllamaModel:     "llama3.2",
 		RunpodModel:     "openai/gpt-oss-120b",
-		OllamaEndpoint:  "http://localhost:11434/v1/chat/completions",
+		OllamaEndpoint:  "http://localhost:11434/api/chat",
+		OllamaNumCtx:    DefaultOllamaNumCtx,
+		OllamaThink:     false,
 		ReasoningEffort: "medium",
 		IconMode:        "unicode",
 		ActivityMode:    "arcane",
@@ -146,6 +164,12 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.OllamaEndpoint == "" {
 		s.OllamaEndpoint = d.OllamaEndpoint
+	}
+	// Treat unset (zero) as "use default"; treat a negative value as an explicit
+	// "let Ollama choose" sentinel and pass it through so it survives a
+	// load-save round trip.
+	if s.OllamaNumCtx == 0 {
+		s.OllamaNumCtx = d.OllamaNumCtx
 	}
 	if s.ReasoningEffort == "" {
 		s.ReasoningEffort = d.ReasoningEffort

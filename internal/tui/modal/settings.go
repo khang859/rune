@@ -30,6 +30,8 @@ type Settings struct {
 	RunpodAPIKeyStatus    string
 	ActiveProfileStatus   string
 	OllamaEndpointStatus  string
+	OllamaNumCtxStatus    string
+	OllamaThink           string
 	RunpodEndpointStatus  string
 }
 
@@ -69,6 +71,8 @@ const (
 	settingsRowActiveProfile
 	settingsRowAddOllamaProfile
 	settingsRowOllamaEndpoint
+	settingsRowOllamaNumCtx
+	settingsRowOllamaThink
 	settingsRowRunpodEndpoint
 	settingsRowEffort
 	settingsRowIconMode
@@ -101,6 +105,8 @@ func NewSettings(cur Settings) Modal {
 		{kind: settingsRowAction, section: "Provider", label: "active profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
 		{kind: settingsRowAction, section: "Provider", label: "add ollama profile", action: "add_ollama_profile", status: "Enter to create"},
 		{kind: settingsRowAction, section: "Provider", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
+		{kind: settingsRowAction, section: "Provider", label: "ollama num_ctx", action: "ollama_num_ctx", status: cur.OllamaNumCtxStatus},
+		newSettingsRow("Provider", "ollama think", []string{"off", "on"}, cur.OllamaThink),
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
@@ -180,6 +186,12 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.OllamaEndpointStatus == "" {
 		s.OllamaEndpointStatus = "default local — Enter to edit"
+	}
+	if s.OllamaNumCtxStatus == "" {
+		s.OllamaNumCtxStatus = "default — Enter to edit"
+	}
+	if s.OllamaThink == "" {
+		s.OllamaThink = "off"
 	}
 	if s.RunpodEndpointStatus == "" {
 		s.RunpodEndpointStatus = "model default — Enter to set"
@@ -266,6 +278,8 @@ func (s *SettingsModal) selectedSettings() Settings {
 		RunpodAPIKeyStatus:    s.cur.RunpodAPIKeyStatus,
 		ActiveProfileStatus:   s.cur.ActiveProfileStatus,
 		OllamaEndpointStatus:  s.cur.OllamaEndpointStatus,
+		OllamaNumCtxStatus:    s.cur.OllamaNumCtxStatus,
+		OllamaThink:           s.rows[settingsRowOllamaThink].options[s.rows[settingsRowOllamaThink].value],
 		RunpodEndpointStatus:  s.cur.RunpodEndpointStatus,
 	}
 }

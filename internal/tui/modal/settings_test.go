@@ -103,6 +103,31 @@ func TestSettings_EndpointRowsAreActions(t *testing.T) {
 	}
 }
 
+func TestSettings_OllamaNumCtxRowIsAction(t *testing.T) {
+	s := NewSettings(Settings{OllamaNumCtxStatus: "16384 — Enter to edit"}).(*SettingsModal)
+	for range settingsRowOllamaNumCtx {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "ollama_num_ctx" {
+		t.Fatalf("action = %q, want ollama_num_ctx", res.Action)
+	}
+}
+
+func TestSettings_OllamaThinkTogglesEnum(t *testing.T) {
+	s := NewSettings(Settings{OllamaThink: "off"}).(*SettingsModal)
+	for range settingsRowOllamaThink {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	s.Update(tea.KeyMsg{Type: tea.KeyRight}) // off -> on
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(Settings)
+	if res.OllamaThink != "on" {
+		t.Fatalf("ollama think = %q, want on", res.OllamaThink)
+	}
+}
+
 func TestSettings_ViewShowsNewRows(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "nerd", ActivityMode: "arcane"}).(*SettingsModal)
 	out := s.View(80, 24)
@@ -116,6 +141,8 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"active profile",
 		"add ollama profile",
 		"ollama endpoint",
+		"ollama num_ctx",
+		"ollama think",
 		"runpod endpoint",
 		"tavily api key",
 		"✧ Mind",

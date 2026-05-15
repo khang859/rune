@@ -17,37 +17,99 @@ import (
 
 const (
 	DefaultBaseURL  = "http://localhost:11434"
-	DefaultEndpoint = DefaultBaseURL + "/v1/chat/completions"
+	DefaultEndpoint = DefaultBaseURL + "/api/chat"
+
+	// DefaultNumCtx caps Ollama's KV cache so thinking models loaded at their
+	// stock context (often 128K-256K) don't pin enough VRAM to stall the runner
+	// for minutes or 500. 16384 is wide enough for typical code conversations
+	// while staying cheap on workstation-class GPUs.
+	DefaultNumCtx = 16384
+
+	legacyChatCompletionsPath = "/v1/chat/completions"
+	nativeChatPath            = "/api/chat"
 )
+
+// Options bundles per-provider configuration that needs to flow from settings
+// into the Ollama client. Kept here (rather than on ai.Request) so the shared
+// request type doesn't leak provider-specific knobs.
+type Options struct {
+	Endpoint string
+	APIKey   string
+	// NumCtx overrides the runner's KV cache size (options.num_ctx). Zero means
+	// fall back to DefaultNumCtx; pass a negative value to omit num_ctx entirely
+	// and let the model's modelfile decide.
+	NumCtx int
+	// Think enables Ollama's native thinking mode for models that support it
+	// (Qwen3.x, DeepSeek-R1, etc.). When false, the model skips reasoning and
+	// streams answer content directly. When true, reasoning arrives as
+	// ai.Thinking events alongside ai.TextDelta.
+	Think bool
+}
 
 type Provider struct {
 	endpoint       string
 	apiKey         string
+	numCtx         int
+	think          bool
 	httpClient     *http.Client
 	maxRetries     int
 	retryBaseDelay time.Duration
 }
 
+// New constructs a Provider. Pass an empty Options{} to get all defaults.
+//
+// Variadic apiKey is preserved for callers that just want endpoint+key; pass
+// Options{} explicitly when you also need NumCtx/Think.
 func New(endpoint string, apiKey ...string) *Provider {
+	opts := Options{Endpoint: endpoint}
+	if len(apiKey) > 0 {
+		opts.APIKey = apiKey[0]
+	}
+	return NewWithOptions(opts)
+}
+
+func NewWithOptions(opts Options) *Provider {
+	endpoint := strings.TrimSpace(opts.Endpoint)
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
+	} else {
+		endpoint = rewriteLegacyEndpoint(endpoint)
 	}
-	key := ""
-	if len(apiKey) > 0 {
-		key = strings.TrimSpace(apiKey[0])
+	numCtx := opts.NumCtx
+	if numCtx == 0 {
+		numCtx = DefaultNumCtx
 	}
 	return &Provider{
 		endpoint:       endpoint,
-		apiKey:         key,
+		apiKey:         strings.TrimSpace(opts.APIKey),
+		numCtx:         numCtx,
+		think:          opts.Think,
 		httpClient:     &http.Client{Timeout: 0},
 		maxRetries:     3,
 		retryBaseDelay: time.Second,
 	}
 }
 
+// rewriteLegacyEndpoint maps a saved /v1/chat/completions URL onto the native
+// /api/chat endpoint so existing user settings keep working without a forced
+// migration. Anything else is returned unchanged. Tolerates a trailing slash
+// since URLs pasted from documentation or browser autocomplete often have one.
+func rewriteLegacyEndpoint(endpoint string) string {
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	cleanPath := strings.TrimRight(u.Path, "/")
+	if strings.HasSuffix(cleanPath, legacyChatCompletionsPath) {
+		u.Path = strings.TrimSuffix(cleanPath, legacyChatCompletionsPath) + nativeChatPath
+		return u.String()
+	}
+	return endpoint
+}
+
 func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
 	model := strings.TrimSpace(req.Model)
-	body, err := buildPayload(req)
+	body, err := buildPayload(req, payloadOptions{NumCtx: p.numCtx, Think: p.think})
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +198,7 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("Accept", "application/x-ndjson")
 	req.Header.Set("User-Agent", "rune")
 	if p.apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+p.apiKey)
@@ -169,7 +231,7 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 			return classifiedErr{err: err, class: ai.ErrFatal}
 		}
 	}
-	if err := parseSSE(ctx, respBody, out); err != nil {
+	if err := parseNDJSON(ctx, respBody, out); err != nil {
 		if errors.Is(err, ai.ErrStreamIdleTimeout) {
 			return classifiedErr{err: err, class: ai.ErrTransient}
 		}
@@ -185,6 +247,9 @@ type errorDetails struct {
 }
 
 func parseErrorBody(b []byte) errorDetails {
+	// Native /api/chat returns {"error":"..."} (string, not object) on failure.
+	// The OpenAI-compatible shape ({"error":{"message":...}}) may still appear
+	// from proxies, so handle both.
 	var env struct {
 		Error any `json:"error"`
 	}
@@ -229,8 +294,8 @@ func (d errorDetails) isModelNotFound() bool {
 }
 
 // ListModels returns model names installed on the Ollama instance backing a
-// chat-completions endpoint. It uses Ollama's native /api/tags endpoint because
-// that endpoint explicitly reports local models and tags.
+// chat endpoint. It uses Ollama's native /api/tags endpoint because that
+// endpoint explicitly reports local models and tags.
 func ListModels(ctx context.Context, chatEndpoint string, apiKey ...string) ([]string, error) {
 	if chatEndpoint == "" {
 		chatEndpoint = DefaultEndpoint
