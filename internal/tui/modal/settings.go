@@ -65,15 +65,15 @@ type settingsRow struct {
 
 const (
 	settingsRowProvider = iota
-	settingsRowOllamaAPIKey
 	settingsRowGroqAPIKey
 	settingsRowRunpodAPIKey
-	settingsRowActiveProfile
-	settingsRowAddOllamaProfile
+	settingsRowRunpodEndpoint
+	settingsRowOllamaAPIKey
 	settingsRowOllamaEndpoint
 	settingsRowOllamaNumCtx
 	settingsRowOllamaThink
-	settingsRowRunpodEndpoint
+	settingsRowActiveProfile
+	settingsRowAddOllamaProfile
 	settingsRowEffort
 	settingsRowIconMode
 	settingsRowActivityMode
@@ -99,15 +99,15 @@ func NewSettings(cur Settings) Modal {
 	}
 	return &SettingsModal{cur: cur, rows: []settingsRow{
 		newSettingsRow("Provider", "provider", []string{"none", "codex", "groq", "ollama", "runpod"}, provider),
-		{kind: settingsRowAction, section: "Provider", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
-		{kind: settingsRowAction, section: "Provider", label: "active profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
-		{kind: settingsRowAction, section: "Provider", label: "add ollama profile", action: "add_ollama_profile", status: "Enter to create"},
-		{kind: settingsRowAction, section: "Provider", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
-		{kind: settingsRowAction, section: "Provider", label: "ollama num_ctx", action: "ollama_num_ctx", status: cur.OllamaNumCtxStatus},
-		newSettingsRow("Provider", "ollama think", []string{"off", "on"}, cur.OllamaThink),
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
+		{kind: settingsRowAction, section: "Ollama", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
+		{kind: settingsRowAction, section: "Ollama", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
+		{kind: settingsRowAction, section: "Ollama", label: "ollama num_ctx", action: "ollama_num_ctx", status: cur.OllamaNumCtxStatus},
+		newSettingsRow("Ollama", "ollama think", []string{"off", "on"}, cur.OllamaThink),
+		{kind: settingsRowAction, section: "Ollama", label: "active profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
+		{kind: settingsRowAction, section: "Ollama", label: "add ollama profile", action: "add_ollama_profile", status: "Enter to create"},
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),

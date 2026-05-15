@@ -17,7 +17,7 @@ func TestBuildPayload_NativeShapeWithThinkAndOptions(t *testing.T) {
 		},
 		Tools: []ai.ToolSpec{{Name: "read", Description: "Read file", Schema: json.RawMessage(`{"type":"object"}`)}},
 	}
-	b, err := buildPayload(req, payloadOptions{NumCtx: 16384, Think: false})
+	b, err := buildPayload(req, payloadOptions{NumCtx: 16384, Think: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestBuildPayload_NativeShapeWithThinkAndOptions(t *testing.T) {
 	for _, want := range []string{
 		`"model":"qwen3:4b"`,
 		`"stream":true`,
-		`"think":false`,
+		`"think":true`,
 		`"options":{"num_ctx":16384}`,
 		`"role":"system","content":"you are helpful"`,
 		`"role":"user","content":"hi"`,
@@ -41,6 +41,17 @@ func TestBuildPayload_NativeShapeWithThinkAndOptions(t *testing.T) {
 		if strings.Contains(s, unwanted) {
 			t.Fatalf("payload should not contain %q:\n%s", unwanted, s)
 		}
+	}
+}
+
+func TestBuildPayload_OmitsThinkWhenDisabled(t *testing.T) {
+	req := ai.Request{Model: "m", Messages: []ai.Message{{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "hi"}}}}}
+	b, err := buildPayload(req, payloadOptions{Think: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "think") {
+		t.Fatalf("payload should omit think when disabled:\n%s", b)
 	}
 }
 

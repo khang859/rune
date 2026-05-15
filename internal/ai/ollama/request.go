@@ -17,9 +17,12 @@ type payload struct {
 	Model    string         `json:"model"`
 	Messages []messageWire  `json:"messages"`
 	Stream   bool           `json:"stream"`
-	Think    bool           `json:"think"`
-	Tools    []toolWire     `json:"tools,omitempty"`
-	Options  payloadOptsRaw `json:"options,omitempty"`
+	// Think is a pointer so we only emit the field when the user opts in.
+	// Sending `think: false` unconditionally pushes an unknown field to models
+	// that don't understand it (notably GPT-OSS, which expects a string).
+	Think   *bool          `json:"think,omitempty"`
+	Tools   []toolWire     `json:"tools,omitempty"`
+	Options payloadOptsRaw `json:"options,omitempty"`
 }
 
 type payloadOptsRaw struct {
@@ -66,7 +69,10 @@ func buildPayload(req ai.Request, opts payloadOptions) ([]byte, error) {
 	p := payload{
 		Model:  req.Model,
 		Stream: true,
-		Think:  opts.Think,
+	}
+	if opts.Think {
+		t := true
+		p.Think = &t
 	}
 	if opts.NumCtx > 0 {
 		p.Options.NumCtx = opts.NumCtx

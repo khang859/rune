@@ -80,6 +80,44 @@ func TestParseNDJSON_ToolCallOnTerminalFrame(t *testing.T) {
 	}
 }
 
+func TestParseNDJSON_ToolCallsAcrossFramesGetUniqueIDs(t *testing.T) {
+	// Newer Ollama streams tool calls on intermediate done:false frames rather
+	// than batched on the terminal frame. IDs must remain unique across frames
+	// so callNames recovery on subsequent turns doesn't collide, and the Done
+	// reason must still be "tool_use" even when the terminal frame is empty.
+	stream := strings.Join([]string{
+		`{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read","arguments":{"path":"/a"}}}]},"done":false}`,
+		`{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"read","arguments":{"path":"/b"}}}]},"done":false}`,
+		`{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}`,
+	}, "\n") + "\n"
+
+	out := make(chan ai.Event, 10)
+	if err := parseNDJSON(context.Background(), strings.NewReader(stream), out); err != nil {
+		t.Fatal(err)
+	}
+	close(out)
+
+	var calls []ai.ToolCall
+	var doneReason string
+	for ev := range out {
+		switch v := ev.(type) {
+		case ai.ToolCall:
+			calls = append(calls, v)
+		case ai.Done:
+			doneReason = v.Reason
+		}
+	}
+	if len(calls) != 2 {
+		t.Fatalf("got %d tool calls, want 2", len(calls))
+	}
+	if calls[0].ID == calls[1].ID {
+		t.Fatalf("tool call IDs collided: %q and %q", calls[0].ID, calls[1].ID)
+	}
+	if doneReason != "tool_use" {
+		t.Fatalf("done reason = %q, want tool_use", doneReason)
+	}
+}
+
 func TestParseNDJSON_ThinkingFieldSurfacesAsThinkingEvent(t *testing.T) {
 	stream := `{"message":{"role":"assistant","content":"","thinking":"reasoning..."},"done":false}` + "\n"
 	out := make(chan ai.Event, 4)

@@ -16,13 +16,20 @@ import (
 //
 //	{"model":"...","message":{"role":"assistant","content":"hello","thinking":"..."},"done":false}
 //
-// terminating with a `done:true` frame that may carry the final tool_calls
-// and aggregate usage counters (prompt_eval_count, eval_count).
+// terminating with a `done:true` frame that carries aggregate usage counters
+// (prompt_eval_count, eval_count). Tool calls may arrive on the terminal frame
+// or on earlier `done:false` frames depending on the model and Ollama version.
 func parseNDJSON(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 	scanner := bufio.NewScanner(r)
 	// Tool-call args and big assistant chunks can be large; bump well past
 	// bufio's 64KB default.
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	// toolCallIdx is stream-global so IDs stay unique even when Ollama streams
+	// tool calls across multiple frames. Per-frame indexing would collide
+	// (every frame's first call would be "call_0"), corrupting the
+	// callNames map used to recover tool_name on subsequent turns.
+	toolCallIdx := 0
+	sawToolCalls := false
 	for scanner.Scan() {
 		select {
 		case <-ctx.Done():
@@ -52,20 +59,20 @@ func parseNDJSON(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 				return err
 			}
 		}
-		// Tool calls arrive whole, typically on the terminal `done:true` frame.
-		// Emit one ToolCall event per call.
-		for i, tc := range f.Message.ToolCalls {
+		for _, tc := range f.Message.ToolCalls {
 			args := tc.Function.Arguments
 			if len(args) == 0 {
 				args = json.RawMessage(`{}`)
 			}
 			if err := send(ctx, out, ai.ToolCall{
-				ID:   fmt.Sprintf("call_%d", i),
+				ID:   fmt.Sprintf("call_%d", toolCallIdx),
 				Name: tc.Function.Name,
 				Args: args,
 			}); err != nil {
 				return err
 			}
+			toolCallIdx++
+			sawToolCalls = true
 		}
 		if f.Done {
 			if f.PromptEvalCount > 0 || f.EvalCount > 0 {
@@ -74,7 +81,7 @@ func parseNDJSON(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 				}
 			}
 			reason := "stop"
-			if len(f.Message.ToolCalls) > 0 {
+			if sawToolCalls {
 				reason = "tool_use"
 			} else if f.DoneReason == "length" {
 				reason = "max_tokens"
