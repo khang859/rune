@@ -47,13 +47,14 @@ type Options struct {
 }
 
 type Provider struct {
-	endpoint       string
-	apiKey         string
-	numCtx         int
-	think          bool
-	httpClient     *http.Client
-	maxRetries     int
-	retryBaseDelay time.Duration
+	endpoint          string
+	apiKey            string
+	numCtx            int
+	think             bool
+	httpClient        *http.Client
+	maxRetries        int
+	retryBaseDelay    time.Duration
+	streamIdleTimeout time.Duration
 }
 
 // New constructs a Provider. Pass an empty Options{} to get all defaults.
@@ -80,13 +81,14 @@ func NewWithOptions(opts Options) *Provider {
 		numCtx = DefaultNumCtx
 	}
 	return &Provider{
-		endpoint:       endpoint,
-		apiKey:         strings.TrimSpace(opts.APIKey),
-		numCtx:         numCtx,
-		think:          opts.Think,
-		httpClient:     &http.Client{Timeout: 0},
-		maxRetries:     3,
-		retryBaseDelay: time.Second,
+		endpoint:          endpoint,
+		apiKey:            strings.TrimSpace(opts.APIKey),
+		numCtx:            numCtx,
+		think:             opts.Think,
+		httpClient:        &http.Client{Timeout: 0},
+		maxRetries:        3,
+		retryBaseDelay:    time.Second,
+		streamIdleTimeout: ai.DefaultStreamIdleTimeout,
 	}
 }
 
@@ -208,7 +210,7 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	if err != nil {
 		return classifiedErr{err: err, class: ai.ErrTransient}
 	}
-	respBody := ai.IdleTimeoutReader(resp.Body, ai.DefaultStreamIdleTimeout)
+	respBody := ai.IdleTimeoutReader(resp.Body, p.streamIdleTimeout)
 	defer respBody.Close()
 
 	if resp.StatusCode >= 400 {
@@ -233,7 +235,15 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 	}
 	if err := parseNDJSON(ctx, respBody, out); err != nil {
 		if errors.Is(err, ai.ErrStreamIdleTimeout) {
-			return classifiedErr{err: err, class: ai.ErrTransient}
+			// Treat idle stalls as fatal so neither the provider nor the agent
+			// retries. The dominant cause is the prompt exceeding num_ctx —
+			// Ollama keeps the connection open but never emits a token, so
+			// retrying just multiplies the wait. Surface an actionable message
+			// instead of the bare "stream idle timeout".
+			return classifiedErr{
+				err:   fmt.Errorf("ollama stream stalled after %s of silence (num_ctx=%d); likely the prompt exceeds the model's context window — increase num_ctx in settings or shorten the conversation: %w", p.streamIdleTimeout, p.numCtx, err),
+				class: ai.ErrFatal,
+			}
 		}
 		return err
 	}

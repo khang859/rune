@@ -163,6 +163,54 @@ func TestNewWithOptions_PassesNumCtxAndThinkInPayload(t *testing.T) {
 	}
 }
 
+func TestStream_IdleTimeoutFailsFastWithActionableError(t *testing.T) {
+	// Server accepts the request, writes headers, then goes silent — mimicking
+	// Ollama when the prompt exceeds num_ctx (connection stays open, never
+	// emits a token). The provider should hit its idle timeout, surface a
+	// fatal error mentioning num_ctx, and NOT retry the request.
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		w.WriteHeader(http.StatusOK)
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	p := NewWithOptions(Options{Endpoint: srv.URL, NumCtx: 16384})
+	p.streamIdleTimeout = 50 * time.Millisecond
+	p.retryBaseDelay = time.Millisecond
+
+	ch, err := p.Stream(context.Background(), ai.Request{Model: "qwen3:4b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var streamErr *ai.StreamError
+	for ev := range ch {
+		if v, ok := ev.(ai.StreamError); ok {
+			streamErr = &v
+		}
+	}
+	if streamErr == nil {
+		t.Fatal("expected StreamError")
+	}
+	if streamErr.Class != ai.ErrFatal {
+		t.Fatalf("class = %v, want ErrFatal so neither provider nor agent retries", streamErr.Class)
+	}
+	msg := streamErr.Err.Error()
+	for _, want := range []string{"stalled", "num_ctx=16384"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("error %q missing %q", msg, want)
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("hits = %d, want 1 (no retries on idle timeout)", hits)
+	}
+}
+
 func TestListModelsUsesAPITags(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tags" {
