@@ -1711,6 +1711,16 @@ func (m *RootModel) saveSessionIfStarted() {
 	_ = m.sess.Save()
 }
 
+// Transcript renders the full conversation for printing to the terminal
+// after the TUI exits, so it stays visible in the scrollback. Returns ""
+// when no conversation took place.
+func (m *RootModel) Transcript() string {
+	if m == nil || m.msgs == nil || m.msgs.IsEmpty() {
+		return ""
+	}
+	return m.msgs.Render(m.styles, true, true, time.Now())
+}
+
 func (m *RootModel) switchProvider(provider string) tea.Cmd {
 	return m.switchProviderChoice(modal.ProviderChoice{ID: provider})
 }

@@ -24,6 +24,12 @@ func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, sk
 	m.SetMCPStatuses(mcpStatuses)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	defer fmt.Print(ansi.PopKittyKeyboard(1))
-	_, err := p.Run()
+	final, err := p.Run()
+	if rm, ok := final.(*RootModel); ok {
+		if t := rm.Transcript(); t != "" {
+			fmt.Println("\n" + rm.styles.Info.Render("── rune transcript ──") + "\n")
+			fmt.Println(t)
+		}
+	}
 	return err
 }
