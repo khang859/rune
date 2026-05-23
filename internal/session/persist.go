@@ -22,6 +22,7 @@ type wireSession struct {
 	ActiveID  string         `json:"active_id"`
 	Nodes     []wireNode     `json:"nodes"`
 	Subagents []SubagentTask `json:"subagents,omitempty"`
+	FilesRead []string       `json:"files_read,omitempty"`
 }
 
 type wireNode struct {
@@ -91,6 +92,7 @@ func (s *Session) snapshotForSave() (string, wireSession, error) {
 		RootID:    s.Root.ID,
 		ActiveID:  s.Active.ID,
 		Subagents: cloneSubagentTasks(s.Subagents),
+		FilesRead: append([]string(nil), s.FilesRead...),
 	}
 	walk(s.Root, func(n *Node) {
 		wn := wireNode{
@@ -152,6 +154,7 @@ func Load(path string) (*Session, error) {
 		Root:      nodes[w.RootID],
 		Active:    nodes[w.ActiveID],
 		Subagents: cloneSubagentTasks(w.Subagents),
+		FilesRead: append([]string(nil), w.FilesRead...),
 		path:      path,
 	}, nil
 }

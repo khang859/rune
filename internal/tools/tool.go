@@ -100,10 +100,11 @@ type BuiltinOptions struct {
 	WebFetchEnabled      bool
 	WebFetchAllowPrivate bool
 	SearchProvider       search.Provider
+	OnRead               func(path string)
 }
 
 func RegisterBuiltins(r *Registry, opts BuiltinOptions) {
-	r.Register(Read{})
+	r.Register(Read{OnRead: opts.OnRead})
 	r.Register(ListFiles{})
 	r.Register(SearchFiles{})
 	r.Register(CodeIndexSummary{})

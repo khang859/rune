@@ -12,9 +12,13 @@ import (
 
 const defaultReadLimit = 200
 
-type Read struct{}
+type Read struct {
+	// OnRead, if non-nil, is invoked with the resolved path after a successful
+	// read. Used by the agent to track FilesRead for repo-map focus.
+	OnRead func(path string)
+}
 
-func (Read) Spec() ai.ToolSpec {
+func (r Read) Spec() ai.ToolSpec {
 	return ai.ToolSpec{
 		Name:        "read",
 		Description: "Read lines from a file at an absolute path. Returns the first 200 lines by default. Page through larger files with `offset` (1-indexed start line) and `limit`; the truncation footer tells you the next offset to use. If you genuinely need the whole file in one shot, set `read_all`: true.",
@@ -31,7 +35,7 @@ func (Read) Spec() ai.ToolSpec {
 	}
 }
 
-func (Read) Run(ctx context.Context, args json.RawMessage) (Result, error) {
+func (r Read) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 	var a struct {
 		Path    string `json:"path"`
 		Offset  int    `json:"offset"`
@@ -47,6 +51,9 @@ func (Read) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 	}
 
 	if a.ReadAll {
+		if r.OnRead != nil {
+			r.OnRead(a.Path)
+		}
 		return Result{Output: string(b)}, nil
 	}
 
@@ -85,6 +92,9 @@ func (Read) Run(ctx context.Context, args json.RawMessage) (Result, error) {
 	}
 	if truncated {
 		out += fmt.Sprintf("\n\n[showing lines %d-%d of %d. To keep reading, call `read` again with offset=%d. To read the whole file at once, set read_all=true.]", offset, end, total, end+1)
+	}
+	if r.OnRead != nil {
+		r.OnRead(a.Path)
 	}
 	return Result{Output: out}, nil
 }
