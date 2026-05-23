@@ -87,11 +87,12 @@ type SubagentSupervisor struct {
 	cfg    SubagentConfig
 	sem    chan struct{}
 
-	mu          sync.Mutex
-	tasks       map[string]*SubagentTask
-	order       []string
-	cancels     map[string]context.CancelFunc
-	subscribers map[chan SubagentEvent]struct{}
+	mu           sync.Mutex
+	tasks        map[string]*SubagentTask
+	order        []string
+	cancels      map[string]context.CancelFunc
+	subscribers  map[chan SubagentEvent]struct{}
+	completionCh chan struct{} // closed when any task transitions to a terminal state
 }
 
 var subagentSeq uint64
@@ -108,12 +109,13 @@ func NewSubagentSupervisor(parent *Agent, cfg SubagentConfig) *SubagentSuperviso
 	}
 	cfg.Definitions = normalizeSubagentDefinitions(cfg.Definitions)
 	s := &SubagentSupervisor{
-		parent:      parent,
-		cfg:         cfg,
-		sem:         make(chan struct{}, cfg.MaxConcurrent),
-		tasks:       map[string]*SubagentTask{},
-		cancels:     map[string]context.CancelFunc{},
-		subscribers: map[chan SubagentEvent]struct{}{},
+		parent:       parent,
+		cfg:          cfg,
+		sem:          make(chan struct{}, cfg.MaxConcurrent),
+		tasks:        map[string]*SubagentTask{},
+		cancels:      map[string]context.CancelFunc{},
+		subscribers:  map[chan SubagentEvent]struct{}{},
+		completionCh: make(chan struct{}),
 	}
 	s.restoreFromSession()
 	return s
@@ -365,6 +367,34 @@ func (s *SubagentSupervisor) Get(id string) *tools.SubagentTask {
 	return &cp
 }
 
+// HasInFlight reports whether any tracked subagent is pending, blocked, or
+// running. Used by the agent loop to decide whether to wait for completion
+// instead of ending the turn.
+func (s *SubagentSupervisor) HasInFlight() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range s.order {
+		t := s.tasks[id]
+		if t == nil {
+			continue
+		}
+		switch t.Status {
+		case SubagentBlocked, SubagentPending, SubagentRunning:
+			return true
+		}
+	}
+	return false
+}
+
+// AnyCompletion returns a channel that closes the next time any tracked
+// subagent transitions to a terminal state. The channel is re-armed after
+// each fire; callers must call AnyCompletion again before each wait.
+func (s *SubagentSupervisor) AnyCompletion() <-chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.completionCh
+}
+
 func (s *SubagentSupervisor) DrainCompletedSummaries() []tools.SubagentTask {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -394,6 +424,8 @@ func (s *SubagentSupervisor) Cancel(id string) error {
 		t.Status = SubagentCancelled
 		t.CompletedAt = &now
 		s.publishLocked(t)
+		close(s.completionCh)
+		s.completionCh = make(chan struct{})
 		toStart = s.resolveBlockedLocked()
 		s.persistLocked()
 	}
@@ -507,6 +539,8 @@ func (s *SubagentSupervisor) finish(id string, status SubagentStatus, summary, e
 	t.Summary = summary
 	t.Error = errMsg
 	s.publishLocked(t)
+	close(s.completionCh)
+	s.completionCh = make(chan struct{})
 	toStart = s.resolveBlockedLocked()
 	s.persistLocked()
 	s.mu.Unlock()

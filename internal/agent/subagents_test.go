@@ -824,3 +824,89 @@ func (p errorProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Ev
 	close(out)
 	return out, nil
 }
+
+func TestSubagentSupervisor_HasInFlight(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "")
+	sup := a.Subagents()
+	if sup.HasInFlight() {
+		t.Fatal("expected HasInFlight=false on empty supervisor")
+	}
+
+	// Manually insert a running task to avoid races with a real spawn.
+	sup.mu.Lock()
+	sup.tasks["t1"] = &SubagentTask{ID: "t1", Status: SubagentRunning}
+	sup.order = append(sup.order, "t1")
+	sup.mu.Unlock()
+	if !sup.HasInFlight() {
+		t.Fatal("expected HasInFlight=true while task is running")
+	}
+
+	sup.mu.Lock()
+	sup.tasks["t1"].Status = SubagentCompleted
+	sup.mu.Unlock()
+	if sup.HasInFlight() {
+		t.Fatal("expected HasInFlight=false after task completes")
+	}
+}
+
+func TestSubagentSupervisor_AnyCompletion_FiresOnFinish(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "")
+	sup := a.Subagents()
+
+	sup.mu.Lock()
+	sup.tasks["t1"] = &SubagentTask{ID: "t1", Status: SubagentRunning}
+	sup.order = append(sup.order, "t1")
+	sup.mu.Unlock()
+
+	ch := sup.AnyCompletion()
+	select {
+	case <-ch:
+		t.Fatal("channel should not be closed before completion")
+	default:
+	}
+
+	go sup.finish("t1", SubagentCompleted, "done", "")
+
+	select {
+	case <-ch:
+		// ok
+	case <-time.After(time.Second):
+		t.Fatal("AnyCompletion did not fire within 1s")
+	}
+}
+
+func TestSubagentSupervisor_AnyCompletion_FreshChannelPerWait(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "")
+	sup := a.Subagents()
+
+	sup.mu.Lock()
+	sup.tasks["t1"] = &SubagentTask{ID: "t1", Status: SubagentRunning}
+	sup.tasks["t2"] = &SubagentTask{ID: "t2", Status: SubagentRunning}
+	sup.order = append(sup.order, "t1", "t2")
+	sup.mu.Unlock()
+
+	first := sup.AnyCompletion()
+	sup.finish("t1", SubagentCompleted, "first", "")
+	select {
+	case <-first:
+	case <-time.After(time.Second):
+		t.Fatal("first channel did not fire")
+	}
+
+	second := sup.AnyCompletion()
+	if second == first {
+		t.Fatal("expected a fresh channel after the first one fired")
+	}
+	select {
+	case <-second:
+		t.Fatal("second channel should not fire until next completion")
+	default:
+	}
+
+	sup.finish("t2", SubagentCompleted, "second", "")
+	select {
+	case <-second:
+	case <-time.After(time.Second):
+		t.Fatal("second channel did not fire after second completion")
+	}
+}
