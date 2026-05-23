@@ -462,7 +462,7 @@ func knownSlashCommandWithArgs(text string, cmds []string) bool {
 }
 
 func slashCommandAllowsArgs(cmd string) bool {
-	return cmd == "/feature-dev"
+	return cmd == "/feature-dev" || cmd == "/repomap"
 }
 
 func isShiftEnter(k tea.KeyMsg) bool {
