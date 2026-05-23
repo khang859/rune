@@ -39,6 +39,7 @@ type block struct {
 	count     int
 	startedAt time.Time
 	endedAt   time.Time
+	taskID    string
 }
 
 func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
@@ -148,7 +149,23 @@ func (m *Messages) AppendSummary(text string, count int) {
 func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
-	m.blocks = append(m.blocks, block{kind: bkSubagent, meta: string(ev.Status), text: renderSubagentEventText(ev)})
+	text := renderSubagentEventText(ev)
+	taskID := ev.Task.ID
+	if taskID != "" {
+		for i := range m.blocks {
+			if m.blocks[i].kind == bkSubagent && m.blocks[i].taskID == taskID {
+				m.blocks[i].meta = string(ev.Status)
+				m.blocks[i].text = text
+				return
+			}
+		}
+	}
+	m.blocks = append(m.blocks, block{
+		kind:   bkSubagent,
+		meta:   string(ev.Status),
+		text:   text,
+		taskID: taskID,
+	})
 }
 
 func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {

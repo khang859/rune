@@ -467,3 +467,42 @@ func TestMessages_TurnDoneAbnormalIsInfo(t *testing.T) {
 		t.Fatalf("expected info notice, got:\n%s", out)
 	}
 }
+
+func TestMessages_OnSubagentEvent_CoalescesByTaskID(t *testing.T) {
+	m := NewMessages(80)
+
+	mkEvent := func(status agent.SubagentStatus) agent.SubagentEvent {
+		return agent.SubagentEvent{
+			Task:   tools.SubagentTask{ID: "task-1", Name: "inspect", FamiliarName: "Nyx"},
+			Status: status,
+		}
+	}
+
+	m.OnSubagentEvent(mkEvent(agent.SubagentPending))
+	m.OnSubagentEvent(mkEvent(agent.SubagentRunning))
+	m.OnSubagentEvent(mkEvent(agent.SubagentCompleted))
+
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if strings.Count(out, "Nyx") != 1 {
+		t.Fatalf("expected one block for task-1, render was:\n%s", out)
+	}
+	if !strings.Contains(out, "returned") {
+		t.Fatalf("expected final completed text, got:\n%s", out)
+	}
+}
+
+func TestMessages_OnSubagentEvent_SeparateBlocksForDifferentTasks(t *testing.T) {
+	m := NewMessages(80)
+	m.OnSubagentEvent(agent.SubagentEvent{
+		Task:   tools.SubagentTask{ID: "task-1", FamiliarName: "Nyx"},
+		Status: agent.SubagentRunning,
+	})
+	m.OnSubagentEvent(agent.SubagentEvent{
+		Task:   tools.SubagentTask{ID: "task-2", FamiliarName: "Puck"},
+		Status: agent.SubagentRunning,
+	})
+	out := m.Render(DefaultStyles(), false, false, time.Time{})
+	if !strings.Contains(out, "Nyx") || !strings.Contains(out, "Puck") {
+		t.Fatalf("expected both familiars rendered, got:\n%s", out)
+	}
+}
