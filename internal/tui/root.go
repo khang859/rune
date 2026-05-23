@@ -2441,7 +2441,7 @@ func (m *RootModel) renderSubagentActivityIndicator() string {
 	if n != 1 {
 		label = "familiars"
 	}
-	return subagentSpinnerText(fmt.Sprintf("%d %s scrying", n, label), m.activityFrame)
+	return subagentSpinnerText(fmt.Sprintf("%d %s working", n, label), m.activityFrame)
 }
 
 func composeActivityLine(left, right string, width int) string {

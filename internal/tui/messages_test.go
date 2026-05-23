@@ -506,3 +506,39 @@ func TestMessages_OnSubagentEvent_SeparateBlocksForDifferentTasks(t *testing.T) 
 		t.Fatalf("expected both familiars rendered, got:\n%s", out)
 	}
 }
+
+func TestRenderSubagentEventText_TrimmedLabels(t *testing.T) {
+	mk := func(status agent.SubagentStatus, summary, errMsg string) agent.SubagentEvent {
+		return agent.SubagentEvent{
+			Task: tools.SubagentTask{
+				ID: "t1", Name: "inspect", FamiliarName: "Nyx", Summary: summary, Error: errMsg,
+			},
+			Status: status,
+		}
+	}
+
+	cases := []struct {
+		name   string
+		ev     agent.SubagentEvent
+		expect string
+	}{
+		{"pending", mk(agent.SubagentPending, "", ""), "summoning Nyx"},
+		{"running", mk(agent.SubagentRunning, "", ""), "working…"},
+		{"blocked", mk(agent.SubagentBlocked, "", ""), "waiting on dependencies"},
+		{"completed", mk(agent.SubagentCompleted, "line a\nline b", ""), "returned (2 lines)"},
+		{"completed-empty", mk(agent.SubagentCompleted, "", ""), "returned"},
+		{"failed", mk(agent.SubagentFailed, "", "boom"), "failed: boom"},
+		{"cancelled", mk(agent.SubagentCancelled, "", ""), "dismissed"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := renderSubagentEventText(c.ev)
+			if !strings.Contains(got, c.expect) {
+				t.Fatalf("expected %q to contain %q", got, c.expect)
+			}
+			if strings.Contains(got, "scrying") || strings.Contains(got, "summoning circle") || strings.Contains(got, "lost the thread") || strings.Contains(got, "veil") {
+				t.Fatalf("flavor text not trimmed in %q", got)
+			}
+		})
+	}
+}
