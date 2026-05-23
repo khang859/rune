@@ -1,11 +1,16 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/khang859/rune/internal/codeindex"
+	"github.com/khang859/rune/internal/codeindex/repomap"
+	"github.com/khang859/rune/internal/session"
 )
 
 // BasePrompt is the default rune system prompt. Centralized here so cmd/rune
@@ -75,6 +80,27 @@ func PlanModePrompt() string {
 		"",
 		"End by asking the user to approve before implementation. Do not implement until approval is given in Act Mode.",
 	}, "\n")
+}
+
+// BuildRepoMapBlock assembles the per-turn <repo_map> system-prompt block.
+// Returns "" silently on any failure path — never fails a turn over the map.
+func BuildRepoMapBlock(s *session.Session, idx *codeindex.Index, enabled bool, maxTokens int) string {
+	if !enabled || s == nil || idx == nil {
+		return ""
+	}
+	symbolNames := make(map[string]bool, len(idx.Symbols))
+	for _, sym := range idx.Symbols {
+		symbolNames[sym.Name] = true
+	}
+	focus := repomap.Focus{
+		InFocusFiles:    append([]string(nil), s.FilesRead...),
+		MentionedIdents: repomap.ExtractMentionedIdents(s.PathToActive(), symbolNames),
+	}
+	out, err := repomap.Build(context.Background(), idx, focus, repomap.Options{MaxTokens: maxTokens})
+	if err != nil || out == "" {
+		return ""
+	}
+	return "<repo_map>\n" + out + "</repo_map>"
 }
 
 // RuntimeContext returns a <system-context> block describing the runtime:

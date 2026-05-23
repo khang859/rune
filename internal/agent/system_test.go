@@ -1,10 +1,17 @@
 package agent
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/codeindex"
+	"github.com/khang859/rune/internal/session"
 )
 
 func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
@@ -82,5 +89,37 @@ func TestRuntimeContext_ContainsExpectedFields(t *testing.T) {
 	osArch := runtime.GOOS + "/" + runtime.GOARCH
 	if !strings.Contains(got, osArch) {
 		t.Errorf("missing %q in: %s", osArch, got)
+	}
+}
+
+func TestBuildRepoMapBlockDisabled(t *testing.T) {
+	got := BuildRepoMapBlock(nil, nil, false, 1000)
+	if got != "" {
+		t.Errorf("disabled should return empty, got %q", got)
+	}
+}
+
+func TestBuildRepoMapBlockWrapsOutput(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "a.go"), []byte(`package a
+func Helper() {}
+`), 0o644)
+	os.WriteFile(filepath.Join(dir, "b.go"), []byte(`package a
+func Caller() { Helper() }
+`), 0o644)
+	idx, err := codeindex.NewBuilder().Build(context.Background(), codeindex.BuildOptions{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sess := session.New("m")
+	sess.RecordFileRead(filepath.Join(dir, "b.go"))
+	sess.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "Look at Helper"}}})
+
+	got := BuildRepoMapBlock(sess, idx, true, 1000)
+	if got == "" {
+		t.Fatal("expected non-empty repo map block")
+	}
+	if !strings.HasPrefix(got, "<repo_map>\n") || !strings.HasSuffix(got, "</repo_map>") {
+		t.Errorf("missing wrapping tags:\n%s", got)
 	}
 }

@@ -46,6 +46,12 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
 		}
+		if block := BuildRepoMapBlock(a.session, a.codeIndex, a.repomapEnabled, a.repomapBudget); block != "" {
+			if sys != "" {
+				sys += "\n\n"
+			}
+			sys += block
+		}
 		var toolSpecs []ai.ToolSpec
 		if providers.ToolUseSupportWithSettings(a.session.Provider, a.session.Model, config.Settings{ModelCapabilities: a.modelCapabilities}) != providers.ToolUnsupported {
 			toolSpecs = a.tools.Specs()

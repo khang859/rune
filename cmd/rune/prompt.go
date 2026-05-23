@@ -11,6 +11,7 @@ import (
 	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/attachments"
+	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
@@ -31,6 +32,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	settings, _ := config.LoadSettings(config.SettingsPath())
 	reg := tools.NewRegistry()
 	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
+	opts.OnRead = sess.RecordFileRead
 	tools.RegisterBuiltins(reg, opts)
 
 	cwd, _ := os.Getwd()
@@ -56,6 +58,15 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
+	a.SetRepoMapEnabled(settings.RepoMap.Enabled || settings.RepoMap.MaxTokens == 0)
+	budget := settings.RepoMap.MaxTokens
+	if budget == 0 {
+		budget = 2000
+	}
+	a.SetRepoMapBudget(budget)
+	if idx, err := codeindex.BuildCached(ctx, codeindex.BuildOptions{Root: cwd}); err == nil {
+		a.SetCodeIndex(idx)
+	}
 	resolved := attachments.ResolveUserInput(text, attachments.Options{CWD: cwd, Provider: selection.Provider, Model: selection.Model})
 	if summary := promptAttachmentSummary(resolved.Attached); summary != "" {
 		fmt.Fprintln(w, summary)
