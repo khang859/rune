@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,55 @@ func TestMain(m *testing.M) {
 	defer os.RemoveAll(dir)
 	_ = os.Setenv("RUNE_DIR", dir)
 	os.Exit(m.Run())
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+
+	original := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	os.Stdout = w
+	defer func() { os.Stdout = original }()
+
+	fn()
+
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := io.ReadAll(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestEmitFleetReadyMarker(t *testing.T) {
+	t.Setenv("FLEET_SESSION", "1")
+
+	out := captureStdout(t, func() {
+		emitFleetReadyMarker()
+	})
+
+	if out != fleetReadyMarkerOSC {
+		t.Fatalf("emitFleetReadyMarker() = %q, want %q", out, fleetReadyMarkerOSC)
+	}
+}
+
+func TestEmitFleetReadyMarkerOutsideFleet(t *testing.T) {
+	t.Setenv("FLEET_SESSION", "")
+
+	out := captureStdout(t, func() {
+		emitFleetReadyMarker()
+	})
+
+	if out != "" {
+		t.Fatalf("emitFleetReadyMarker() = %q, want empty output", out)
+	}
 }
 
 func TestRoot_SavesOnlyAfterFirstUserMessage(t *testing.T) {

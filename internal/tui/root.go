@@ -102,7 +102,10 @@ type RootModel struct {
 	quitPrimedSeq int
 }
 
-const quitPrimeWindow = 2 * time.Second
+const (
+	quitPrimeWindow     = 2 * time.Second
+	fleetReadyMarkerOSC = "\x1b]777;fleet.rune.ready\x07"
+)
 
 var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
@@ -194,7 +197,14 @@ func (m *RootModel) SetVersion(version string) {
 
 func (m *RootModel) Init() tea.Cmd {
 	m.indexing = true
-	return tea.Batch(enableKittyKeyboard, m.startSubagentListener(), m.startCodeIndex(), m.startActivityTick())
+	return tea.Batch(emitFleetReadyMarker, enableKittyKeyboard, m.startSubagentListener(), m.startCodeIndex(), m.startActivityTick())
+}
+
+func emitFleetReadyMarker() tea.Msg {
+	if os.Getenv("FLEET_SESSION") == "1" {
+		fmt.Print(fleetReadyMarkerOSC)
+	}
+	return nil
 }
 
 func enableKittyKeyboard() tea.Msg {
