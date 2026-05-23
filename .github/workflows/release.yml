@@ -25,10 +25,10 @@ jobs:
           - runner: ubuntu-24.04-arm
             asset: rune-linux-arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
           cache: true
@@ -40,7 +40,7 @@ jobs:
           mkdir -p dist
           go build -ldflags "-s -w -X main.Version=${GITHUB_REF_NAME}" -o "dist/${{ matrix.asset }}" ./cmd/rune
       - name: Upload release asset
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.asset }}
           path: dist/${{ matrix.asset }}
@@ -51,12 +51,12 @@ jobs:
     needs: build
     steps:
       - name: Download release assets
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
           generate_release_notes: true
