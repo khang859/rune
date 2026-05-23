@@ -21,6 +21,7 @@ type Session struct {
 	Root      *Node
 	Active    *Node
 	Subagents []SubagentTask
+	FilesRead []string
 	path      string
 }
 
@@ -134,6 +135,29 @@ func (s *Session) PathToActiveNodes() []*Node {
 		nodes = append([]*Node{n}, nodes...)
 	}
 	return nodes
+}
+
+const maxFilesRead = 50
+
+// RecordFileRead prepends path to FilesRead, deduping and capping at 50.
+// Called by tools/read.go on every successful read.
+func (s *Session) RecordFileRead(path string) {
+	if path == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []string{path}
+	for _, p := range s.FilesRead {
+		if p == path {
+			continue
+		}
+		out = append(out, p)
+		if len(out) >= maxFilesRead {
+			break
+		}
+	}
+	s.FilesRead = out
 }
 
 func newID() string {

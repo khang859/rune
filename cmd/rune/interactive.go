@@ -9,6 +9,7 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/ai/unavailable"
+	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
@@ -36,6 +37,7 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 
 	reg := tools.NewRegistry()
 	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
+	opts.OnRead = sess.RecordFileRead
 	tools.RegisterBuiltins(reg, opts)
 
 	mgr := mcp.NewManager(config.MCPConfig())
@@ -70,6 +72,18 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
+	a.SetRepoMapEnabled(settings.RepoMap.Enabled || settings.RepoMap.MaxTokens == 0)
+	budget := settings.RepoMap.MaxTokens
+	if budget == 0 {
+		budget = 2000
+	}
+	a.SetRepoMapBudget(budget)
+	go func() {
+		idx, err := codeindex.BuildCached(ctx, codeindex.BuildOptions{Root: cwd})
+		if err == nil {
+			a.SetCodeIndex(idx)
+		}
+	}()
 
 	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version)
 }

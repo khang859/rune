@@ -1,6 +1,7 @@
 package session
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/khang859/rune/internal/ai"
@@ -47,6 +48,28 @@ func TestSession_ForkCreatesBranch(t *testing.T) {
 	last := path[len(path)-1].Content[0].(ai.TextBlock).Text
 	if last != "second reply" {
 		t.Fatalf("last on active branch = %q", last)
+	}
+}
+
+func TestRecordFileReadDedupAndCap(t *testing.T) {
+	s := New("model")
+	for i := 0; i < 60; i++ {
+		s.RecordFileRead(fmt.Sprintf("/tmp/f%d.go", i))
+	}
+	if len(s.FilesRead) > 50 {
+		t.Errorf("cap not enforced: got %d files, want <=50", len(s.FilesRead))
+	}
+	// Most recent should be first.
+	if s.FilesRead[0] != "/tmp/f59.go" {
+		t.Errorf("want newest first, got %q", s.FilesRead[0])
+	}
+
+	s.RecordFileRead("/tmp/f59.go")
+	if len(s.FilesRead) > 50 {
+		t.Error("dedup failed")
+	}
+	if s.FilesRead[0] != "/tmp/f59.go" {
+		t.Error("re-recording should move to front")
 	}
 }
 

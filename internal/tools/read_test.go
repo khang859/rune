@@ -175,3 +175,40 @@ func TestRead_NegativeArgs(t *testing.T) {
 		t.Fatal("expected IsError=true for negative offset")
 	}
 }
+
+func TestReadCallsOnReadCallback(t *testing.T) {
+	tmp, err := os.CreateTemp(t.TempDir(), "*.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmp.WriteString("hello")
+	tmp.Close()
+
+	var got string
+	r := Read{OnRead: func(p string) { got = p }}
+	args, _ := json.Marshal(struct {
+		Path string `json:"path"`
+	}{Path: tmp.Name()})
+	res, err := r.Run(context.Background(), args)
+	if err != nil || res.IsError {
+		t.Fatalf("read failed: %v %+v", err, res)
+	}
+	if got != tmp.Name() {
+		t.Errorf("OnRead got %q, want %q", got, tmp.Name())
+	}
+}
+
+func TestReadDoesNotCallOnReadOnFailure(t *testing.T) {
+	var called bool
+	r := Read{OnRead: func(p string) { called = true }}
+	args, _ := json.Marshal(struct {
+		Path string `json:"path"`
+	}{Path: "/no/such/file"})
+	res, _ := r.Run(context.Background(), args)
+	if !res.IsError {
+		t.Fatal("expected IsError=true for missing file")
+	}
+	if called {
+		t.Error("OnRead must not fire on read failure")
+	}
+}

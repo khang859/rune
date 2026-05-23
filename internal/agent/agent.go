@@ -5,6 +5,7 @@ import (
 
 	"github.com/khang859/rune/internal/agentdef"
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
@@ -26,6 +27,9 @@ type Agent struct {
 	mode              Mode
 	modelCapabilities map[string]config.ModelCapabilities
 	subagents         *SubagentSupervisor
+	repomapEnabled    bool
+	repomapBudget     int
+	codeIndex         *codeindex.Index
 }
 
 func New(p ai.Provider, t *tools.Registry, s *session.Session, systemPrompt string) *Agent {
@@ -78,6 +82,12 @@ func (a *Agent) Provider() ai.Provider          { return a.provider }
 func (a *Agent) Tools() *tools.Registry         { return a.tools }
 func (a *Agent) System() string                 { return a.system }
 func (a *Agent) Subagents() *SubagentSupervisor { return a.subagents }
+
+func (a *Agent) SetRepoMapEnabled(enabled bool)    { a.repomapEnabled = enabled }
+func (a *Agent) SetRepoMapBudget(tokens int)       { a.repomapBudget = tokens }
+func (a *Agent) RepoMapEnabled() bool              { return a.repomapEnabled }
+func (a *Agent) RepoMapBudget() int                { return a.repomapBudget }
+func (a *Agent) SetCodeIndex(idx *codeindex.Index) { a.codeIndex = idx }
 
 func (a *Agent) SetSubagentDefinitions(defs map[string]SubagentDefinition) {
 	if a == nil || a.subagents == nil {

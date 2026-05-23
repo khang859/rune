@@ -29,6 +29,12 @@ type Settings struct {
 	Web               WebSettings                  `json:"web,omitempty"`
 	Subagents         SubagentSettings             `json:"subagents,omitempty"`
 	ModelCapabilities map[string]ModelCapabilities `json:"model_capabilities,omitempty"`
+	RepoMap           RepoMapSettings              `json:"repo_map,omitempty"`
+}
+
+type RepoMapSettings struct {
+	Enabled   bool `json:"enabled,omitempty"`
+	MaxTokens int  `json:"max_tokens,omitempty"`
 }
 
 type ProviderProfile struct {

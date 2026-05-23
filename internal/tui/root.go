@@ -102,7 +102,7 @@ var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys", "/skill-creator", "/feature-dev",
+	"/compact", "/reload", "/hotkeys", "/skill-creator", "/feature-dev", "/repomap",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -889,6 +889,32 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.refreshViewport()
 		m.layout()
 		return tea.Batch(m.startCompact(), m.startActivityTick())
+	case "/repomap":
+		switch {
+		case arg == "" || arg == "status":
+			state := "off"
+			if m.agent.RepoMapEnabled() {
+				state = "on"
+			}
+			m.msgs.OnInfo(fmt.Sprintf("(repomap: %s, budget=%d tokens)", state, m.agent.RepoMapBudget()))
+		case arg == "on":
+			m.agent.SetRepoMapEnabled(true)
+			m.msgs.OnInfo("(repomap enabled)")
+		case arg == "off":
+			m.agent.SetRepoMapEnabled(false)
+			m.msgs.OnInfo("(repomap disabled)")
+		case strings.HasPrefix(arg, "budget "):
+			raw := strings.TrimSpace(strings.TrimPrefix(arg, "budget "))
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 0 {
+				m.msgs.OnInfo(fmt.Sprintf("(usage: /repomap budget N — N is non-negative integer, got %q)", raw))
+				break
+			}
+			m.agent.SetRepoMapBudget(n)
+			m.msgs.OnInfo(fmt.Sprintf("(repomap budget = %d tokens)", n))
+		default:
+			m.msgs.OnInfo("(usage: /repomap [status|on|off|budget N])")
+		}
 	case "/subagents":
 		m.showSubagentsInfo()
 	case "/reload":
