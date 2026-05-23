@@ -45,7 +45,7 @@ func DefaultStylesWithIconMode(mode string) Styles {
 	return Styles{
 		User:                 lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("12")),
 		Assistant:            lipgloss.NewStyle().Foreground(lipgloss.Color("15")),
-		Thinking:             lipgloss.NewStyle().Faint(true).Italic(true),
+		Thinking:             lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
 		ToolCall:             lipgloss.NewStyle().Foreground(lipgloss.Color("11")),
 		ToolResult:           lipgloss.NewStyle().Foreground(lipgloss.Color("7")),
 		ToolError:            lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
@@ -53,7 +53,7 @@ func DefaultStylesWithIconMode(mode string) Styles {
 		DiffDel:              lipgloss.NewStyle().Foreground(lipgloss.Color("9")),
 		Info:                 lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
 		SummaryHeader:        lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
-		ThinkingHeader:       lipgloss.NewStyle().Faint(true).Foreground(lipgloss.Color("8")),
+		ThinkingHeader:       lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
 		FamiliarCall:         lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("13")),
 		FamiliarActive:       lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("14")),
 		FamiliarSuccess:      lipgloss.NewStyle().Foreground(lipgloss.Color("10")),
