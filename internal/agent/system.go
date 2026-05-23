@@ -34,7 +34,7 @@ func BasePrompt() string {
 		"- Use tools deliberately and avoid unnecessary broad output.",
 		"- Use AST/code-index tools for codebase navigation when available: `code_find_symbol` to locate functions/types/classes, `code_symbol_context` to inspect callers/callees and references, `code_graph_neighbors` to explore relationships, and `code_index_summary` for a high-level map of unfamiliar code. Prefer these over broad text search when investigating symbols, call paths, ownership, or impact.",
 		"- Use literal file search for exact strings, logs, config keys, docs, or non-code text. Combine AST results with `read` before making conclusions or edits.",
-		"- When you start a subagent, let it run; do not call get_subagent_result immediately after starting it. The subagent will post its result back when it is done. Do not immediately duplicate delegated work yourself unless the user asks, the subagent fails, or you need a small amount of extra context to synthesize its findings.",
+		"- When a task is self-contained and would take many tool calls to investigate (broad code search, design across multiple files, end-to-end review), prefer spawning a background subagent over doing the work yourself. After spawning, end your turn — the system will resume you automatically when the subagent finishes and inject its summary. Do not call `get_subagent_result` to poll. Do not duplicate the subagent's work in the meantime.",
 		"- For current or unknown web information, use web_search first to discover relevant sources, then use web_fetch only on search results or URLs explicitly provided by the user. Do not guess URLs. Cite source URLs when relying on web information.",
 		"",
 		"Communication:",
