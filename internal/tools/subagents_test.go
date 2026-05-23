@@ -118,3 +118,19 @@ func TestCancelSubagentSpecMentionsBlocked(t *testing.T) {
 		t.Fatalf("description = %q, want mention of blocked tasks", spec.Description)
 	}
 }
+
+func TestSpawnSubagent_SpecDescribesAutoResumeAndTypes(t *testing.T) {
+	spec := (SpawnSubagent{}).Spec()
+	mustContain := []string{
+		"end your turn",
+		"code-explorer",
+		"code-architect",
+		"code-reviewer",
+		"general",
+	}
+	for _, frag := range mustContain {
+		if !strings.Contains(spec.Description, frag) {
+			t.Errorf("spawn_subagent description missing %q", frag)
+		}
+	}
+}
