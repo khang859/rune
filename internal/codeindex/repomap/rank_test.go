@@ -86,3 +86,42 @@ func edgeWeight(edges []WeightedEdge, from, to string) float64 {
 	}
 	return 0
 }
+
+func TestSelectSymbolsForFilePrioritizesMentioned(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "a.go", `package a
+func Apple() {}
+func Banana() {}
+func Cherry() {}
+`)
+	idx, err := codeindex.NewBuilder().Build(context.Background(), codeindex.BuildOptions{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	aPath := filepath.Join(dir, "a.go")
+	focus := Focus{MentionedIdents: map[string]bool{"Cherry": true}}
+	syms := SelectSymbolsForFile(idx, aPath, focus, 10)
+	if len(syms) == 0 {
+		t.Fatalf("expected symbols, got none")
+	}
+	if syms[0].Name != "Cherry" {
+		t.Errorf("Cherry should rank first when mentioned, got %s", syms[0].Name)
+	}
+}
+
+func TestSelectSymbolsForFileCaps(t *testing.T) {
+	dir := t.TempDir()
+	body := "package a\n"
+	for i := 0; i < 30; i++ {
+		body += "func F" + string(rune('0'+i%10)) + string(rune('0'+i/10)) + "() {}\n"
+	}
+	writeFile(t, dir, "a.go", body)
+	idx, err := codeindex.NewBuilder().Build(context.Background(), codeindex.BuildOptions{Root: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	syms := SelectSymbolsForFile(idx, filepath.Join(dir, "a.go"), Focus{}, 5)
+	if len(syms) > 5 {
+		t.Errorf("cap not enforced: got %d symbols, want <=5", len(syms))
+	}
+}

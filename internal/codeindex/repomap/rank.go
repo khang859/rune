@@ -3,6 +3,7 @@ package repomap
 import (
 	"math"
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -120,4 +121,69 @@ func isInterestingIdent(s string) bool {
 	isSnake := hasUnder && (hasLower || hasUpper)
 	isKebab := hasDash && (hasLower || hasUpper)
 	return isCamel || isSnake || isKebab
+}
+
+// relFile converts an absolute file path back to the relative slash-path
+// used as a key in idx.Files. Inverse of absFile.
+func relFile(root, abs string) string {
+	rel, err := filepath.Rel(root, abs)
+	if err != nil {
+		return abs
+	}
+	return filepath.ToSlash(rel)
+}
+
+// SelectSymbolsForFile picks up to capPerFile symbols from a single file,
+// always including any whose name is in focus.MentionedIdents, then padding
+// with the most-referenced symbols by in-degree.
+// The file argument is an absolute path (as emitted by ProjectFileGraph).
+func SelectSymbolsForFile(idx *codeindex.Index, file string, focus Focus, capPerFile int) []*codeindex.Symbol {
+	if idx == nil || capPerFile <= 0 {
+		return nil
+	}
+	fileInfo, ok := idx.Files[relFile(idx.Root, file)]
+	if !ok {
+		return nil
+	}
+
+	inDegree := map[string]int{}
+	for _, e := range idx.Graph.Edges {
+		if e.Relation == codeindex.RelCalls || e.Relation == codeindex.RelReferences {
+			inDegree[e.To]++
+		}
+	}
+
+	var mentioned []*codeindex.Symbol
+	var others []*codeindex.Symbol
+	for _, symID := range fileInfo.Symbols {
+		sym := idx.Symbols[symID]
+		if sym == nil {
+			continue
+		}
+		if focus.MentionedIdents[sym.Name] {
+			mentioned = append(mentioned, sym)
+		} else {
+			others = append(others, sym)
+		}
+	}
+
+	sort.Slice(others, func(i, j int) bool {
+		di, dj := inDegree[others[i].ID], inDegree[others[j].ID]
+		if di != dj {
+			return di > dj
+		}
+		return others[i].StartLine < others[j].StartLine
+	})
+
+	out := append([]*codeindex.Symbol(nil), mentioned...)
+	for _, sym := range others {
+		if len(out) >= capPerFile {
+			break
+		}
+		out = append(out, sym)
+	}
+	if len(out) > capPerFile {
+		out = out[:capPerFile]
+	}
+	return out
 }
