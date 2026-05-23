@@ -51,6 +51,7 @@ Type `/` in the editor to see all commands. Highlights:
 - `/skill:<name>` — invoke a markdown skill
 - `/skill-creator` — get guided help drafting or improving a rune skill
 - `/feature-dev` — start a guided feature-development workflow with specialist subagents
+- `/repomap` — show/toggle the always-on code repo map (status, on, off, budget N)
 - `/quit` — exit
 
 See `docs/keybindings.md` for the full key map, `docs/plan-mode.md` for Plan Mode details, `docs/feature-dev.md` for the feature workflow, and `/hotkeys` for in-app help.
