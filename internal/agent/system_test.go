@@ -34,7 +34,7 @@ func TestBasePrompt_IncludesApprovalGuidance(t *testing.T) {
 		"Use AST/code-index tools for codebase navigation when available",
 		"code_find_symbol",
 		"Use literal file search for exact strings",
-		"do not call get_subagent_result immediately after starting it",
+		"prefer spawning a background subagent",
 		"Cite source URLs when relying on web information",
 		"summarize what changed, where, and how it was validated",
 	} {
@@ -89,6 +89,21 @@ func TestRuntimeContext_ContainsExpectedFields(t *testing.T) {
 	osArch := runtime.GOOS + "/" + runtime.GOARCH
 	if !strings.Contains(got, osArch) {
 		t.Errorf("missing %q in: %s", osArch, got)
+	}
+}
+
+func TestBasePrompt_TeachesAutoResumeAndDelegation(t *testing.T) {
+	got := BasePrompt()
+	mustContain := []string{
+		"prefer spawning a background subagent",
+		"end your turn",
+		"resume you automatically",
+		"Do not call `get_subagent_result` to poll",
+	}
+	for _, frag := range mustContain {
+		if !strings.Contains(got, frag) {
+			t.Errorf("BasePrompt missing required guidance: %q", frag)
+		}
 	}
 }
 

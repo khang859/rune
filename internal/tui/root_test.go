@@ -1617,10 +1617,10 @@ func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 	}
 
 	line := m.renderActivityLine()
-	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 familiar scrying") {
+	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 familiar working") {
 		t.Fatalf("combined activity line missing main/familiar indicators: %q", line)
 	}
-	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 familiar scrying") {
+	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 familiar working") {
 		t.Fatalf("subagent indicator should render to the right of main activity: %q", line)
 	}
 }
@@ -1666,13 +1666,13 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	}
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out := m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "familiar of repo-plan") || !strings.Contains(out, "scrying") {
+	if !strings.Contains(out, "familiar of repo-plan") || !strings.Contains(out, "working") {
 		t.Fatalf("running familiar not rendered: %q", out)
 	}
 	if m.activeSubagentCount() != 1 {
 		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
 	}
-	if !strings.Contains(m.View(), "1 familiar scrying") {
+	if !strings.Contains(m.View(), "1 familiar working") {
 		t.Fatalf("familiar activity indicator not rendered in view: %q", m.View())
 	}
 	before := m.renderSubagentActivityIndicator()
@@ -1693,7 +1693,7 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	ev.Task.Summary = "## Summary\nall done"
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out = m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "returned") || !strings.Contains(out, "findings added") || !strings.Contains(out, "context") {
+	if !strings.Contains(out, "returned") || !strings.Contains(out, "2 lines") {
 		t.Fatalf("completed familiar not rendered collapsed: %q", out)
 	}
 	if strings.Contains(out, "all done") {
@@ -1722,7 +1722,7 @@ func TestRoot_BlockedSubagentCountsAsActivity(t *testing.T) {
 	if m.activeSubagentCount() != 1 {
 		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
 	}
-	if !strings.Contains(m.View(), "1 familiar scrying") {
+	if !strings.Contains(m.View(), "1 familiar working") {
 		t.Fatalf("blocked familiar activity indicator not rendered in view: %q", m.View())
 	}
 }

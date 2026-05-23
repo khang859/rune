@@ -39,6 +39,7 @@ type block struct {
 	count     int
 	startedAt time.Time
 	endedAt   time.Time
+	taskID    string
 }
 
 func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
@@ -148,7 +149,23 @@ func (m *Messages) AppendSummary(text string, count int) {
 func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
-	m.blocks = append(m.blocks, block{kind: bkSubagent, meta: string(ev.Status), text: renderSubagentEventText(ev)})
+	text := renderSubagentEventText(ev)
+	taskID := ev.Task.ID
+	if taskID != "" {
+		for i := range m.blocks {
+			if m.blocks[i].kind == bkSubagent && m.blocks[i].taskID == taskID {
+				m.blocks[i].meta = string(ev.Status)
+				m.blocks[i].text = text
+				return
+			}
+		}
+	}
+	m.blocks = append(m.blocks, block{
+		kind:   bkSubagent,
+		meta:   string(ev.Status),
+		text:   text,
+		taskID: taskID,
+	})
 }
 
 func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {
@@ -221,29 +238,26 @@ func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time
 func renderSubagentEventText(ev agent.SubagentEvent) string {
 	t := ev.Task
 	label := familiarLabel(t.FamiliarName, t.Name)
-	if t.ID != "" {
-		label += fmt.Sprintf(" (%s)", t.ID)
-	}
 	switch ev.Status {
 	case agent.SubagentBlocked:
-		return fmt.Sprintf("◌ %s waits within the summoning circle", label)
+		return fmt.Sprintf("◌ %s waiting on dependencies", label)
 	case agent.SubagentPending:
-		return fmt.Sprintf("◌ %s is being summoned", label)
+		return fmt.Sprintf("◌ summoning %s", label)
 	case agent.SubagentRunning:
-		return fmt.Sprintf("◐ %s is scrying through the task…", label)
+		return fmt.Sprintf("◐ %s working…", label)
 	case agent.SubagentCompleted:
 		if strings.TrimSpace(t.Summary) == "" {
-			return fmt.Sprintf("✓ %s returned from the veil", label)
+			return fmt.Sprintf("✓ %s returned", label)
 		}
 		lines := strings.Count(strings.TrimSpace(t.Summary), "\n") + 1
-		return fmt.Sprintf("✓ %s returned with %d lines of findings added to context", label, lines)
+		return fmt.Sprintf("✓ %s returned (%d lines)", label, lines)
 	case agent.SubagentFailed:
 		if strings.TrimSpace(t.Error) == "" {
-			return fmt.Sprintf("✗ %s lost the thread", label)
+			return fmt.Sprintf("✗ %s failed", label)
 		}
-		return fmt.Sprintf("✗ %s lost the thread: %s", label, strings.TrimSpace(t.Error))
+		return fmt.Sprintf("✗ %s failed: %s", label, strings.TrimSpace(t.Error))
 	case agent.SubagentCancelled:
-		return fmt.Sprintf("⊘ %s was dismissed", label)
+		return fmt.Sprintf("⊘ %s dismissed", label)
 	default:
 		return fmt.Sprintf("%s %s", label, ev.Status)
 	}

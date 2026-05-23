@@ -892,6 +892,56 @@ func TestRun_InvalidThenValidResetsRetryCounter(t *testing.T) {
 	}
 }
 
+func TestRun_WaitsForInFlightSubagentBeforeTurnDone(t *testing.T) {
+	// Parent: emits text and ends; the loop should NOT end while a subagent is running.
+	// After the subagent finishes, the loop resumes and emits a second text and ends.
+	p := faux.New().
+		Reply("starting work").Done().
+		Reply("got the summary: subagent result").Done()
+	a := New(p, tools.NewRegistry(), session.New("gpt-test"), "system")
+
+	sup := a.Subagents()
+	// Inject a running task by hand to avoid racing with the model's tool calls.
+	sup.mu.Lock()
+	sup.tasks["t1"] = &SubagentTask{
+		ID:     "t1",
+		Name:   "inspect",
+		Status: SubagentRunning,
+	}
+	sup.order = append(sup.order, "t1")
+	sup.mu.Unlock()
+
+	events := a.Run(context.Background(), userMsg("go"))
+
+	// Simulate the subagent finishing 50ms after Run starts.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		sup.finish("t1", SubagentCompleted, "subagent result", "")
+	}()
+
+	var texts []string
+	var sawDone bool
+	for ev := range events {
+		switch v := ev.(type) {
+		case AssistantText:
+			texts = append(texts, v.Delta)
+		case TurnDone:
+			sawDone = true
+		}
+	}
+
+	if !sawDone {
+		t.Fatal("turn never finished")
+	}
+	joined := strings.Join(texts, "")
+	if !strings.Contains(joined, "starting work") {
+		t.Fatalf("expected first turn text in output, got: %q", joined)
+	}
+	if !strings.Contains(joined, "subagent result") {
+		t.Fatalf("expected second turn (after auto-resume) text in output, got: %q", joined)
+	}
+}
+
 func assertNoOrphans(t *testing.T, s *session.Session) {
 	t.Helper()
 	used := map[string]bool{}
