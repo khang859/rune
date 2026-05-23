@@ -516,6 +516,14 @@ func TestRenderSubagentEventText_TrimmedLabels(t *testing.T) {
 			Status: status,
 		}
 	}
+	// Variant with no task name so familiarLabel returns just "Nyx" — lets us
+	// pin the literal "Nyx waiting on dependencies" substring for the blocked case.
+	mkBare := func(status agent.SubagentStatus) agent.SubagentEvent {
+		return agent.SubagentEvent{
+			Task:   tools.SubagentTask{ID: "t1", FamiliarName: "Nyx"},
+			Status: status,
+		}
+	}
 
 	cases := []struct {
 		name   string
@@ -524,7 +532,7 @@ func TestRenderSubagentEventText_TrimmedLabels(t *testing.T) {
 	}{
 		{"pending", mk(agent.SubagentPending, "", ""), "summoning Nyx"},
 		{"running", mk(agent.SubagentRunning, "", ""), "working…"},
-		{"blocked", mk(agent.SubagentBlocked, "", ""), "waiting on dependencies"},
+		{"blocked", mkBare(agent.SubagentBlocked), "Nyx waiting on dependencies"},
 		{"completed", mk(agent.SubagentCompleted, "line a\nline b", ""), "returned (2 lines)"},
 		{"completed-empty", mk(agent.SubagentCompleted, "", ""), "returned"},
 		{"failed", mk(agent.SubagentFailed, "", "boom"), "failed: boom"},

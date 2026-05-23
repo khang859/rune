@@ -240,7 +240,7 @@ func renderSubagentEventText(ev agent.SubagentEvent) string {
 	label := familiarLabel(t.FamiliarName, t.Name)
 	switch ev.Status {
 	case agent.SubagentBlocked:
-		return fmt.Sprintf("◌ waiting on dependencies")
+		return fmt.Sprintf("◌ %s waiting on dependencies", label)
 	case agent.SubagentPending:
 		return fmt.Sprintf("◌ summoning %s", label)
 	case agent.SubagentRunning:
