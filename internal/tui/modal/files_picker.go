@@ -2,7 +2,13 @@ package modal
 
 import (
 	"fmt"
+	"image"
+	"image/color"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io/fs"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +18,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/sahilm/fuzzy"
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
+
+	"github.com/khang859/rune/internal/attachments"
 )
 
 const (
@@ -20,7 +31,20 @@ const (
 	filesPickerPreviewSize = 64 * 1024
 )
 
+type FilesPickerAction string
+
+const (
+	FilesPickerInsert FilesPickerAction = "insert"
+	FilesPickerAttach FilesPickerAction = "attach"
+	FilesPickerOpen   FilesPickerAction = "open"
+)
+
 type FilesPickerResult struct {
+	Path   string
+	Action FilesPickerAction
+}
+
+type FilesPickerOpenMsg struct {
 	Path string
 }
 
@@ -47,15 +71,24 @@ func (p *FilesPicker) Update(msg tea.Msg) (Modal, tea.Cmd) {
 	if !ok {
 		return p, nil
 	}
-
 	switch k.Type {
 	case tea.KeyEsc:
 		return p, Cancel()
 	case tea.KeyEnter:
 		if sel := p.selected(); sel != "" {
-			return p, Result(FilesPickerResult{Path: sel})
+			return p, Result(FilesPickerResult{Path: sel, Action: FilesPickerInsert})
 		}
 		return p, Cancel()
+	case tea.KeyCtrlA:
+		if sel := p.selected(); sel != "" {
+			return p, Result(FilesPickerResult{Path: sel, Action: FilesPickerAttach})
+		}
+	case tea.KeySpace:
+		if sel := p.selected(); sel != "" && p.isImage(sel) {
+			return p, func() tea.Msg { return FilesPickerOpenMsg{Path: sel} }
+		}
+		p.query += " "
+		p.filter()
 	case tea.KeyUp:
 		if p.sel > 0 {
 			p.sel--
@@ -94,9 +127,6 @@ func (p *FilesPicker) Update(msg tea.Msg) (Modal, tea.Cmd) {
 			p.query = ""
 			p.filter()
 		}
-	case tea.KeySpace:
-		p.query += " "
-		p.filter()
 	case tea.KeyRunes:
 		p.query += string(k.Runes)
 		p.filter()
@@ -119,7 +149,7 @@ func (p *FilesPicker) View(width, height int) string {
 	}
 
 	headerLines := 5
-	footerLines := 2
+	footerLines := 4
 	bodyHeight := contentHeight - headerLines - footerLines
 	if bodyHeight < 4 {
 		bodyHeight = 4
@@ -154,7 +184,18 @@ func (p *FilesPicker) View(width, height int) string {
 	preview := p.renderPreview(previewWidth, bodyHeight)
 	sb.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, list, " │ ", preview))
 	sb.WriteString("\n\n")
-	sb.WriteString(styles.Help.Render("↑/↓ choose · type filter · Enter insert @path · Ctrl+U clear · Esc dismiss"))
+	sb.WriteString(styles.Section.Render("Shortcuts"))
+	sb.WriteString("  ")
+	sb.WriteString(styles.SelectedValue.Render("Enter"))
+	sb.WriteString(styles.Value.Render(" insert @path  "))
+	sb.WriteString(styles.SelectedValue.Render("Ctrl+A"))
+	sb.WriteString(styles.Value.Render(" attach image  "))
+	sb.WriteString(styles.SelectedValue.Render("Space"))
+	sb.WriteString(styles.Value.Render(" open image  "))
+	sb.WriteString(styles.SelectedValue.Render("Ctrl+U"))
+	sb.WriteString(styles.Value.Render(" clear  "))
+	sb.WriteString(styles.SelectedValue.Render("Esc"))
+	sb.WriteString(styles.Value.Render(" close"))
 
 	content := lipgloss.NewStyle().Width(contentWidth).MaxWidth(contentWidth).Height(contentHeight).MaxHeight(contentHeight).Render(sb.String())
 	return lipgloss.NewStyle().Width(width).MaxWidth(width).Height(height).MaxHeight(height).Align(lipgloss.Center).AlignVertical(lipgloss.Center).Render(content)
@@ -242,6 +283,10 @@ func (p *FilesPicker) selected() string {
 	return p.matches[p.sel]
 }
 
+func (p *FilesPicker) isImage(rel string) bool {
+	return attachments.ImageMimeFromExt(filepath.Ext(rel)) != ""
+}
+
 func (p *FilesPicker) renderList(width, height int) string {
 	styles := settingsStyles()
 	lines := make([]string, 0, height)
@@ -290,6 +335,9 @@ func (p *FilesPicker) renderPreview(width, height int) string {
 		return boxLines(lines, width, height)
 	}
 	lines = append(lines, styles.Gutter.Render(clipLine(fmt.Sprintf("%d bytes", info.Size()), width)))
+	if attachments.ImageMimeFromExt(filepath.Ext(path)) != "" {
+		return p.renderImageThumbnail(lines, path, width, height)
+	}
 	if info.Size() > filesPickerPreviewSize {
 		lines = append(lines, styles.Value.Render("preview skipped: file is large"))
 		return boxLines(lines, width, height)
@@ -298,6 +346,10 @@ func (p *FilesPicker) renderPreview(width, height int) string {
 	if err != nil {
 		lines = append(lines, styles.Value.Render(clipLine(err.Error(), width)))
 		return boxLines(lines, width, height)
+	}
+	if mime := attachments.SniffImageMime(b); mime != "" {
+		_ = mime
+		return p.renderImageThumbnail(lines, path, width, height)
 	}
 	if looksBinary(b) {
 		lines = append(lines, styles.Value.Render("binary file"))
@@ -311,6 +363,176 @@ func (p *FilesPicker) renderPreview(width, height int) string {
 		lines = append(lines, clipLine(line, width))
 	}
 	return boxLines(lines, width, height)
+}
+
+func (p *FilesPicker) renderImageThumbnail(lines []string, path string, width, height int) string {
+	styles := settingsStyles()
+	mime := attachments.ImageMimeFromExt(filepath.Ext(path))
+	if mime == "" {
+		mime = "image"
+	}
+	img, format, err := decodeImageFile(path)
+	if err != nil {
+		lines = append(lines, styles.Value.Render(clipLine("image: "+mime, width)))
+		lines = append(lines, styles.Value.Render(clipLine("preview unavailable: "+err.Error(), width)))
+		lines = append(lines, "")
+		lines = append(lines, styles.Section.Render("Actions"))
+		lines = append(lines, styles.Value.Render(clipLine("Enter  insert @path into prompt", width)))
+		lines = append(lines, styles.Value.Render(clipLine("Ctrl+A attach image now", width)))
+		lines = append(lines, styles.Value.Render(clipLine("Space   open image viewer", width)))
+		return boxLines(lines, width, height)
+	}
+	bounds := img.Bounds()
+	lines = append(lines, styles.Value.Render(clipLine(fmt.Sprintf("image: %s · %d×%d", mime, bounds.Dx(), bounds.Dy()), width)))
+	if format != "" {
+		lines = append(lines, styles.Value.Render(clipLine("format: "+format, width)))
+	}
+	lines = append(lines, styles.Value.Render(clipLine("Space: open image viewer", width)))
+	available := height - len(lines)
+	if available < 1 {
+		return boxLines(lines, width, height)
+	}
+	preview := renderANSIImage(img, width, available)
+	if preview != "" {
+		lines = append(lines, strings.Split(preview, "\n")...)
+	}
+	return boxLines(lines, width, height)
+}
+
+func decodeImageFile(path string) (image.Image, string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, "", err
+	}
+	defer f.Close()
+	img, format, err := image.Decode(f)
+	if err != nil {
+		return nil, "", err
+	}
+	return img, format, nil
+}
+
+func renderANSIImage(img image.Image, width, height int) string {
+	if img == nil || width <= 0 || height <= 0 {
+		return ""
+	}
+	b := img.Bounds()
+	srcW, srcH := b.Dx(), b.Dy()
+	if srcW <= 0 || srcH <= 0 {
+		return ""
+	}
+	// One terminal cell rendered with a half-block can represent two vertical
+	// image samples. A typical terminal cell is roughly twice as tall as it is
+	// wide, so the two half-block samples are close to square pixels.
+	scaleX := float64(width) / float64(srcW)
+	scaleY := float64(height*2) / float64(srcH)
+	scale := math.Min(scaleX, scaleY)
+	if scale <= 0 {
+		return ""
+	}
+	outW := int(math.Floor(float64(srcW) * scale))
+	outHCells := int(math.Ceil(float64(srcH) * scale / 2))
+	if outW < 1 {
+		outW = 1
+	}
+	if outW > width {
+		outW = width
+	}
+	if outHCells < 1 {
+		outHCells = 1
+	}
+	if outHCells > height {
+		outHCells = height
+	}
+
+	var sb strings.Builder
+	for yCell := 0; yCell < outHCells; yCell++ {
+		if yCell > 0 {
+			sb.WriteByte('\n')
+		}
+		for xCell := 0; xCell < outW; xCell++ {
+			top := averageImageColor(img, b, xCell, yCell*2, outW, outHCells*2)
+			bottom := averageImageColor(img, b, xCell, yCell*2+1, outW, outHCells*2)
+			r1, g1, b1 := colorToRGB(top)
+			r2, g2, b2 := colorToRGB(bottom)
+			fmt.Fprintf(&sb, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm▀", r1, g1, b1, r2, g2, b2)
+		}
+		sb.WriteString("\x1b[0m")
+	}
+	return sb.String()
+}
+
+func averageImageColor(img image.Image, b image.Rectangle, x, y, outW, outH int) color.Color {
+	if outW < 1 {
+		outW = 1
+	}
+	if outH < 1 {
+		outH = 1
+	}
+	x0 := b.Min.X + int(math.Floor(float64(x)*float64(b.Dx())/float64(outW)))
+	x1 := b.Min.X + int(math.Ceil(float64(x+1)*float64(b.Dx())/float64(outW)))
+	y0 := b.Min.Y + int(math.Floor(float64(y)*float64(b.Dy())/float64(outH)))
+	y1 := b.Min.Y + int(math.Ceil(float64(y+1)*float64(b.Dy())/float64(outH)))
+	if x0 < b.Min.X {
+		x0 = b.Min.X
+	}
+	if y0 < b.Min.Y {
+		y0 = b.Min.Y
+	}
+	if x1 > b.Max.X {
+		x1 = b.Max.X
+	}
+	if y1 > b.Max.Y {
+		y1 = b.Max.Y
+	}
+	if x1 <= x0 {
+		x1 = x0 + 1
+	}
+	if y1 <= y0 {
+		y1 = y0 + 1
+	}
+	var rsum, gsum, bsum, asum uint64
+	var n uint64
+	stepX := samplingStep(x1 - x0)
+	stepY := samplingStep(y1 - y0)
+	for sy := y0; sy < y1; sy += stepY {
+		for sx := x0; sx < x1; sx += stepX {
+			r, g, bb, a := img.At(sx, sy).RGBA()
+			rsum += uint64(r)
+			gsum += uint64(g)
+			bsum += uint64(bb)
+			asum += uint64(a)
+			n++
+		}
+	}
+	if n == 0 {
+		return color.RGBA{}
+	}
+	return color.RGBA64{R: uint16(rsum / n), G: uint16(gsum / n), B: uint16(bsum / n), A: uint16(asum / n)}
+}
+
+func samplingStep(span int) int {
+	if span <= 8 {
+		return 1
+	}
+	step := span / 8
+	if step < 1 {
+		return 1
+	}
+	return step
+}
+
+func colorToRGB(c color.Color) (uint8, uint8, uint8) {
+	r, g, b, a := c.RGBA()
+	if a == 0 {
+		return 0, 0, 0
+	}
+	if a < 0xffff {
+		r = r * 0xffff / a
+		g = g * 0xffff / a
+		b = b * 0xffff / a
+	}
+	return uint8(r >> 8), uint8(g >> 8), uint8(b >> 8)
 }
 
 func boxLines(lines []string, width, height int) string {

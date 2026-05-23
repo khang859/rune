@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -33,6 +34,11 @@ import (
 	"github.com/khang859/rune/internal/tui/editor"
 	"github.com/khang859/rune/internal/tui/modal"
 )
+
+type imageOpenFinishedMsg struct {
+	path string
+	err  error
+}
 
 type RootModel struct {
 	agent    *agent.Agent
@@ -383,6 +389,22 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
 		return m, cmd
+
+	case imageOpenFinishedMsg:
+		if v.err != nil {
+			m.msgs.OnTurnError(fmt.Errorf("open image %s: %v", v.path, v.err))
+			m.refreshViewport()
+		}
+		return m, nil
+
+	case modal.FilesPickerOpenMsg:
+		if strings.TrimSpace(v.Path) == "" {
+			return m, nil
+		}
+		path := filepath.Join(m.editor.Cwd(), filepath.FromSlash(v.Path))
+		m.msgs.OnInfo(fmt.Sprintf("(opening image: %s)", v.Path))
+		m.refreshViewport()
+		return m, openImageCmd(path)
 
 	case modal.ResultMsg:
 		cur := m.modal
@@ -1666,11 +1688,80 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 	case *modal.FilesPicker:
 		if res, ok := payload.(modal.FilesPickerResult); ok && strings.TrimSpace(res.Path) != "" {
-			m.editor.InsertText("@" + res.Path + " ")
+			switch res.Action {
+			case modal.FilesPickerAttach:
+				path := filepath.Join(m.editor.Cwd(), filepath.FromSlash(res.Path))
+				if err := m.editor.AddAttachmentPath(path); err != nil {
+					m.msgs.OnTurnError(fmt.Errorf("attach %s: %v", res.Path, err))
+				} else {
+					m.msgs.OnInfo(fmt.Sprintf("(attached image: %s)", res.Path))
+					m.refreshViewport()
+				}
+			case modal.FilesPickerOpen:
+				path := filepath.Join(m.editor.Cwd(), filepath.FromSlash(res.Path))
+				m.msgs.OnInfo(fmt.Sprintf("(opening image: %s)", res.Path))
+				m.refreshViewport()
+				return openImageCmd(path)
+			default:
+				m.editor.InsertText("@" + res.Path + " ")
+			}
 			m.editor.Focus()
 		}
 	}
 	return nil
+}
+
+func openImageCmd(path string) tea.Cmd {
+	return func() tea.Msg {
+		if err := openImage(path); err != nil {
+			return imageOpenFinishedMsg{path: path, err: err}
+		}
+		return nil
+	}
+}
+
+func openImage(path string) error {
+	cmd, err := imageOpenCommand(path)
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	return cmd.Process.Release()
+}
+
+func imageOpenCommand(path string) (*exec.Cmd, error) {
+	if isWSL() {
+		wslpath, err := exec.LookPath("wslpath")
+		if err != nil {
+			return nil, fmt.Errorf("wslpath not found")
+		}
+		explorer, err := exec.LookPath("explorer.exe")
+		if err != nil {
+			return nil, fmt.Errorf("explorer.exe not found")
+		}
+		winPath, err := exec.Command(wslpath, "-w", path).Output()
+		if err != nil {
+			return nil, fmt.Errorf("wslpath -w: %w", err)
+		}
+		return exec.Command(explorer, strings.TrimSpace(string(winPath))), nil
+	}
+	if _, err := exec.LookPath("xdg-open"); err == nil {
+		return exec.Command("xdg-open", path), nil
+	}
+	if _, err := exec.LookPath("open"); err == nil {
+		return exec.Command("open", path), nil
+	}
+	return nil, fmt.Errorf("no image opener found")
+}
+
+func isWSL() bool {
+	if os.Getenv("WSL_DISTRO_NAME") != "" || os.Getenv("WSL_INTEROP") != "" {
+		return true
+	}
+	b, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	return err == nil && strings.Contains(strings.ToLower(string(b)), "microsoft")
 }
 
 func findNode(n *session.Node, id string) *session.Node {
