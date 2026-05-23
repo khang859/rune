@@ -92,6 +92,18 @@ func TestRuntimeContext_ContainsExpectedFields(t *testing.T) {
 	}
 }
 
+func TestWSLContext_IncludesDistroWhenPresent(t *testing.T) {
+	t.Setenv("WSL_DISTRO_NAME", "Ubuntu")
+
+	got := wslContext()
+	if !strings.Contains(got, "wsl: true") {
+		t.Fatalf("missing WSL marker in: %q", got)
+	}
+	if !strings.Contains(got, "wsl_distro: Ubuntu") {
+		t.Fatalf("missing WSL distro in: %q", got)
+	}
+}
+
 func TestBasePrompt_TeachesAutoResumeAndDelegation(t *testing.T) {
 	got := BasePrompt()
 	mustContain := []string{

@@ -120,8 +120,26 @@ func RuntimeContext() string {
 	fmt.Fprintf(&b, "date: %s %s\n", now.Format("2006-01-02 15:04"), zone)
 	fmt.Fprintf(&b, "cwd: %s\n", cwd)
 	fmt.Fprintf(&b, "os: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+	if wsl := wslContext(); wsl != "" {
+		b.WriteString(wsl)
+		b.WriteByte('\n')
+	}
 	fmt.Fprintf(&b, "shell: %s\n", os.Getenv("SHELL"))
 	fmt.Fprintf(&b, "user: %s\n", os.Getenv("USER"))
 	b.WriteString("</system-context>")
 	return b.String()
+}
+
+func wslContext() string {
+	if distro := os.Getenv("WSL_DISTRO_NAME"); distro != "" {
+		return fmt.Sprintf("wsl: true\nwsl_distro: %s", distro)
+	}
+	if os.Getenv("WSL_INTEROP") != "" {
+		return "wsl: true"
+	}
+	b, err := os.ReadFile("/proc/sys/kernel/osrelease")
+	if err == nil && strings.Contains(strings.ToLower(string(b)), "microsoft") {
+		return "wsl: true"
+	}
+	return ""
 }
