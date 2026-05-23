@@ -126,6 +126,10 @@ func (e *Editor) SetValue(s string) {
 	e.updateHeight()
 }
 func (e *Editor) Value() string { return e.ta.Value() }
+func (e *Editor) InsertText(s string) {
+	e.ta.SetValue(e.ta.Value() + s)
+	e.updateHeight()
+}
 
 // Reset clears the textarea and any open overlay (file picker, slash menu),
 // and resets history navigation so the next Up arrow starts from the latest

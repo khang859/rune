@@ -30,6 +30,7 @@ func (Hotkeys) View(width, height int) string {
   /               command menu
   /mcp-status     show MCP connection status
   /git-status     view git status and diffs
+  /files          fuzzy file picker with preview
   /plan           enter Plan Mode (edits/bash disabled)
   Shift+Tab       cycle Plan/Copy modes
   /approve        approve plan and implement in a new session

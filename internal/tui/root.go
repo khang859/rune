@@ -102,7 +102,7 @@ var baseSlashCmds = []string{
 	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys", "/skill-creator", "/feature-dev", "/repomap",
+	"/compact", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -796,6 +796,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		initCmd = m.openModal(modal.NewGitStatus(data))
 	case "/hotkeys":
 		initCmd = m.openModal(modal.NewHotkeys())
+	case "/files":
+		initCmd = m.openModal(modal.NewFilesPicker(m.editor.Cwd()))
 	case "/skill-creator":
 		m.pendingSkillBody = skillCreatorPrompt
 		m.msgs.OnInfo("(skill-creator armed; describe the skill you want to create or improve)")
@@ -1661,6 +1663,11 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				m.saveSessionIfStarted()
 				m.rebuildMessagesFromSession()
 			}
+		}
+	case *modal.FilesPicker:
+		if res, ok := payload.(modal.FilesPickerResult); ok && strings.TrimSpace(res.Path) != "" {
+			m.editor.InsertText("@" + res.Path + " ")
+			m.editor.Focus()
 		}
 	}
 	return nil
