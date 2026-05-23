@@ -99,6 +99,45 @@ func TestFilesPickerSpaceOpensImageWithoutClosing(t *testing.T) {
 	}
 }
 
+func TestFilesPickerSpaceDoesNotOpenNonImageWithImageExtension(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite(t, filepath.Join(dir, "not-image.png"), "not an image\n")
+	md := NewFilesPicker(dir)
+	next, cmd := md.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if cmd != nil {
+		msg := cmd()
+		if _, ok := msg.(FilesPickerOpenMsg); ok {
+			t.Fatalf("space on a non-image should not return FilesPickerOpenMsg")
+		}
+		t.Fatalf("space on a non-image returned unexpected command message %T", msg)
+	}
+	p, ok := next.(*FilesPicker)
+	if !ok || p == nil {
+		t.Fatalf("next = %T, want *FilesPicker", next)
+	}
+	if p.query != "" {
+		t.Fatalf("query = %q, want empty", p.query)
+	}
+}
+
+func TestFilesPickerSpaceOpensSniffedImage(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteBytes(t, filepath.Join(dir, "icon.ico"), []byte{0x00, 0x00, 0x01, 0x00})
+	md := NewFilesPicker(dir)
+	_, cmd := md.Update(tea.KeyMsg{Type: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("space on a sniffed image should return an open command")
+	}
+	msg := cmd()
+	got, ok := msg.(FilesPickerOpenMsg)
+	if !ok {
+		t.Fatalf("message = %T, want FilesPickerOpenMsg", msg)
+	}
+	if got.Path != "icon.ico" {
+		t.Fatalf("path = %q, want icon.ico", got.Path)
+	}
+}
+
 func TestFilesPickerCtrlAAttaches(t *testing.T) {
 	dir := t.TempDir()
 	mustWriteBytes(t, filepath.Join(dir, "shot.png"), tinyPickerPNG)

@@ -7,6 +7,7 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
+	"io"
 	"io/fs"
 	"math"
 	"os"
@@ -87,8 +88,6 @@ func (p *FilesPicker) Update(msg tea.Msg) (Modal, tea.Cmd) {
 		if sel := p.selected(); sel != "" && p.isImage(sel) {
 			return p, func() tea.Msg { return FilesPickerOpenMsg{Path: sel} }
 		}
-		p.query += " "
-		p.filter()
 	case tea.KeyUp:
 		if p.sel > 0 {
 			p.sel--
@@ -284,7 +283,17 @@ func (p *FilesPicker) selected() string {
 }
 
 func (p *FilesPicker) isImage(rel string) bool {
-	return attachments.ImageMimeFromExt(filepath.Ext(rel)) != ""
+	path := filepath.Join(p.root, filepath.FromSlash(rel))
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, filesPickerPreviewSize))
+	if err != nil {
+		return false
+	}
+	return attachments.SniffImageMime(b) != ""
 }
 
 func (p *FilesPicker) renderList(width, height int) string {
