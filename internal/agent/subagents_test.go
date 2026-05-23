@@ -875,6 +875,40 @@ func TestSubagentSupervisor_AnyCompletion_FiresOnFinish(t *testing.T) {
 	}
 }
 
+func TestSubagentSupervisor_WaitForAnyCompletion_AtomicCaptureUnderLock(t *testing.T) {
+	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "")
+	sup := a.Subagents()
+
+	// No tasks → (nil, false).
+	if ch, busy := sup.WaitForAnyCompletion(); ch != nil || busy {
+		t.Fatalf("expected (nil, false) on empty supervisor; got (%v, %v)", ch, busy)
+	}
+
+	// One running task → (open channel, true) that fires on finish.
+	sup.mu.Lock()
+	sup.tasks["t1"] = &SubagentTask{ID: "t1", Status: SubagentRunning}
+	sup.order = append(sup.order, "t1")
+	sup.mu.Unlock()
+
+	ch, busy := sup.WaitForAnyCompletion()
+	if !busy || ch == nil {
+		t.Fatal("expected (channel, true) while task is running")
+	}
+	select {
+	case <-ch:
+		t.Fatal("channel should not be closed before finish")
+	default:
+	}
+
+	go sup.finish("t1", SubagentCompleted, "done", "")
+	select {
+	case <-ch:
+		// ok
+	case <-time.After(time.Second):
+		t.Fatal("WaitForAnyCompletion's returned channel did not fire on finish")
+	}
+}
+
 func TestSubagentSupervisor_AnyCompletion_FreshChannelPerWait(t *testing.T) {
 	a := New(faux.New(), tools.NewRegistry(), session.New("gpt-test"), "")
 	sup := a.Subagents()

@@ -395,6 +395,28 @@ func (s *SubagentSupervisor) AnyCompletion() <-chan struct{} {
 	return s.completionCh
 }
 
+// WaitForAnyCompletion atomically checks whether any tracked subagent is in
+// flight and, if so, returns the channel that will close on the next terminal
+// transition. The (channel, true) pair is captured under a single lock
+// acquisition so callers cannot race with a concurrent finish() / Cancel()
+// that closes and replaces the channel. Returns (nil, false) when nothing is
+// in flight.
+func (s *SubagentSupervisor) WaitForAnyCompletion() (<-chan struct{}, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, id := range s.order {
+		t := s.tasks[id]
+		if t == nil {
+			continue
+		}
+		switch t.Status {
+		case SubagentBlocked, SubagentPending, SubagentRunning:
+			return s.completionCh, true
+		}
+	}
+	return nil, false
+}
+
 func (s *SubagentSupervisor) DrainCompletedSummaries() []tools.SubagentTask {
 	s.mu.Lock()
 	defer s.mu.Unlock()

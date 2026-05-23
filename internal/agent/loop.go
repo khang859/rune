@@ -186,14 +186,15 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 
 		a.persistAssistant(text.String(), calls, invalidCallNames, usage)
 		if len(calls) == 0 && len(invalidCallNames) == 0 {
-			if a.subagents != nil && a.subagents.HasInFlight() {
-				ch := a.subagents.AnyCompletion()
-				select {
-				case <-ch:
-					continue
-				case <-ctx.Done():
-					out <- TurnAborted{}
-					return
+			if a.subagents != nil {
+				if ch, busy := a.subagents.WaitForAnyCompletion(); busy {
+					select {
+					case <-ch:
+						continue
+					case <-ctx.Done():
+						out <- TurnAborted{}
+						return
+					}
 				}
 			}
 			out <- TurnDone{Reason: doneRsn}
