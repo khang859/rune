@@ -45,7 +45,7 @@ func TestRenderBudgetedRespectsBudget(t *testing.T) {
 		}
 	}
 	out := RenderBudgeted(items, 200) // 200 tokens ~= 800 chars
-	if estimateTokens(out) > 230 {     // within 15%
+	if estimateTokens(out) > 230 {    // within 15%
 		t.Errorf("output exceeded budget: tokens=%d, budget=200", estimateTokens(out))
 	}
 }

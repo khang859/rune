@@ -17,7 +17,7 @@ func TestCacheLRUEviction(t *testing.T) {
 	c := NewCache(2)
 	c.Put("a", "1")
 	c.Put("b", "2")
-	c.Get("a") // make 'a' most-recent
+	c.Get("a")      // make 'a' most-recent
 	c.Put("c", "3") // should evict 'b'
 	if _, ok := c.Get("b"); ok {
 		t.Error("b should have been evicted")
