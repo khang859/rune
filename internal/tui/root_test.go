@@ -277,6 +277,29 @@ func TestNormalizeShiftEnterCSIU(t *testing.T) {
 	}
 }
 
+func TestSlashRepomapToggle(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	a.SetRepoMapEnabled(true)
+
+	m.handleSlashCommand("/repomap off")
+	if a.RepoMapEnabled() {
+		t.Error("expected repo map disabled after /repomap off")
+	}
+	m.handleSlashCommand("/repomap on")
+	if !a.RepoMapEnabled() {
+		t.Error("expected repo map enabled after /repomap on")
+	}
+	m.handleSlashCommand("/repomap budget 3000")
+	if a.RepoMapBudget() != 3000 {
+		t.Errorf("budget = %d, want 3000", a.RepoMapBudget())
+	}
+}
+
 type unknownCSIString string
 
 func (s unknownCSIString) String() string { return string(s) }
