@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +40,12 @@ import (
 type imageOpenFinishedMsg struct {
 	path string
 	err  error
+}
+
+type loginDoneMsg struct {
+	provider string
+	account  string
+	err      error
 }
 
 type RootModel struct {
@@ -108,7 +116,7 @@ const (
 )
 
 var baseSlashCmds = []string{
-	"/quit", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
+	"/quit", "/login", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
@@ -407,6 +415,25 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case loginDoneMsg:
+		if v.err != nil {
+			m.msgs.OnTurnError(fmt.Errorf("%s login failed: %v", v.provider, v.err))
+			m.refreshViewport()
+			m.layout()
+			return m, nil
+		}
+		if v.account != "" {
+			m.msgs.OnInfo(fmt.Sprintf("(logged in to %s as %s)", v.provider, v.account))
+		} else {
+			m.msgs.OnInfo(fmt.Sprintf("(logged in to %s)", v.provider))
+		}
+		if providers.Normalize(v.provider) == providers.Codex {
+			m.activateCodexAfterLogin()
+		}
+		m.refreshViewport()
+		m.layout()
+		return m, nil
+
 	case modal.FilesPickerOpenMsg:
 		if strings.TrimSpace(v.Path) == "" {
 			return m, nil
@@ -481,7 +508,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if res.Send {
 		if !m.hasActiveProvider() {
-			m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+			m.msgs.OnInfo("(no active provider configured; use /providers to choose one, /login for Codex, or /settings to add API keys)")
 			m.refreshViewport()
 			m.layout()
 			return m, cmd
@@ -648,7 +675,7 @@ func formatUserMessageForDisplay(text string, imageCount int) string {
 
 func (m *RootModel) startTurn(text string, attachments []ai.ContentBlock) tea.Cmd {
 	if !m.hasActiveProvider() {
-		m.msgs.OnInfo("(no active provider configured; use /providers to choose one, or /settings to add API keys)")
+		m.msgs.OnInfo("(no active provider configured; use /providers to choose one, /login for Codex, or /settings to add API keys)")
 		m.refreshViewport()
 		m.layout()
 		return nil
@@ -760,7 +787,7 @@ func (m *RootModel) noProviderNotice() string {
 	if m.hasActiveProvider() {
 		return ""
 	}
-	return "No active provider configured.\nUse /providers to choose one, or /settings to add API keys.\nCodex requires: rune login codex"
+	return "No active provider configured.\nUse /providers to choose one, /login for Codex, or /settings to add API keys."
 }
 
 func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
@@ -789,6 +816,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 	switch name {
 	case "/quit":
 		return tea.Quit
+	case "/login":
+		initCmd = m.startLoginCommand(arg)
 	case "/providers":
 		initCmd = m.openProviderPicker()
 	case "/model":
@@ -977,6 +1006,113 @@ func footerMode(mode agent.Mode) string {
 		return "plan"
 	}
 	return ""
+}
+
+var startCodexLoginForTUI = func(m *RootModel) tea.Cmd { return m.startCodexLogin() }
+
+func (m *RootModel) startLoginCommand(arg string) tea.Cmd {
+	provider := strings.ToLower(strings.TrimSpace(arg))
+	if provider == "" {
+		provider = providers.Codex
+	}
+	switch provider {
+	case providers.Groq:
+		m.msgs.OnInfo("(Groq uses an API key; set GROQ_API_KEY or RUNE_GROQ_API_KEY, or save it from /settings)")
+		return nil
+	case providers.Ollama:
+		m.msgs.OnInfo("(Ollama runs locally and does not use login; run `ollama serve` and `ollama pull <model>`, then use /providers)")
+		return nil
+	case providers.Runpod:
+		m.msgs.OnInfo("(Runpod uses an API key and endpoint; save them from /settings)")
+		return nil
+	case providers.Codex:
+		return startCodexLoginForTUI(m)
+	default:
+		m.msgs.OnInfo(fmt.Sprintf("(unknown login provider %q; supported: codex)", arg))
+		return nil
+	}
+}
+
+func (m *RootModel) startCodexLogin() tea.Cmd {
+	if err := config.EnsureRuneDir(); err != nil {
+		m.msgs.OnTurnError(err)
+		return nil
+	}
+	tokenURL := oauth.CodexTokenURL
+	if v := os.Getenv("RUNE_OAUTH_TOKEN_URL"); v != "" {
+		tokenURL = v
+	}
+	authorizeURL := oauth.CodexAuthorizeURL
+	if v := os.Getenv("RUNE_OAUTH_AUTHORIZE_URL"); v != "" {
+		authorizeURL = v
+	}
+	cfg := oauth.LoginConfig{TokenURL: tokenURL, Port: oauth.CodexCallbackPort}
+	flow, err := oauth.StartLogin(cfg)
+	if err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("start codex login: %v", err))
+		return nil
+	}
+	full := authorizeURL + "?" + codexAuthorizeQuery(flow.State(), flow.Challenge())
+	m.msgs.OnInfo("(starting Codex login — opening your browser)\nIf it does not open, copy this URL:\n" + full + "\nWaiting for browser login… this expires in 5 minutes.")
+	if err := openURL(full); err != nil {
+		m.msgs.OnInfo(fmt.Sprintf("(could not open browser automatically: %v)", err))
+	}
+	return waitCodexLoginCmd(flow)
+}
+
+func waitCodexLoginCmd(flow *oauth.LoginFlow) tea.Cmd {
+	return func() tea.Msg {
+		defer flow.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancel()
+		creds, err := flow.Wait(ctx, 5*time.Minute)
+		if err != nil {
+			return loginDoneMsg{provider: providers.Codex, err: err}
+		}
+		store := oauth.NewStore(config.AuthPath())
+		if err := store.Set("openai-codex", creds); err != nil {
+			return loginDoneMsg{provider: providers.Codex, err: fmt.Errorf("save credentials: %w", err)}
+		}
+		return loginDoneMsg{provider: providers.Codex, account: creds.Account}
+	}
+}
+
+func codexAuthorizeQuery(state, challenge string) string {
+	q := url.Values{}
+	q.Set("client_id", oauth.CodexClientID)
+	q.Set("response_type", "code")
+	q.Set("redirect_uri", oauth.CodexRedirectURI)
+	q.Set("scope", oauth.CodexScope)
+	q.Set("state", state)
+	q.Set("code_challenge", challenge)
+	q.Set("code_challenge_method", "S256")
+	return q.Encode()
+}
+
+func (m *RootModel) activateCodexAfterLogin() {
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	settings = config.NormalizeSettings(settings)
+	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providers.Codex, ProfileOverride: providers.NoProfile()})
+	p, err := buildTUIProviderResolved(resolved)
+	if err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("refresh codex provider: %v", err))
+		return
+	}
+	m.stopActiveTurn()
+	m.sess.Provider = providers.Codex
+	m.sess.Model = resolved.Model
+	m.activeProfile = ""
+	m.footer.Model = resolved.Model
+	m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+	m.replaceActiveProvider(p)
+	m.settings.Provider = providers.Codex
+	settings.Provider = providers.Codex
+	settings.ActiveProfile = ""
+	m.settings = modalSettingsFromConfig(settings, braveKeyConfigured(), tavilyKeyConfigured())
+	m.clampThinkingForCurrentModel()
+	m.refreshFooterThinkingEffort()
+	m.saveProviderSettings()
+	m.saveSessionIfStarted()
 }
 
 func (m *RootModel) openProviderPicker() tea.Cmd {
@@ -1728,6 +1864,19 @@ func openImageCmd(path string) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+func openURL(u string) error {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", u)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", u)
+	default:
+		cmd = exec.Command("xdg-open", u)
+	}
+	return cmd.Start()
 }
 
 func openImage(path string) error {

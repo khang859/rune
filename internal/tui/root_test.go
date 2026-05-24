@@ -17,9 +17,11 @@ import (
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/ai/faux"
+	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/unavailable"
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/providers"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 	"github.com/khang859/rune/internal/tui/modal"
@@ -1017,6 +1019,96 @@ func TestRoot_SessionSlashCommandIsInfoNotError(t *testing.T) {
 	}
 	if !strings.Contains(last.text, "session id=") || !strings.Contains(last.text, "model=gpt-5.5") {
 		t.Fatalf("unexpected /session text: %q", last.text)
+	}
+}
+
+func TestRoot_LoginGroqExplainsAPIKey(t *testing.T) {
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	cmd := m.handleSlashCommand("/login groq")
+
+	if cmd != nil {
+		t.Fatal("/login groq should not start an async command")
+	}
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
+	if !strings.Contains(out, "Groq uses an API key") {
+		t.Fatalf("missing Groq API key guidance: %q", out)
+	}
+}
+
+func TestRoot_LoginDefaultStartsCodexBrowserFlow(t *testing.T) {
+	old := startCodexLoginForTUI
+	defer func() { startCodexLoginForTUI = old }()
+	started := false
+	startCodexLoginForTUI = func(m *RootModel) tea.Cmd {
+		started = true
+		m.msgs.OnInfo("(starting Codex login — opening your browser)\nIf it does not open, copy this URL:\nhttp://127.0.0.1/auth?code_challenge=test")
+		return func() tea.Msg { return loginDoneMsg{provider: providers.Codex} }
+	}
+	s := session.New("gpt-5.5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	cmd := m.handleSlashCommand("/login")
+	if cmd == nil || !started {
+		t.Fatal("/login should start an async login command")
+	}
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
+	if !strings.Contains(out, "starting Codex login") || !strings.Contains(out, "If it does not open") {
+		t.Fatalf("missing login guidance: %q", out)
+	}
+	if !strings.Contains(out, "http://127.0.0.1/auth?") || !strings.Contains(out, "code_challenge=") {
+		t.Fatalf("missing auth URL: %q", out)
+	}
+}
+
+func TestRoot_LoginDoneRefreshesCodexProvider(t *testing.T) {
+	t.Setenv("RUNE_CODEX_ENDPOINT", "http://127.0.0.1/codex/responses")
+	s := session.New("gpt-5.5")
+	s.Provider = providers.Codex
+	a := agent.New(unavailable.New("not logged in"), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	writeCodexTestCredentials(t)
+
+	_, _ = m.Update(loginDoneMsg{provider: providers.Codex, account: "user@example.com"})
+
+	if providerUnavailable(m.agent.Provider()) {
+		t.Fatal("expected active provider to refresh after login")
+	}
+	out := m.msgs.Render(m.styles, false, false, time.Time{})
+	if !strings.Contains(out, "logged in to codex as user@example.com") {
+		t.Fatalf("missing success message: %q", out)
+	}
+}
+
+func TestRoot_LoginDoneActivatesCodexFromNoProvider(t *testing.T) {
+	t.Setenv("RUNE_CODEX_ENDPOINT", "http://127.0.0.1/codex/responses")
+	s := session.New("")
+	a := agent.New(unavailable.New("no active provider configured"), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	writeCodexTestCredentials(t)
+
+	_, _ = m.Update(loginDoneMsg{provider: providers.Codex})
+
+	if providerUnavailable(m.agent.Provider()) {
+		t.Fatal("expected /login success to activate Codex from no-provider state")
+	}
+	if m.sess.Provider != providers.Codex || m.sess.Model == "" {
+		t.Fatalf("provider/model = %q/%q, want Codex with model", m.sess.Provider, m.sess.Model)
+	}
+	m.editor.SetValue("hello")
+	_, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if !m.streaming {
+		t.Fatal("send after /login should start a turn")
+	}
+}
+
+func writeCodexTestCredentials(t *testing.T) {
+	t.Helper()
+	if err := oauth.NewStore(config.AuthPath()).Set("openai-codex", oauth.Credentials{AccessToken: "token", RefreshToken: "refresh", ExpiresAt: time.Now().Add(10 * time.Minute)}); err != nil {
+		t.Fatal(err)
 	}
 }
 

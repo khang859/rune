@@ -28,6 +28,7 @@ func (Hotkeys) View(width, height int) string {
   Tab             path completion
   @               file picker
   /               command menu
+  /login          sign in to Codex
   /mcp-status     show MCP connection status
   /git-status     view git status and diffs
   /files          fuzzy file picker with preview
