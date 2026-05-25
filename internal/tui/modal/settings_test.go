@@ -35,7 +35,7 @@ func TestSettings_CanSelectOllamaProvider(t *testing.T) {
 
 func TestSettings_CanSelectOpenRouterProvider(t *testing.T) {
 	s := NewSettings(Settings{Provider: "codex"}).(*SettingsModal)
-	for i := 0; i < 5; i++ {
+	for i := 0; i < 4; i++ {
 		s.Update(tea.KeyMsg{Type: tea.KeyRight})
 	}
 	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
