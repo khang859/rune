@@ -31,6 +31,8 @@ func PDFInputSupport(provider, model string) DocumentSupport {
 	switch Normalize(provider) {
 	case Groq, Ollama, Runpod:
 		return DocumentUnsupported
+	case OpenRouter:
+		return DocumentUnknown
 	default:
 		if isKnownCodexModel(model) || looksLikeOpenAIFileModel(model) {
 			return DocumentSupported
@@ -64,6 +66,8 @@ func ImageInputSupport(provider, model string) ImageSupport {
 		if IsKnownModel(Runpod, model) {
 			return ImageUnsupported
 		}
+		return ImageUnknown
+	case OpenRouter:
 		return ImageUnknown
 	default:
 		if isKnownCodexModel(model) || looksLikeOpenAIVisionModel(model) {

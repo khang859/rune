@@ -11,25 +11,27 @@ import (
 )
 
 type Settings struct {
-	Provider          string                       `json:"provider,omitempty"`
-	ActiveProfile     string                       `json:"active_profile,omitempty"`
-	Profiles          []ProviderProfile            `json:"profiles,omitempty"`
-	CodexModel        string                       `json:"codex_model,omitempty"`
-	GroqModel         string                       `json:"groq_model,omitempty"`
-	OllamaModel       string                       `json:"ollama_model,omitempty"`
-	RunpodModel       string                       `json:"runpod_model,omitempty"`
-	OllamaEndpoint    string                       `json:"ollama_endpoint,omitempty"`
-	OllamaNumCtx      int                          `json:"ollama_num_ctx,omitempty"`
-	OllamaThink       bool                         `json:"ollama_think,omitempty"`
-	RunpodEndpoint    string                       `json:"runpod_endpoint,omitempty"`
-	ReasoningEffort   string                       `json:"reasoning_effort,omitempty"`
-	IconMode          string                       `json:"icon_mode,omitempty"`
-	ActivityMode      string                       `json:"activity_mode,omitempty"`
-	AutoCompact       AutoCompact                  `json:"auto_compact,omitempty"`
-	Web               WebSettings                  `json:"web,omitempty"`
-	Subagents         SubagentSettings             `json:"subagents,omitempty"`
-	ModelCapabilities map[string]ModelCapabilities `json:"model_capabilities,omitempty"`
-	RepoMap           RepoMapSettings              `json:"repo_map,omitempty"`
+	Provider           string                       `json:"provider,omitempty"`
+	ActiveProfile      string                       `json:"active_profile,omitempty"`
+	Profiles           []ProviderProfile            `json:"profiles,omitempty"`
+	CodexModel         string                       `json:"codex_model,omitempty"`
+	GroqModel          string                       `json:"groq_model,omitempty"`
+	OllamaModel        string                       `json:"ollama_model,omitempty"`
+	RunpodModel        string                       `json:"runpod_model,omitempty"`
+	OpenRouterModel    string                       `json:"openrouter_model,omitempty"`
+	OllamaEndpoint     string                       `json:"ollama_endpoint,omitempty"`
+	OllamaNumCtx       int                          `json:"ollama_num_ctx,omitempty"`
+	OllamaThink        bool                         `json:"ollama_think,omitempty"`
+	RunpodEndpoint     string                       `json:"runpod_endpoint,omitempty"`
+	OpenRouterEndpoint string                       `json:"openrouter_endpoint,omitempty"`
+	ReasoningEffort    string                       `json:"reasoning_effort,omitempty"`
+	IconMode           string                       `json:"icon_mode,omitempty"`
+	ActivityMode       string                       `json:"activity_mode,omitempty"`
+	AutoCompact        AutoCompact                  `json:"auto_compact,omitempty"`
+	Web                WebSettings                  `json:"web,omitempty"`
+	Subagents          SubagentSettings             `json:"subagents,omitempty"`
+	ModelCapabilities  map[string]ModelCapabilities `json:"model_capabilities,omitempty"`
+	RepoMap            RepoMapSettings              `json:"repo_map,omitempty"`
 }
 
 type RepoMapSettings struct {
@@ -119,6 +121,7 @@ func DefaultSettings() Settings {
 		GroqModel:       "llama-3.3-70b-versatile",
 		OllamaModel:     "llama3.2",
 		RunpodModel:     "openai/gpt-oss-120b",
+		OpenRouterModel: "~openai/gpt-latest",
 		OllamaEndpoint:  "http://localhost:11434/api/chat",
 		OllamaNumCtx:    DefaultOllamaNumCtx,
 		OllamaThink:     false,
@@ -148,7 +151,7 @@ func LoadSettings(path string) (Settings, error) {
 
 func NormalizeSettings(s Settings) Settings {
 	d := DefaultSettings()
-	if s.Provider != "" && s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" && s.Provider != "runpod" {
+	if s.Provider != "" && s.Provider != "codex" && s.Provider != "groq" && s.Provider != "ollama" && s.Provider != "runpod" && s.Provider != "openrouter" {
 		s.Provider = ""
 	}
 	s.Profiles = NormalizeProviderProfiles(s.Profiles)
@@ -167,6 +170,9 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.RunpodModel == "" {
 		s.RunpodModel = d.RunpodModel
+	}
+	if s.OpenRouterModel == "" {
+		s.OpenRouterModel = d.OpenRouterModel
 	}
 	if s.OllamaEndpoint == "" {
 		s.OllamaEndpoint = d.OllamaEndpoint
@@ -279,7 +285,7 @@ func ProfileDisplayName(p ProviderProfile) string {
 
 func normalizeProviderID(provider string) string {
 	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "codex", "groq", "ollama", "runpod":
+	case "codex", "groq", "ollama", "runpod", "openrouter":
 		return strings.ToLower(strings.TrimSpace(provider))
 	default:
 		return ""

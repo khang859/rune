@@ -68,6 +68,42 @@ func TestSaveResolvedSelectionDoesNotPersistResolvedEndpoint(t *testing.T) {
 	}
 }
 
+func TestResolveOpenRouterDefault(t *testing.T) {
+	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter})
+	got := Resolve(s, ResolveOptions{})
+	if got.Provider != OpenRouter || got.Model != DefaultOpenRouterModel || got.Endpoint != DefaultOpenRouterEndpoint {
+		t.Fatalf("resolved = %+v", got)
+	}
+}
+
+func TestResolveOpenRouterEnvOverrides(t *testing.T) {
+	t.Setenv("RUNE_OPENROUTER_MODEL", "env/model")
+	t.Setenv("RUNE_OPENROUTER_ENDPOINT", "https://env.test/v1/chat/completions")
+	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter, OpenRouterModel: "settings/model", OpenRouterEndpoint: "https://settings.test/v1", ActiveProfile: "or", Profiles: []config.ProviderProfile{{ID: "or", Provider: OpenRouter, Model: "profile/model", Endpoint: "https://profile.test/v1"}}})
+	got := Resolve(s, ResolveOptions{})
+	if got.Model != "env/model" || got.Endpoint != "https://env.test/v1/chat/completions" {
+		t.Fatalf("resolved = %+v", got)
+	}
+}
+
+func TestSaveResolvedSelectionPersistsOpenRouterModelOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter})
+	if err := SaveResolvedSelection(path, s, ResolvedProvider{Provider: OpenRouter, Model: "anthropic/claude-sonnet-4.5", Endpoint: DefaultOpenRouterEndpoint}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := config.LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.OpenRouterModel != "anthropic/claude-sonnet-4.5" {
+		t.Fatalf("openrouter model = %q", saved.OpenRouterModel)
+	}
+	if saved.OpenRouterEndpoint != "" {
+		t.Fatalf("openrouter endpoint persisted = %q", saved.OpenRouterEndpoint)
+	}
+}
+
 func TestResolveEnvModelOverridesProfile(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_MODEL", "env-model")
 	s := config.NormalizeSettings(config.Settings{

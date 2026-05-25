@@ -9,30 +9,32 @@ import (
 )
 
 type Settings struct {
-	Provider              string
-	Effort                string
-	IconMode              string
-	ActivityMode          string
-	AutoCompact           string
-	AutoCompactThreshold  string
-	WebFetch              string
-	FetchPrivateURLs      string
-	WebSearch             string
-	SearchProvider        string
-	Subagents             string
-	SubagentMaxConcurrent string
-	SubagentTimeout       string
-	SubagentRetain        string
-	BraveAPIKeyStatus     string
-	TavilyAPIKeyStatus    string
-	GroqAPIKeyStatus      string
-	OllamaAPIKeyStatus    string
-	RunpodAPIKeyStatus    string
-	ActiveProfileStatus   string
-	OllamaEndpointStatus  string
-	OllamaNumCtxStatus    string
-	OllamaThink           string
-	RunpodEndpointStatus  string
+	Provider                 string
+	Effort                   string
+	IconMode                 string
+	ActivityMode             string
+	AutoCompact              string
+	AutoCompactThreshold     string
+	WebFetch                 string
+	FetchPrivateURLs         string
+	WebSearch                string
+	SearchProvider           string
+	Subagents                string
+	SubagentMaxConcurrent    string
+	SubagentTimeout          string
+	SubagentRetain           string
+	BraveAPIKeyStatus        string
+	TavilyAPIKeyStatus       string
+	GroqAPIKeyStatus         string
+	OllamaAPIKeyStatus       string
+	RunpodAPIKeyStatus       string
+	OpenRouterAPIKeyStatus   string
+	ActiveProfileStatus      string
+	OllamaEndpointStatus     string
+	OllamaNumCtxStatus       string
+	OllamaThink              string
+	RunpodEndpointStatus     string
+	OpenRouterEndpointStatus string
 }
 
 type SettingsAction struct {
@@ -68,6 +70,8 @@ const (
 	settingsRowGroqAPIKey
 	settingsRowRunpodAPIKey
 	settingsRowRunpodEndpoint
+	settingsRowOpenRouterAPIKey
+	settingsRowOpenRouterEndpoint
 	settingsRowOllamaAPIKey
 	settingsRowOllamaEndpoint
 	settingsRowOllamaNumCtx
@@ -98,10 +102,12 @@ func NewSettings(cur Settings) Modal {
 		provider = "none"
 	}
 	return &SettingsModal{cur: cur, rows: []settingsRow{
-		newSettingsRow("Provider", "provider", []string{"none", "codex", "groq", "ollama", "runpod"}, provider),
+		newSettingsRow("Provider", "provider", []string{"none", "codex", "groq", "ollama", "runpod", "openrouter"}, provider),
 		{kind: settingsRowAction, section: "Provider", label: "groq api key", action: "groq_api_key", status: cur.GroqAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "runpod api key", action: "runpod_api_key", status: cur.RunpodAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
+		{kind: settingsRowAction, section: "Provider", label: "openrouter api key", action: "openrouter_api_key", status: cur.OpenRouterAPIKeyStatus},
+		{kind: settingsRowAction, section: "Provider", label: "openrouter endpoint", action: "openrouter_endpoint", status: cur.OpenRouterEndpointStatus},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama num_ctx", action: "ollama_num_ctx", status: cur.OllamaNumCtxStatus},
@@ -181,6 +187,9 @@ func normalizeSettings(s Settings) Settings {
 	if s.RunpodAPIKeyStatus == "" {
 		s.RunpodAPIKeyStatus = "missing — Enter to set"
 	}
+	if s.OpenRouterAPIKeyStatus == "" {
+		s.OpenRouterAPIKeyStatus = "missing — Enter to set"
+	}
 	if s.ActiveProfileStatus == "" {
 		s.ActiveProfileStatus = "none"
 	}
@@ -195,6 +204,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.RunpodEndpointStatus == "" {
 		s.RunpodEndpointStatus = "model default — Enter to set"
+	}
+	if s.OpenRouterEndpointStatus == "" {
+		s.OpenRouterEndpointStatus = "default — Enter to set"
 	}
 	return s
 }
@@ -257,30 +269,32 @@ func selectedProviderValue(provider string) string {
 
 func (s *SettingsModal) selectedSettings() Settings {
 	return Settings{
-		Provider:              selectedProviderValue(s.rows[settingsRowProvider].options[s.rows[settingsRowProvider].value]),
-		Effort:                s.rows[settingsRowEffort].options[s.rows[settingsRowEffort].value],
-		IconMode:              s.rows[settingsRowIconMode].options[s.rows[settingsRowIconMode].value],
-		ActivityMode:          s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
-		AutoCompact:           s.rows[settingsRowAutoCompact].options[s.rows[settingsRowAutoCompact].value],
-		AutoCompactThreshold:  s.rows[settingsRowAutoCompactThreshold].options[s.rows[settingsRowAutoCompactThreshold].value],
-		WebFetch:              s.rows[settingsRowWebFetch].options[s.rows[settingsRowWebFetch].value],
-		FetchPrivateURLs:      s.rows[settingsRowFetchPrivateURLs].options[s.rows[settingsRowFetchPrivateURLs].value],
-		WebSearch:             s.rows[settingsRowWebSearch].options[s.rows[settingsRowWebSearch].value],
-		SearchProvider:        s.rows[settingsRowSearchProvider].options[s.rows[settingsRowSearchProvider].value],
-		Subagents:             s.rows[settingsRowSubagents].options[s.rows[settingsRowSubagents].value],
-		SubagentMaxConcurrent: s.rows[settingsRowSubagentMaxConcurrent].options[s.rows[settingsRowSubagentMaxConcurrent].value],
-		SubagentTimeout:       s.rows[settingsRowSubagentTimeout].options[s.rows[settingsRowSubagentTimeout].value],
-		SubagentRetain:        s.rows[settingsRowSubagentRetain].options[s.rows[settingsRowSubagentRetain].value],
-		BraveAPIKeyStatus:     s.cur.BraveAPIKeyStatus,
-		TavilyAPIKeyStatus:    s.cur.TavilyAPIKeyStatus,
-		GroqAPIKeyStatus:      s.cur.GroqAPIKeyStatus,
-		OllamaAPIKeyStatus:    s.cur.OllamaAPIKeyStatus,
-		RunpodAPIKeyStatus:    s.cur.RunpodAPIKeyStatus,
-		ActiveProfileStatus:   s.cur.ActiveProfileStatus,
-		OllamaEndpointStatus:  s.cur.OllamaEndpointStatus,
-		OllamaNumCtxStatus:    s.cur.OllamaNumCtxStatus,
-		OllamaThink:           s.rows[settingsRowOllamaThink].options[s.rows[settingsRowOllamaThink].value],
-		RunpodEndpointStatus:  s.cur.RunpodEndpointStatus,
+		Provider:                 selectedProviderValue(s.rows[settingsRowProvider].options[s.rows[settingsRowProvider].value]),
+		Effort:                   s.rows[settingsRowEffort].options[s.rows[settingsRowEffort].value],
+		IconMode:                 s.rows[settingsRowIconMode].options[s.rows[settingsRowIconMode].value],
+		ActivityMode:             s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
+		AutoCompact:              s.rows[settingsRowAutoCompact].options[s.rows[settingsRowAutoCompact].value],
+		AutoCompactThreshold:     s.rows[settingsRowAutoCompactThreshold].options[s.rows[settingsRowAutoCompactThreshold].value],
+		WebFetch:                 s.rows[settingsRowWebFetch].options[s.rows[settingsRowWebFetch].value],
+		FetchPrivateURLs:         s.rows[settingsRowFetchPrivateURLs].options[s.rows[settingsRowFetchPrivateURLs].value],
+		WebSearch:                s.rows[settingsRowWebSearch].options[s.rows[settingsRowWebSearch].value],
+		SearchProvider:           s.rows[settingsRowSearchProvider].options[s.rows[settingsRowSearchProvider].value],
+		Subagents:                s.rows[settingsRowSubagents].options[s.rows[settingsRowSubagents].value],
+		SubagentMaxConcurrent:    s.rows[settingsRowSubagentMaxConcurrent].options[s.rows[settingsRowSubagentMaxConcurrent].value],
+		SubagentTimeout:          s.rows[settingsRowSubagentTimeout].options[s.rows[settingsRowSubagentTimeout].value],
+		SubagentRetain:           s.rows[settingsRowSubagentRetain].options[s.rows[settingsRowSubagentRetain].value],
+		BraveAPIKeyStatus:        s.cur.BraveAPIKeyStatus,
+		TavilyAPIKeyStatus:       s.cur.TavilyAPIKeyStatus,
+		GroqAPIKeyStatus:         s.cur.GroqAPIKeyStatus,
+		OllamaAPIKeyStatus:       s.cur.OllamaAPIKeyStatus,
+		RunpodAPIKeyStatus:       s.cur.RunpodAPIKeyStatus,
+		OpenRouterAPIKeyStatus:   s.cur.OpenRouterAPIKeyStatus,
+		ActiveProfileStatus:      s.cur.ActiveProfileStatus,
+		OllamaEndpointStatus:     s.cur.OllamaEndpointStatus,
+		OllamaNumCtxStatus:       s.cur.OllamaNumCtxStatus,
+		OllamaThink:              s.rows[settingsRowOllamaThink].options[s.rows[settingsRowOllamaThink].value],
+		RunpodEndpointStatus:     s.cur.RunpodEndpointStatus,
+		OpenRouterEndpointStatus: s.cur.OpenRouterEndpointStatus,
 	}
 }
 

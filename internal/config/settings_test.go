@@ -19,6 +19,9 @@ func TestDefaultSettingsIncludesProvider(t *testing.T) {
 	if s.RunpodModel != "openai/gpt-oss-120b" {
 		t.Fatalf("runpod model = %q", s.RunpodModel)
 	}
+	if s.OpenRouterModel != "~openai/gpt-latest" {
+		t.Fatalf("openrouter model = %q", s.OpenRouterModel)
+	}
 	if s.OllamaEndpoint == "" {
 		t.Fatal("ollama endpoint should be set")
 	}
@@ -52,7 +55,7 @@ func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 
 func TestNormalizeSettingsFillsProviderDefaults(t *testing.T) {
 	s := NormalizeSettings(Settings{})
-	if s.Provider != "" || s.CodexModel == "" || s.GroqModel == "" || s.OllamaModel == "" || s.RunpodModel == "" || s.OllamaEndpoint == "" {
+	if s.Provider != "" || s.CodexModel == "" || s.GroqModel == "" || s.OllamaModel == "" || s.RunpodModel == "" || s.OpenRouterModel == "" || s.OllamaEndpoint == "" {
 		t.Fatalf("settings = %+v", s)
 	}
 }
@@ -81,6 +84,13 @@ func TestNormalizeSettingsPreservesOllama(t *testing.T) {
 func TestNormalizeSettingsPreservesRunpod(t *testing.T) {
 	s := NormalizeSettings(Settings{Provider: "runpod", RunpodModel: "custom/model", RunpodEndpoint: "private-endpoint"})
 	if s.Provider != "runpod" || s.RunpodModel != "custom/model" || s.RunpodEndpoint != "private-endpoint" {
+		t.Fatalf("settings = %+v", s)
+	}
+}
+
+func TestNormalizeSettingsPreservesOpenRouter(t *testing.T) {
+	s := NormalizeSettings(Settings{Provider: "openrouter", OpenRouterModel: "anthropic/claude-sonnet-4.5", OpenRouterEndpoint: "https://example.test/v1"})
+	if s.Provider != "openrouter" || s.OpenRouterModel != "anthropic/claude-sonnet-4.5" || s.OpenRouterEndpoint != "https://example.test/v1" {
 		t.Fatalf("settings = %+v", s)
 	}
 }

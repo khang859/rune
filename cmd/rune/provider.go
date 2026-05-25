@@ -11,6 +11,7 @@ import (
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/ollama"
+	"github.com/khang859/rune/internal/ai/openrouter"
 	"github.com/khang859/rune/internal/ai/runpod"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/providers"
@@ -72,6 +73,13 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 			return providerSelection{}, err
 		}
 		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: runpod.New(endpoint, key)}, nil
+	case providers.OpenRouter:
+		endpoint := resolved.Endpoint
+		key, err := config.NewSecretStore(config.SecretsPath()).OpenRouterAPIKey()
+		if err != nil {
+			return providerSelection{}, err
+		}
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: openrouter.New(endpoint, key)}, nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {

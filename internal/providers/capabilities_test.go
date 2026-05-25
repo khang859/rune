@@ -17,6 +17,7 @@ func TestPDFInputSupport(t *testing.T) {
 		{Groq, "meta-llama/llama-4-scout-17b-16e-instruct", DocumentUnsupported},
 		{Ollama, "qwen3-vl:8b", DocumentUnsupported},
 		{Runpod, "openai/gpt-oss-120b", DocumentUnsupported},
+		{OpenRouter, "openai/gpt-4o-mini", DocumentUnknown},
 	}
 	for _, tc := range cases {
 		if got := PDFInputSupport(tc.provider, tc.model); got != tc.want {
@@ -86,6 +87,7 @@ func TestToolUseSupport(t *testing.T) {
 		{Codex, "gpt-5.5", ToolUnknown},
 		{Groq, "llama-3.3-70b-versatile", ToolUnknown},
 		{Runpod, "openai/gpt-oss-120b", ToolUnknown},
+		{OpenRouter, "anthropic/claude-sonnet-4.5", ToolUnknown},
 	}
 	for _, tc := range cases {
 		if got := ToolUseSupport(tc.provider, tc.model); got != tc.want {
@@ -107,6 +109,12 @@ func TestToolUseSupportWithSettings(t *testing.T) {
 	}
 	if got := ToolUseSupportWithSettings(Ollama, "llama3.2", settings); got != ToolUnknown {
 		t.Fatalf("llama3.2 default = %s, want unknown", got)
+	}
+}
+
+func TestImageInputSupport_OpenRouter(t *testing.T) {
+	if got := ImageInputSupport(OpenRouter, "openai/gpt-4o-mini"); got != ImageUnknown {
+		t.Fatalf("OpenRouter image support = %s, want %s", got, ImageUnknown)
 	}
 }
 

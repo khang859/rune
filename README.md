@@ -6,7 +6,7 @@ rune ships with read/write/edit/bash tools, local file search, code indexing and
 repo maps, read-only git/GitHub inspection, branching sessions with compaction,
 markdown skills, built-in specialist subagents, optional web tools, and MCP
 plugin support. It runs against ChatGPT Pro/Plus subscriptions via OAuth, Groq,
-Ollama, and Runpod.
+Ollama, Runpod, and OpenRouter.
 
 ## Quick start
 
@@ -39,6 +39,10 @@ rune --provider ollama --model llama3.2
 # Runpod
 export RUNPOD_API_KEY="..."
 rune --provider runpod --model openai/gpt-oss-120b
+
+# OpenRouter
+export OPENROUTER_API_KEY="..."
+rune --provider openrouter --model anthropic/claude-sonnet-4.5
 ```
 
 API keys can also be stored with `/settings`.
@@ -76,7 +80,7 @@ pick files. rune can inline text files and attach supported images and PDFs. See
 
 Type `/` in the editor to see all commands. Highlights:
 
-- `/providers` — switch provider, e.g. Codex, Groq, Ollama, or Runpod
+- `/providers` — switch provider, e.g. Codex, Groq, Ollama, Runpod, or OpenRouter
 - `/login` — authenticate a provider such as Codex
 - `/settings` — configure providers, API keys, web tools, subagents, and UI options
 - `/model` — switch model for the active provider
@@ -133,6 +137,7 @@ See `docs/providers.md`.
 - **Ollama** — run a local Ollama server and pull a model, e.g. `ollama pull llama3.2`.
   Optional API keys are read from `RUNE_OLLAMA_API_KEY` or `OLLAMA_API_KEY`.
 - **Runpod** — set `RUNE_RUNPOD_API_KEY` or `RUNPOD_API_KEY`, or store the key with `/settings`.
+- **OpenRouter** — set `RUNE_OPENROUTER_API_KEY` or `OPENROUTER_API_KEY`, or store the key with `/settings`.
 
 ## Environment variables
 
@@ -144,12 +149,13 @@ Common user-facing environment variables:
 | `RUNE_DIR` | Override the rune config/data directory. |
 | `RUNE_PROVIDER` | Select the active provider. |
 | `RUNE_PROVIDER_PROFILE` | Select a saved provider profile. |
-| `RUNE_CODEX_MODEL`, `RUNE_GROQ_MODEL`, `RUNE_OLLAMA_MODEL`, `RUNE_RUNPOD_MODEL` | Override provider model defaults. |
-| `RUNE_CODEX_ENDPOINT`, `RUNE_GROQ_ENDPOINT`, `RUNE_OLLAMA_ENDPOINT`, `RUNE_RUNPOD_ENDPOINT` | Override provider endpoints. |
+| `RUNE_CODEX_MODEL`, `RUNE_GROQ_MODEL`, `RUNE_OLLAMA_MODEL`, `RUNE_RUNPOD_MODEL`, `RUNE_OPENROUTER_MODEL` | Override provider model defaults. |
+| `RUNE_CODEX_ENDPOINT`, `RUNE_GROQ_ENDPOINT`, `RUNE_OLLAMA_ENDPOINT`, `RUNE_RUNPOD_ENDPOINT`, `RUNE_OPENROUTER_ENDPOINT` | Override provider endpoints. |
 | `RUNE_OAUTH_AUTHORIZE_URL`, `RUNE_OAUTH_TOKEN_URL` | Override Codex OAuth endpoints. |
 | `RUNE_GROQ_API_KEY`, `GROQ_API_KEY` | Groq API key. |
 | `RUNE_OLLAMA_API_KEY`, `OLLAMA_API_KEY` | Ollama API key, if your endpoint requires one. |
 | `RUNE_RUNPOD_API_KEY`, `RUNPOD_API_KEY` | Runpod API key. |
+| `RUNE_OPENROUTER_API_KEY`, `OPENROUTER_API_KEY` | OpenRouter API key. |
 | `RUNE_WEB_SEARCH_PROVIDER` | Select the web search provider, e.g. `brave` or `tavily`. |
 | `RUNE_BRAVE_SEARCH_API_KEY` | Brave Search API key. |
 | `RUNE_TAVILY_API_KEY` | Tavily API key. |

@@ -7,13 +7,14 @@ rune --provider codex
 rune --provider groq
 rune --provider ollama --model llama3.2
 rune --provider runpod --model openai/gpt-oss-120b
+rune --provider openrouter --model anthropic/claude-sonnet-4.5
 ```
 
 or persist/select it from the TUI with `/providers` or `/settings`. Use `/model` to select a model for the active provider; for Ollama, local models are discovered from the running Ollama instance when possible.
 
 Environment override:
 
-- `RUNE_PROVIDER=codex|groq|ollama|runpod`
+- `RUNE_PROVIDER=codex|groq|ollama|runpod|openrouter`
 
 ## Codex (ChatGPT Pro/Plus)
 
@@ -205,6 +206,69 @@ Set `RUNE_RUNPOD_MODEL` or use `/model` to select the model ID deployed by that 
 - `RUNE_RUNPOD_MODEL` — model default for Runpod.
 - `RUNE_RUNPOD_ENDPOINT` — override the chat completions endpoint.
 - `RUNE_RUNPOD_API_KEY` / `RUNPOD_API_KEY` — API key.
+
+## OpenRouter
+
+OpenRouter uses an API key and OpenAI-compatible Chat Completions streaming. Rune treats OpenRouter as a first-class provider, so model IDs are raw OpenRouter slugs such as `anthropic/claude-sonnet-4.5` or `~openai/gpt-latest`; do not add a LiteLLM-style `openrouter/` prefix.
+
+### API key
+
+Use either environment variable:
+
+```bash
+export OPENROUTER_API_KEY=...
+# or
+export RUNE_OPENROUTER_API_KEY=...
+```
+
+You can also save/replace the key in the TUI:
+
+1. Open `/settings`
+2. Select `openrouter api key`
+3. Paste the key
+
+Stored keys are written to `~/.rune/secrets.json` as `openrouter_api_key` with chmod `0600`. Environment variables take precedence over the stored key.
+
+### Usage
+
+```bash
+rune --provider openrouter --model anthropic/claude-sonnet-4.5
+rune --prompt "hi" --provider openrouter --model ~openai/gpt-latest
+```
+
+or in interactive mode:
+
+```text
+/providers
+/settings
+/model
+```
+
+### Models
+
+Default: `~openai/gpt-latest`
+
+Available as suggestions from `/model` when the active provider is OpenRouter:
+
+- `~openai/gpt-latest`
+- `~anthropic/claude-sonnet-latest`
+- `openai/gpt-4o-mini`
+- `anthropic/claude-sonnet-4.5`
+- `google/gemini-2.5-pro`
+- `deepseek/deepseek-chat-v3.1`
+- `custom…`
+
+The OpenRouter catalog changes often. Use `custom…` to paste exact slugs from https://openrouter.ai/models; custom values are saved as `openrouter_model`.
+
+### Endpoint override
+
+OpenRouter defaults to `https://openrouter.ai/api/v1/chat/completions`. Set `RUNE_OPENROUTER_ENDPOINT` or save `openrouter_endpoint` from `/settings` to use a different compatible endpoint. Base URLs are accepted and `/chat/completions` is appended when needed.
+
+### Env overrides
+
+- `RUNE_OPENROUTER_MODEL` — model default for OpenRouter.
+- `RUNE_OPENROUTER_ENDPOINT` — override the chat completions endpoint.
+- `RUNE_OPENROUTER_API_KEY` / `OPENROUTER_API_KEY` — API key.
 
 ## Shared env
 

@@ -26,15 +26,17 @@ func TestModalSettingsFromConfigIncludesSubagents(t *testing.T) {
 func TestConfigFromModalSettingsPreservesProviderFields(t *testing.T) {
 	t.Setenv("RUNE_DIR", t.TempDir())
 	if err := config.SaveSettings(config.SettingsPath(), config.Settings{
-		OllamaModel:    "custom:latest",
-		OllamaEndpoint: "http://127.0.0.1:11434/v1/chat/completions",
-		RunpodModel:    "runpod/model",
-		RunpodEndpoint: "private-endpoint",
+		OllamaModel:        "custom:latest",
+		OllamaEndpoint:     "http://127.0.0.1:11434/v1/chat/completions",
+		RunpodModel:        "runpod/model",
+		RunpodEndpoint:     "private-endpoint",
+		OpenRouterModel:    "openrouter/model",
+		OpenRouterEndpoint: "https://openrouter.test/v1",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	s := configFromModalSettings(modal.Settings{Provider: "ollama"})
-	if s.Provider != "ollama" || s.OllamaModel != "custom:latest" || s.OllamaEndpoint != "http://127.0.0.1:11434/v1/chat/completions" || s.RunpodModel != "runpod/model" || s.RunpodEndpoint != "private-endpoint" {
+	if s.Provider != "ollama" || s.OllamaModel != "custom:latest" || s.OllamaEndpoint != "http://127.0.0.1:11434/v1/chat/completions" || s.RunpodModel != "runpod/model" || s.RunpodEndpoint != "private-endpoint" || s.OpenRouterModel != "openrouter/model" || s.OpenRouterEndpoint != "https://openrouter.test/v1" {
 		t.Fatalf("settings = %+v", s)
 	}
 }
@@ -61,8 +63,9 @@ func TestModalSettingsFromConfigIncludesOllamaAPIKeyStatus(t *testing.T) {
 
 func TestModalSettingsFromConfigIncludesEndpointStatuses(t *testing.T) {
 	s := modalSettingsFromConfig(config.Settings{
-		OllamaEndpoint: "http://remote:11434/v1/chat/completions",
-		RunpodEndpoint: "private-endpoint",
+		OllamaEndpoint:     "http://remote:11434/v1/chat/completions",
+		RunpodEndpoint:     "private-endpoint",
+		OpenRouterEndpoint: "https://openrouter.test/v1",
 	}, false, false)
 	if s.OllamaEndpointStatus != "custom — Enter to edit" {
 		t.Fatalf("OllamaEndpointStatus = %q", s.OllamaEndpointStatus)
@@ -70,15 +73,22 @@ func TestModalSettingsFromConfigIncludesEndpointStatuses(t *testing.T) {
 	if s.RunpodEndpointStatus != "custom — Enter to edit" {
 		t.Fatalf("RunpodEndpointStatus = %q", s.RunpodEndpointStatus)
 	}
+	if s.OpenRouterEndpointStatus != "custom — Enter to edit" {
+		t.Fatalf("OpenRouterEndpointStatus = %q", s.OpenRouterEndpointStatus)
+	}
 
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", "http://env:11434/v1/chat/completions")
 	t.Setenv("RUNE_RUNPOD_ENDPOINT", "env-endpoint")
+	t.Setenv("RUNE_OPENROUTER_ENDPOINT", "https://env.openrouter.test/v1")
 	s = modalSettingsFromConfig(config.Settings{}, false, false)
 	if s.OllamaEndpointStatus != "env override active" {
 		t.Fatalf("OllamaEndpointStatus = %q", s.OllamaEndpointStatus)
 	}
 	if s.RunpodEndpointStatus != "env override active" {
 		t.Fatalf("RunpodEndpointStatus = %q", s.RunpodEndpointStatus)
+	}
+	if s.OpenRouterEndpointStatus != "env override active" {
+		t.Fatalf("OpenRouterEndpointStatus = %q", s.OpenRouterEndpointStatus)
 	}
 }
 
