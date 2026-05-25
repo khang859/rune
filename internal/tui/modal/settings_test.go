@@ -33,6 +33,18 @@ func TestSettings_CanSelectOllamaProvider(t *testing.T) {
 	}
 }
 
+func TestSettings_CanSelectOpenRouterProvider(t *testing.T) {
+	s := NewSettings(Settings{Provider: "codex"}).(*SettingsModal)
+	for i := 0; i < 5; i++ {
+		s.Update(tea.KeyMsg{Type: tea.KeyRight})
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(Settings)
+	if res.Provider != "openrouter" {
+		t.Fatalf("provider = %q, want openrouter", res.Provider)
+	}
+}
+
 func TestSettings_CanChangeIconAndActivityModes(t *testing.T) {
 	s := NewSettings(Settings{Effort: "medium", IconMode: "unicode", ActivityMode: "arcane"}).(*SettingsModal)
 	for range settingsRowIconMode {
@@ -101,6 +113,28 @@ func TestSettings_EndpointRowsAreActions(t *testing.T) {
 	if res.Action != "runpod_endpoint" {
 		t.Fatalf("action = %q, want runpod_endpoint", res.Action)
 	}
+
+	s = NewSettings(Settings{}).(*SettingsModal)
+	for range settingsRowOpenRouterEndpoint {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd = s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res = cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "openrouter_endpoint" {
+		t.Fatalf("action = %q, want openrouter_endpoint", res.Action)
+	}
+}
+
+func TestSettings_OpenRouterAPIKeyRowIsAction(t *testing.T) {
+	s := NewSettings(Settings{}).(*SettingsModal)
+	for range settingsRowOpenRouterAPIKey {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "openrouter_api_key" {
+		t.Fatalf("action = %q, want openrouter_api_key", res.Action)
+	}
 }
 
 func TestSettings_OllamaNumCtxRowIsAction(t *testing.T) {
@@ -138,6 +172,8 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"groq api key",
 		"runpod api key",
 		"runpod endpoint",
+		"openrouter api key",
+		"openrouter endpoint",
 		"✧ Ollama",
 		"ollama api key",
 		"ollama endpoint",

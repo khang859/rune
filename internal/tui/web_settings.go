@@ -37,6 +37,10 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if runpodKeyConfigured() {
 		runpodStatus = "configured — Enter to replace"
 	}
+	openrouterStatus := "missing — Enter to set"
+	if openrouterKeyConfigured() {
+		openrouterStatus = "configured — Enter to replace"
+	}
 	ollamaEndpointStatus := "default local — Enter to edit"
 	if strings.TrimSpace(s.OllamaEndpoint) != "" && s.OllamaEndpoint != config.DefaultSettings().OllamaEndpoint {
 		ollamaEndpointStatus = "custom — Enter to edit"
@@ -55,35 +59,44 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if os.Getenv("RUNE_RUNPOD_ENDPOINT") != "" {
 		runpodEndpointStatus = "env override active"
 	}
+	openrouterEndpointStatus := "default — Enter to set"
+	if strings.TrimSpace(s.OpenRouterEndpoint) != "" {
+		openrouterEndpointStatus = "custom — Enter to edit"
+	}
+	if os.Getenv("RUNE_OPENROUTER_ENDPOINT") != "" {
+		openrouterEndpointStatus = "env override active"
+	}
 	activeProfileStatus := "none"
 	if p := config.FindProviderProfile(s.Profiles, s.ActiveProfile); p != nil {
 		activeProfileStatus = config.ProfileDisplayName(*p) + " — Enter to edit"
 	}
 	return modal.Settings{
-		Provider:              s.Provider,
-		Effort:                s.ReasoningEffort,
-		IconMode:              s.IconMode,
-		ActivityMode:          s.ActivityMode,
-		AutoCompact:           onOff(s.AutoCompact.EnabledValue()),
-		AutoCompactThreshold:  fmt.Sprintf("%d%%", s.AutoCompact.ThresholdPct),
-		WebFetch:              onOff(s.Web.FetchEnabled),
-		FetchPrivateURLs:      onOff(s.Web.FetchAllowPrivate),
-		WebSearch:             s.Web.SearchEnabled,
-		SearchProvider:        s.Web.SearchProvider,
-		Subagents:             onOff(s.Subagents.EnabledValue()),
-		SubagentMaxConcurrent: strconv.Itoa(s.Subagents.MaxConcurrent),
-		SubagentTimeout:       fmt.Sprintf("%ds", s.Subagents.DefaultTimeoutSecs),
-		SubagentRetain:        strconv.Itoa(s.Subagents.MaxCompletedRetain),
-		BraveAPIKeyStatus:     status,
-		TavilyAPIKeyStatus:    tavilyStatus,
-		GroqAPIKeyStatus:      groqStatus,
-		OllamaAPIKeyStatus:    ollamaStatus,
-		RunpodAPIKeyStatus:    runpodStatus,
-		ActiveProfileStatus:   activeProfileStatus,
-		OllamaEndpointStatus:  ollamaEndpointStatus,
-		OllamaNumCtxStatus:    ollamaNumCtxStatus,
-		OllamaThink:           onOff(s.OllamaThink),
-		RunpodEndpointStatus:  runpodEndpointStatus,
+		Provider:                 s.Provider,
+		Effort:                   s.ReasoningEffort,
+		IconMode:                 s.IconMode,
+		ActivityMode:             s.ActivityMode,
+		AutoCompact:              onOff(s.AutoCompact.EnabledValue()),
+		AutoCompactThreshold:     fmt.Sprintf("%d%%", s.AutoCompact.ThresholdPct),
+		WebFetch:                 onOff(s.Web.FetchEnabled),
+		FetchPrivateURLs:         onOff(s.Web.FetchAllowPrivate),
+		WebSearch:                s.Web.SearchEnabled,
+		SearchProvider:           s.Web.SearchProvider,
+		Subagents:                onOff(s.Subagents.EnabledValue()),
+		SubagentMaxConcurrent:    strconv.Itoa(s.Subagents.MaxConcurrent),
+		SubagentTimeout:          fmt.Sprintf("%ds", s.Subagents.DefaultTimeoutSecs),
+		SubagentRetain:           strconv.Itoa(s.Subagents.MaxCompletedRetain),
+		BraveAPIKeyStatus:        status,
+		TavilyAPIKeyStatus:       tavilyStatus,
+		GroqAPIKeyStatus:         groqStatus,
+		OllamaAPIKeyStatus:       ollamaStatus,
+		RunpodAPIKeyStatus:       runpodStatus,
+		OpenRouterAPIKeyStatus:   openrouterStatus,
+		ActiveProfileStatus:      activeProfileStatus,
+		OllamaEndpointStatus:     ollamaEndpointStatus,
+		OllamaNumCtxStatus:       ollamaNumCtxStatus,
+		OllamaThink:              onOff(s.OllamaThink),
+		RunpodEndpointStatus:     runpodEndpointStatus,
+		OpenRouterEndpointStatus: openrouterEndpointStatus,
 	}
 }
 
@@ -98,21 +111,23 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		activeProfile = ""
 	}
 	settings := config.NormalizeSettings(config.Settings{
-		Provider:          s.Provider,
-		ActiveProfile:     activeProfile,
-		Profiles:          loaded.Profiles,
-		CodexModel:        loaded.CodexModel,
-		GroqModel:         loaded.GroqModel,
-		OllamaModel:       loaded.OllamaModel,
-		RunpodModel:       loaded.RunpodModel,
-		OllamaEndpoint:    loaded.OllamaEndpoint,
-		OllamaNumCtx:      loaded.OllamaNumCtx,
-		OllamaThink:       s.OllamaThink == "on",
-		RunpodEndpoint:    loaded.RunpodEndpoint,
-		ReasoningEffort:   s.Effort,
-		ModelCapabilities: loaded.ModelCapabilities,
-		IconMode:          s.IconMode,
-		ActivityMode:      s.ActivityMode,
+		Provider:           s.Provider,
+		ActiveProfile:      activeProfile,
+		Profiles:           loaded.Profiles,
+		CodexModel:         loaded.CodexModel,
+		GroqModel:          loaded.GroqModel,
+		OllamaModel:        loaded.OllamaModel,
+		RunpodModel:        loaded.RunpodModel,
+		OpenRouterModel:    loaded.OpenRouterModel,
+		OllamaEndpoint:     loaded.OllamaEndpoint,
+		OllamaNumCtx:       loaded.OllamaNumCtx,
+		OllamaThink:        s.OllamaThink == "on",
+		RunpodEndpoint:     loaded.RunpodEndpoint,
+		OpenRouterEndpoint: loaded.OpenRouterEndpoint,
+		ReasoningEffort:    s.Effort,
+		ModelCapabilities:  loaded.ModelCapabilities,
+		IconMode:           s.IconMode,
+		ActivityMode:       s.ActivityMode,
 		AutoCompact: config.AutoCompact{
 			Enabled:      boolPtr(s.AutoCompact != "off"),
 			ThresholdPct: parsePercentDefault(s.AutoCompactThreshold, 80),
@@ -182,6 +197,11 @@ func ollamaKeyConfigured() bool {
 
 func runpodKeyConfigured() bool {
 	key, err := config.NewSecretStore(config.SecretsPath()).RunpodAPIKey()
+	return err == nil && key != ""
+}
+
+func openrouterKeyConfigured() bool {
+	key, err := config.NewSecretStore(config.SecretsPath()).OpenRouterAPIKey()
 	return err == nil && key != ""
 }
 

@@ -3,15 +3,17 @@ package providers
 import "strings"
 
 const (
-	Codex  = "codex"
-	Groq   = "groq"
-	Ollama = "ollama"
-	Runpod = "runpod"
+	Codex      = "codex"
+	Groq       = "groq"
+	Ollama     = "ollama"
+	Runpod     = "runpod"
+	OpenRouter = "openrouter"
 
-	DefaultCodexModel  = "gpt-5.5"
-	DefaultGroqModel   = "llama-3.3-70b-versatile"
-	DefaultOllamaModel = "llama3.2"
-	DefaultRunpodModel = "openai/gpt-oss-120b"
+	DefaultCodexModel      = "gpt-5.5"
+	DefaultGroqModel       = "llama-3.3-70b-versatile"
+	DefaultOllamaModel     = "llama3.2"
+	DefaultRunpodModel     = "openai/gpt-oss-120b"
+	DefaultOpenRouterModel = "~openai/gpt-latest"
 )
 
 type Info struct {
@@ -62,6 +64,15 @@ var RunpodModels = []string{
 	"Qwen/Qwen3-32B-AWQ",
 }
 
+var OpenRouterModels = []string{
+	"~openai/gpt-latest",
+	"~anthropic/claude-sonnet-latest",
+	"openai/gpt-4o-mini",
+	"anthropic/claude-sonnet-4.5",
+	"google/gemini-2.5-pro",
+	"deepseek/deepseek-chat-v3.1",
+}
+
 func Normalize(id string) string {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case Groq:
@@ -70,6 +81,8 @@ func Normalize(id string) string {
 		return Ollama
 	case Runpod:
 		return Runpod
+	case OpenRouter:
+		return OpenRouter
 	default:
 		return Codex
 	}
@@ -81,10 +94,11 @@ func All() []Info {
 		{ID: Groq, Display: "Groq", DefaultModel: DefaultGroqModel, Models: GroqModels},
 		{ID: Ollama, Display: "Ollama", DefaultModel: DefaultOllamaModel, Models: OllamaModels},
 		{ID: Runpod, Display: "Runpod", DefaultModel: DefaultRunpodModel, Models: RunpodModels},
+		{ID: OpenRouter, Display: "OpenRouter", DefaultModel: DefaultOpenRouterModel, Models: OpenRouterModels},
 	}
 }
 
-func IDs() []string { return []string{Codex, Groq, Ollama, Runpod} }
+func IDs() []string { return []string{Codex, Groq, Ollama, Runpod, OpenRouter} }
 
 func Models(provider string) []string {
 	switch Normalize(provider) {
@@ -94,6 +108,8 @@ func Models(provider string) []string {
 		return append([]string(nil), OllamaModels...)
 	case Runpod:
 		return append([]string(nil), RunpodModels...)
+	case OpenRouter:
+		return append([]string(nil), OpenRouterModels...)
 	default:
 		return append([]string(nil), CodexModels...)
 	}
@@ -107,6 +123,8 @@ func DefaultModel(provider string) string {
 		return DefaultOllamaModel
 	case Runpod:
 		return DefaultRunpodModel
+	case OpenRouter:
+		return DefaultOpenRouterModel
 	default:
 		return DefaultCodexModel
 	}

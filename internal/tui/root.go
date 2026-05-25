@@ -25,6 +25,7 @@ import (
 	"github.com/khang859/rune/internal/ai/groq"
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/ai/ollama"
+	"github.com/khang859/rune/internal/ai/openrouter"
 	"github.com/khang859/rune/internal/ai/runpod"
 	"github.com/khang859/rune/internal/ai/unavailable"
 	"github.com/khang859/rune/internal/codeindex"
@@ -1134,6 +1135,7 @@ func (m *RootModel) openProviderPicker() tea.Cmd {
 			choices = append(choices, providerChoiceFromProfile(p))
 		}
 	}
+	choices = append(choices, modal.ProviderChoice{ID: providers.OpenRouter, Label: "OpenRouter", Value: settings.OpenRouterModel})
 	return m.openModal(modal.NewProviderProfilePicker(choices, m.sess.Provider, m.activeProfile))
 }
 
@@ -1156,6 +1158,10 @@ func (m *RootModel) openModelPicker() tea.Cmd {
 		return nil
 	}
 	settings, _ := config.LoadSettings(config.SettingsPath())
+	if providers.Normalize(m.sess.Provider) == providers.OpenRouter {
+		items := providers.Models(providers.OpenRouter)
+		return m.openModal(modal.NewCustomModelPickerWithCapabilities(items, m.sess.Model, modelToolOverrides(m.sess.Provider, items, settings)))
+	}
 	if providers.Normalize(m.sess.Provider) != providers.Ollama {
 		return m.openModal(modal.NewModelPickerWithCapabilities(providers.Models(m.sess.Provider), m.sess.Model, modelToolOverrides(m.sess.Provider, providers.Models(m.sess.Provider), settings)))
 	}
@@ -1626,6 +1632,15 @@ func (m *RootModel) applyThinkingEffort(effort string) {
 	m.refreshViewport()
 }
 
+func (m *RootModel) openCustomModelInput() tea.Cmd {
+	switch providers.Normalize(m.sess.Provider) {
+	case providers.OpenRouter:
+		return m.openModal(modal.NewTextInput("OpenRouter model id", "openrouter_model", m.sess.Model))
+	default:
+		return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
+	}
+}
+
 func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	switch cur.(type) {
 	case *modal.ProviderPicker:
@@ -1638,7 +1653,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.ModelPicker:
 		if choice, ok := payload.(modal.ModelChoice); ok {
 			if choice.Model == modal.ModelPickerCustom {
-				return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
+				return m.openCustomModelInput()
 			}
 			m.sess.Model = choice.Model
 			m.footer.Model = choice.Model
@@ -1651,7 +1666,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 		if id, ok := payload.(string); ok {
 			if id == modal.ModelPickerCustom {
-				return m.openModal(modal.NewTextInput("Ollama model id", "ollama_model", m.sess.Model))
+				return m.openCustomModelInput()
 			}
 			m.sess.Model = id
 			m.footer.Model = id
@@ -1693,6 +1708,9 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "runpod_api_key" {
 				return m.openModal(modal.NewSecretInput("Runpod API key", "runpod_api_key"))
 			}
+			if v.Action == "openrouter_api_key" {
+				return m.openModal(modal.NewSecretInput("OpenRouter API key", "openrouter_api_key"))
+			}
 			if v.Action == "ollama_endpoint" {
 				settings, _ := config.LoadSettings(config.SettingsPath())
 				return m.openModal(modal.NewTextInput("Ollama endpoint", "ollama_endpoint", settings.OllamaEndpoint))
@@ -1704,6 +1722,10 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "runpod_endpoint" {
 				settings, _ := config.LoadSettings(config.SettingsPath())
 				return m.openModal(modal.NewTextInput("Runpod endpoint", "runpod_endpoint", settings.RunpodEndpoint))
+			}
+			if v.Action == "openrouter_endpoint" {
+				settings, _ := config.LoadSettings(config.SettingsPath())
+				return m.openModal(modal.NewTextInput("OpenRouter endpoint", "openrouter_endpoint", settings.OpenRouterEndpoint))
 			}
 		case modal.Settings:
 			if v.Provider != m.sess.Provider {
@@ -1719,24 +1741,17 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			case "edit_profile_endpoint":
 				return m.saveActiveProfileEndpoint(res.Value)
 			case "ollama_model":
-				if strings.TrimSpace(res.Value) != "" {
-					id := strings.TrimSpace(res.Value)
-					m.sess.Model = id
-					m.footer.Model = id
-					m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
-					m.clampThinkingForCurrentModel()
-					m.refreshFooterThinkingEffort()
-					m.saveProviderSettings()
-					m.saveSessionIfStarted()
-					m.msgs.OnInfo(fmt.Sprintf("(ollama model: %s)", id))
-					m.refreshViewport()
-				}
+				m.saveCustomModel(res.Value, "ollama")
+			case "openrouter_model":
+				m.saveCustomModel(res.Value, "openrouter")
 			case "ollama_endpoint":
 				m.saveEndpointSetting(providers.Ollama, res.Value)
 			case "ollama_num_ctx":
 				m.saveOllamaNumCtx(res.Value)
 			case "runpod_endpoint":
 				m.saveEndpointSetting(providers.Runpod, res.Value)
+			case "openrouter_endpoint":
+				m.saveEndpointSetting(providers.OpenRouter, res.Value)
 			}
 		}
 	case *modal.SecretInput:
@@ -1798,6 +1813,22 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				} else {
 					m.settings.RunpodAPIKeyStatus = "configured — Enter to replace"
 					m.msgs.OnInfo("(saved Runpod API key)")
+				}
+			case "openrouter_api_key":
+				if err := config.NewSecretStore(config.SecretsPath()).SetOpenRouterAPIKey(res.Value); err != nil {
+					m.msgs.OnTurnError(err)
+				} else {
+					m.settings.OpenRouterAPIKeyStatus = "configured — Enter to replace"
+					if m.sess.Provider == providers.OpenRouter {
+						settings, _ := config.LoadSettings(config.SettingsPath())
+						resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providers.OpenRouter, ProfileOverride: providers.Profile(m.activeProfile)})
+						if p, err := buildTUIProviderResolved(resolved); err == nil {
+							m.replaceActiveProvider(p)
+						} else {
+							m.msgs.OnTurnError(err)
+						}
+					}
+					m.msgs.OnInfo("(saved OpenRouter API key)")
 				}
 			}
 			m.refreshViewport()
@@ -2078,6 +2109,22 @@ func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
 	return nil
 }
 
+func (m *RootModel) saveCustomModel(value, provider string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	id := strings.TrimSpace(value)
+	m.sess.Model = id
+	m.footer.Model = id
+	m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
+	m.clampThinkingForCurrentModel()
+	m.refreshFooterThinkingEffort()
+	m.saveProviderSettings()
+	m.saveSessionIfStarted()
+	m.msgs.OnInfo(fmt.Sprintf("(%s model: %s)", provider, id))
+	m.refreshViewport()
+}
+
 func buildTUIProvider(provider string) (ai.Provider, error) {
 	settings, _ := config.LoadSettings(config.SettingsPath())
 	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: provider})
@@ -2128,6 +2175,13 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 			return nil, err
 		}
 		return runpod.New(endpoint, key), nil
+	case providers.OpenRouter:
+		endpoint := resolved.Endpoint
+		key, err := config.NewSecretStore(config.SecretsPath()).OpenRouterAPIKey()
+		if err != nil {
+			return nil, err
+		}
+		return openrouter.New(endpoint, key), nil
 	default:
 		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
@@ -2209,6 +2263,8 @@ func (m *RootModel) saveEndpointSetting(provider, endpoint string) {
 		s.OllamaEndpoint = endpoint
 	case providers.Runpod:
 		s.RunpodEndpoint = endpoint
+	case providers.OpenRouter:
+		s.OpenRouterEndpoint = endpoint
 	}
 	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
@@ -2225,6 +2281,8 @@ func (m *RootModel) saveEndpointSetting(provider, endpoint string) {
 	}
 	if provider == providers.Runpod && endpoint == "" {
 		m.msgs.OnInfo("(runpod endpoint reset to model default)")
+	} else if provider == providers.OpenRouter && endpoint == "" {
+		m.msgs.OnInfo("(openrouter endpoint reset to default)")
 	} else if provider == providers.Ollama && endpoint == "" {
 		m.msgs.OnInfo("(ollama endpoint reset to default local)")
 	} else {

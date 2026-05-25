@@ -241,6 +241,40 @@ func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_HitsOpenRouterAndStreamsText(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("o", 24) {
+			t.Errorf("auth = %q", got)
+		}
+		if got := r.Header.Get("X-OpenRouter-Title"); got != "rune" {
+			t.Errorf("X-OpenRouter-Title = %q", got)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if got := body["model"]; got != "anthropic/claude-sonnet-4.5" {
+			t.Errorf("model = %v", got)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"openrouter\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OPENROUTER_ENDPOINT", srv.URL)
+	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "openrouter") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
 func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer "+strings.Repeat("g", 24) {

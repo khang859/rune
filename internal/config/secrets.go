@@ -15,6 +15,7 @@ type Secrets struct {
 	GroqAPIKey        string            `json:"groq_api_key,omitempty"`
 	OllamaAPIKey      string            `json:"ollama_api_key,omitempty"`
 	RunpodAPIKey      string            `json:"runpod_api_key,omitempty"`
+	OpenRouterAPIKey  string            `json:"openrouter_api_key,omitempty"`
 	ProfileAPIKeys    map[string]string `json:"profile_api_keys,omitempty"`
 }
 
@@ -39,6 +40,7 @@ func (s *SecretStore) Load() (Secrets, error) {
 	sec.GroqAPIKey = NormalizeGroqAPIKeyInput(sec.GroqAPIKey)
 	sec.OllamaAPIKey = NormalizeOllamaAPIKeyInput(sec.OllamaAPIKey)
 	sec.RunpodAPIKey = NormalizeRunpodAPIKeyInput(sec.RunpodAPIKey)
+	sec.OpenRouterAPIKey = NormalizeOpenRouterAPIKeyInput(sec.OpenRouterAPIKey)
 	for id, key := range sec.ProfileAPIKeys {
 		key = strings.TrimSpace(key)
 		if key == "" {
@@ -292,6 +294,42 @@ func (s *SecretStore) DeleteRunpodAPIKey() error {
 	return s.Save(sec)
 }
 
+func (s *SecretStore) OpenRouterAPIKey() (string, error) {
+	for _, env := range []string{"RUNE_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"} {
+		if v := NormalizeOpenRouterAPIKeyInput(os.Getenv(env)); v != "" {
+			return v, ValidateOpenRouterAPIKey(v)
+		}
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return "", err
+	}
+	if sec.OpenRouterAPIKey == "" {
+		return "", nil
+	}
+	return sec.OpenRouterAPIKey, ValidateOpenRouterAPIKey(sec.OpenRouterAPIKey)
+}
+func (s *SecretStore) SetOpenRouterAPIKey(key string) error {
+	key = NormalizeOpenRouterAPIKeyInput(key)
+	if err := ValidateOpenRouterAPIKey(key); err != nil {
+		return fmt.Errorf("invalid OpenRouter API key: %w", err)
+	}
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.OpenRouterAPIKey = key
+	return s.Save(sec)
+}
+func (s *SecretStore) DeleteOpenRouterAPIKey() error {
+	sec, err := s.Load()
+	if err != nil {
+		return err
+	}
+	sec.OpenRouterAPIKey = ""
+	return s.Save(sec)
+}
+
 func NormalizeBraveAPIKeyInput(raw string) string {
 	s := strings.TrimSpace(raw)
 	for _, p := range []string{"export RUNE_BRAVE_SEARCH_API_KEY=", "RUNE_BRAVE_SEARCH_API_KEY="} {
@@ -441,6 +479,39 @@ func NormalizeRunpodAPIKeyInput(raw string) string {
 }
 
 func ValidateRunpodAPIKey(key string) error {
+	switch {
+	case key == "":
+		return errors.New("empty")
+	case len(key) < 20:
+		return errors.New("too short")
+	case len(key) > 512:
+		return errors.New("too long")
+	case strings.ContainsAny(key, " \t\r\n"):
+		return errors.New("contains whitespace")
+	case strings.ContainsAny(key, "<>{}[]()"):
+		return errors.New("contains unexpected characters")
+	}
+	return nil
+}
+
+func NormalizeOpenRouterAPIKeyInput(raw string) string {
+	s := strings.TrimSpace(raw)
+	for _, p := range []string{"export RUNE_OPENROUTER_API_KEY=", "RUNE_OPENROUTER_API_KEY=", "export OPENROUTER_API_KEY=", "OPENROUTER_API_KEY="} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimSpace(strings.TrimPrefix(s, p))
+			break
+		}
+	}
+	if len(s) >= 2 {
+		first, last := s[0], s[len(s)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			s = s[1 : len(s)-1]
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+func ValidateOpenRouterAPIKey(key string) error {
 	switch {
 	case key == "":
 		return errors.New("empty")

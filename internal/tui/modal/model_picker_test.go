@@ -27,6 +27,13 @@ func TestModelPicker_EscCancels(t *testing.T) {
 	}
 }
 
+func TestCustomModelPickerAppendsCustomAndPrependsCurrent(t *testing.T) {
+	p := NewCustomModelPicker([]string{"a", "b"}, "custom/model").(*ModelPicker)
+	if len(p.items) != 4 || p.items[0] != "custom/model" || p.items[3] != ModelPickerCustom {
+		t.Fatalf("items = %#v", p.items)
+	}
+}
+
 func TestModelPicker_CyclesToolOverride(t *testing.T) {
 	p := NewModelPicker([]string{"qwen3"}, "qwen3")
 	_, _ = p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'t'}})

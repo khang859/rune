@@ -9,10 +9,11 @@ import (
 )
 
 const (
-	DefaultGroqEndpoint      = "https://api.groq.com/openai/v1/chat/completions"
-	DefaultOllamaEndpoint    = "http://localhost:11434/api/chat"
-	DefaultRunpodEndpoint    = "https://api.runpod.ai/v2/gpt-oss-120b/openai/v1/chat/completions"
-	QwenRunpodPublicEndpoint = "https://api.runpod.ai/v2/qwen3-32b-awq/openai/v1/chat/completions"
+	DefaultGroqEndpoint       = "https://api.groq.com/openai/v1/chat/completions"
+	DefaultOllamaEndpoint     = "http://localhost:11434/api/chat"
+	DefaultRunpodEndpoint     = "https://api.runpod.ai/v2/gpt-oss-120b/openai/v1/chat/completions"
+	DefaultOpenRouterEndpoint = "https://openrouter.ai/api/v1/chat/completions"
+	QwenRunpodPublicEndpoint  = "https://api.runpod.ai/v2/qwen3-32b-awq/openai/v1/chat/completions"
 )
 
 type ResolvedProvider struct {
@@ -82,6 +83,8 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 			model = os.Getenv("RUNE_OLLAMA_MODEL")
 		case Runpod:
 			model = os.Getenv("RUNE_RUNPOD_MODEL")
+		case OpenRouter:
+			model = os.Getenv("RUNE_OPENROUTER_MODEL")
 		default:
 			model = os.Getenv("RUNE_CODEX_MODEL")
 		}
@@ -97,6 +100,8 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 			model = settings.OllamaModel
 		case Runpod:
 			model = settings.RunpodModel
+		case OpenRouter:
+			model = settings.OpenRouterModel
 		default:
 			model = settings.CodexModel
 		}
@@ -115,6 +120,9 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 	if provider == Runpod && endpoint == "" {
 		endpoint = settings.RunpodEndpoint
 	}
+	if provider == OpenRouter && endpoint == "" {
+		endpoint = settings.OpenRouterEndpoint
+	}
 	if provider == Runpod && endpoint == "" {
 		endpoint = EndpointForRunpodModel(model)
 	}
@@ -123,6 +131,9 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 	}
 	if provider == Groq && endpoint == "" {
 		endpoint = DefaultGroqEndpoint
+	}
+	if provider == OpenRouter && endpoint == "" {
+		endpoint = DefaultOpenRouterEndpoint
 	}
 	switch provider {
 	case Groq:
@@ -135,6 +146,10 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 		}
 	case Runpod:
 		if v := os.Getenv("RUNE_RUNPOD_ENDPOINT"); v != "" {
+			endpoint = v
+		}
+	case OpenRouter:
+		if v := os.Getenv("RUNE_OPENROUTER_ENDPOINT"); v != "" {
 			endpoint = v
 		}
 	}
@@ -182,6 +197,8 @@ func SaveResolvedSelection(path string, s config.Settings, r ResolvedProvider) e
 		s.OllamaModel = r.Model
 	case Runpod:
 		s.RunpodModel = r.Model
+	case OpenRouter:
+		s.OpenRouterModel = r.Model
 	case "":
 		// Save provider reset without changing model defaults.
 	default:

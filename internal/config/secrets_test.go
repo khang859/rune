@@ -185,6 +185,24 @@ func TestRunpodAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
 	}
 }
 
+func TestOpenRouterAPIKeySaveLoadAndEnvPrecedence(t *testing.T) {
+	store := NewSecretStore(filepath.Join(t.TempDir(), "secrets.json"))
+	stored := "sk-or-" + strings.Repeat("o", 24)
+	env := "sk-or-" + strings.Repeat("p", 24)
+	if err := store.SetOpenRouterAPIKey("export OPENROUTER_API_KEY='" + stored + "'"); err != nil {
+		t.Fatal(err)
+	}
+	key, err := store.OpenRouterAPIKey()
+	if err != nil || key != stored {
+		t.Fatalf("stored openrouter key = %q, %v", key, err)
+	}
+	t.Setenv("RUNE_OPENROUTER_API_KEY", env)
+	key, err = store.OpenRouterAPIKey()
+	if err != nil || key != env {
+		t.Fatalf("env openrouter key = %q, %v", key, err)
+	}
+}
+
 func TestNormalizeOllamaAPIKeyInput(t *testing.T) {
 	if got := NormalizeOllamaAPIKeyInput("OLLAMA_API_KEY='key'"); got != "key" {
 		t.Fatalf("NormalizeOllamaAPIKeyInput = %q, want key", got)
@@ -194,5 +212,19 @@ func TestNormalizeOllamaAPIKeyInput(t *testing.T) {
 func TestNormalizeRunpodAPIKeyInput(t *testing.T) {
 	if got := NormalizeRunpodAPIKeyInput("RUNPOD_API_KEY='key'"); got != "key" {
 		t.Fatalf("NormalizeRunpodAPIKeyInput = %q, want key", got)
+	}
+}
+
+func TestNormalizeOpenRouterAPIKeyInput(t *testing.T) {
+	if got := NormalizeOpenRouterAPIKeyInput("OPENROUTER_API_KEY='key'"); got != "key" {
+		t.Fatalf("NormalizeOpenRouterAPIKeyInput = %q, want key", got)
+	}
+}
+
+func TestValidateOpenRouterAPIKeyRejectsBadValues(t *testing.T) {
+	for _, key := range []string{"short", strings.Repeat("a", 19), "sk-or-with whitespace", "<" + strings.Repeat("a", 20) + ">"} {
+		if err := ValidateOpenRouterAPIKey(key); err == nil {
+			t.Fatalf("ValidateOpenRouterAPIKey(%q) succeeded, want error", key)
+		}
 	}
 }

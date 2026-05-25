@@ -36,7 +36,7 @@ func NewModelPickerWithCapabilities(items []string, current string, tools map[st
 	return &ModelPicker{items: items, sel: sel, tools: normalizeToolOverrides(tools)}
 }
 
-func NewOllamaModelPicker(items []string, current string) Modal {
+func NewCustomModelPicker(items []string, current string) Modal {
 	seen := map[string]bool{}
 	var out []string
 	for _, it := range items {
@@ -53,10 +53,18 @@ func NewOllamaModelPicker(items []string, current string) Modal {
 	return NewModelPicker(out, current)
 }
 
-func NewOllamaModelPickerWithCapabilities(items []string, current string, tools map[string]string) Modal {
-	p := NewOllamaModelPicker(items, current).(*ModelPicker)
+func NewCustomModelPickerWithCapabilities(items []string, current string, tools map[string]string) Modal {
+	p := NewCustomModelPicker(items, current).(*ModelPicker)
 	p.tools = normalizeToolOverrides(tools)
 	return p
+}
+
+func NewOllamaModelPicker(items []string, current string) Modal {
+	return NewCustomModelPicker(items, current)
+}
+
+func NewOllamaModelPickerWithCapabilities(items []string, current string, tools map[string]string) Modal {
+	return NewCustomModelPickerWithCapabilities(items, current, tools)
 }
 
 func normalizeToolOverrides(in map[string]string) map[string]string {
