@@ -392,7 +392,15 @@ func renderToolGroup(s Styles, name string, interactions []toolInteraction, show
 	}
 	for _, interaction := range interactions {
 		sb.WriteString("\n")
-		sb.WriteString(groupedToolItemStyle(s, name).Render("  " + toolCallSummary(name, json.RawMessage(interaction.call.text))))
+		args := json.RawMessage(interaction.call.text)
+		line, ok := "", false
+		if name == "edit" {
+			line, ok = formatGroupedEditSummary(s, args)
+		}
+		if !ok {
+			line = groupedToolItemStyle(s, name).Render("  " + toolCallSummary(name, args))
+		}
+		sb.WriteString(line)
 		if interaction.result != nil && (showToolResults || interaction.result.kind == bkError) {
 			for _, line := range strings.Split(renderToolResultInline(*interaction.result), "\n") {
 				sb.WriteString("\n")
@@ -841,6 +849,38 @@ func formatEditDiff(s Styles, args json.RawMessage) (string, bool) {
 		sb.WriteString(s.DiffAdd.Render("+ " + line))
 	}
 	return sb.String(), true
+}
+
+// formatGroupedEditSummary renders one row of a grouped edit run as
+// "<path>  +N -N" with the path in ToolCall yellow and the counts in
+// DiffAdd/DiffDel colors. Returns false on parse failure so the caller can
+// fall back to the generic path-only summary.
+func formatGroupedEditSummary(s Styles, args json.RawMessage) (string, bool) {
+	var a struct {
+		Path      string `json:"path"`
+		OldString string `json:"old_string"`
+		NewString string `json:"new_string"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil {
+		return "", false
+	}
+	added, removed := editLineCounts(a.OldString, a.NewString)
+	return s.ToolCall.Render("  "+a.Path) + "  " +
+		s.DiffAdd.Render(fmt.Sprintf("+%d", added)) + " " +
+		s.DiffDel.Render(fmt.Sprintf("-%d", removed)), true
+}
+
+// editLineCounts returns the line counts for an edit's old_string / new_string.
+// An empty string counts as 0 lines so a pure insertion reads "+N -0" and a
+// pure deletion reads "+0 -N".
+func editLineCounts(oldStr, newStr string) (added, removed int) {
+	if newStr != "" {
+		added = strings.Count(newStr, "\n") + 1
+	}
+	if oldStr != "" {
+		removed = strings.Count(oldStr, "\n") + 1
+	}
+	return
 }
 
 func renderToolResult(s Styles, b block, show bool) string {

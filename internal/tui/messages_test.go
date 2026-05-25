@@ -260,6 +260,56 @@ func TestMessages_GroupsOtherCommonToolsWithSummaries(t *testing.T) {
 	}
 }
 
+func TestMessages_GroupsConsecutiveEditCallsWithDiffStats(t *testing.T) {
+	m := NewMessages(160)
+	call1 := ai.ToolCall{ID: "t1", Name: "edit", Args: []byte(`{"path":"foo.go","old_string":"a\nb","new_string":"x\ny\nz"}`)}
+	call2 := ai.ToolCall{ID: "t2", Name: "edit", Args: []byte(`{"path":"foo.go","old_string":"old1\nold2\nold3\nold4","new_string":""}`)}
+	m.OnToolStarted(call1)
+	m.OnToolFinished(agent.ToolFinished{Call: call1, Result: tools.Result{Output: "edited foo.go"}})
+	m.OnToolStarted(call2)
+	m.OnToolFinished(agent.ToolFinished{Call: call2, Result: tools.Result{Output: "edited foo.go"}})
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	for _, want := range []string{"edit (2)", "foo.go", "+3", "-2", "+0", "-4"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in grouped edit output, got:\n%s", want, out)
+		}
+	}
+	// Raw JSON keys must not leak.
+	if strings.Contains(out, "old_string") || strings.Contains(out, "new_string") || strings.Contains(out, `\n`) {
+		t.Fatalf("raw JSON leaked into grouped edit output:\n%s", out)
+	}
+}
+
+func TestMessages_GroupedEditPureInsertionAndDeletion(t *testing.T) {
+	m := NewMessages(160)
+	ins := ai.ToolCall{ID: "t1", Name: "edit", Args: []byte(`{"path":"foo.go","old_string":"","new_string":"line1\nline2"}`)}
+	del := ai.ToolCall{ID: "t2", Name: "edit", Args: []byte(`{"path":"foo.go","old_string":"line1","new_string":""}`)}
+	m.OnToolStarted(ins)
+	m.OnToolStarted(del)
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	for _, want := range []string{"edit (2)", "+2", "-0", "+0", "-1"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected %q in grouped edit output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestMessages_GroupedEditMalformedArgsFallsBackToPath(t *testing.T) {
+	m := NewMessages(160)
+	good := ai.ToolCall{ID: "t1", Name: "edit", Args: []byte(`{"path":"foo.go","old_string":"a","new_string":"b"}`)}
+	bad := ai.ToolCall{ID: "t2", Name: "edit", Args: []byte(`not json`)}
+	m.OnToolStarted(good)
+	m.OnToolStarted(bad)
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, time.Time{})
+	// Good row gets stats; bad row falls back to the generic compact-JSON summary.
+	if !strings.Contains(out, "edit (2)") || !strings.Contains(out, "+1") || !strings.Contains(out, "-1") {
+		t.Fatalf("expected grouped header + stats for the good row, got:\n%s", out)
+	}
+	if !strings.Contains(out, "not json") {
+		t.Fatalf("expected malformed row to fall back to raw args, got:\n%s", out)
+	}
+}
+
 func TestMessages_AssistantDeltaSurvivesIntervening(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hel")
