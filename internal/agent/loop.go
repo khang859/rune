@@ -46,6 +46,12 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
 		}
+		if block := a.memoryBlock(); block != "" {
+			if sys != "" {
+				sys += "\n\n"
+			}
+			sys += block
+		}
 		if block := BuildRepoMapBlock(a.session, a.codeIndex, a.repomapEnabled, a.repomapBudget); block != "" {
 			if sys != "" {
 				sys += "\n\n"

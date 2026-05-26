@@ -7,6 +7,7 @@ import (
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 )
@@ -29,6 +30,8 @@ type Agent struct {
 	subagents         *SubagentSupervisor
 	repomapEnabled    bool
 	repomapBudget     int
+	memoryStore       *memory.Store
+	memoryEnabled     bool
 	codeIndex         *codeindex.Index
 }
 
@@ -38,12 +41,13 @@ func New(p ai.Provider, t *tools.Registry, s *session.Session, systemPrompt stri
 
 func NewWithSubagentConfig(p ai.Provider, t *tools.Registry, s *session.Session, systemPrompt string, cfg SubagentConfig) *Agent {
 	a := &Agent{
-		provider: p,
-		tools:    t,
-		session:  s,
-		system:   systemPrompt,
-		effort:   "medium",
-		mode:     ModeAct,
+		provider:      p,
+		tools:         t,
+		session:       s,
+		system:        systemPrompt,
+		effort:        "medium",
+		mode:          ModeAct,
+		memoryEnabled: true,
 	}
 	t.SetPermissionMode(tools.PermissionModeAct)
 	a.subagents = NewSubagentSupervisor(a, cfg)
@@ -83,11 +87,15 @@ func (a *Agent) Tools() *tools.Registry         { return a.tools }
 func (a *Agent) System() string                 { return a.system }
 func (a *Agent) Subagents() *SubagentSupervisor { return a.subagents }
 
-func (a *Agent) SetRepoMapEnabled(enabled bool)    { a.repomapEnabled = enabled }
-func (a *Agent) SetRepoMapBudget(tokens int)       { a.repomapBudget = tokens }
-func (a *Agent) RepoMapEnabled() bool              { return a.repomapEnabled }
-func (a *Agent) RepoMapBudget() int                { return a.repomapBudget }
-func (a *Agent) SetCodeIndex(idx *codeindex.Index) { a.codeIndex = idx }
+func (a *Agent) SetRepoMapEnabled(enabled bool)     { a.repomapEnabled = enabled }
+func (a *Agent) SetRepoMapBudget(tokens int)        { a.repomapBudget = tokens }
+func (a *Agent) RepoMapEnabled() bool               { return a.repomapEnabled }
+func (a *Agent) RepoMapBudget() int                 { return a.repomapBudget }
+func (a *Agent) SetMemoryStore(store *memory.Store) { a.memoryStore = store }
+func (a *Agent) SetMemoryEnabled(enabled bool)      { a.memoryEnabled = enabled }
+func (a *Agent) MemoryEnabled() bool                { return a.memoryEnabled }
+func (a *Agent) MemoryStore() *memory.Store         { return a.memoryStore }
+func (a *Agent) SetCodeIndex(idx *codeindex.Index)  { a.codeIndex = idx }
 
 func (a *Agent) SetSubagentDefinitions(defs map[string]SubagentDefinition) {
 	if a == nil || a.subagents == nil {

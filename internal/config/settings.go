@@ -28,6 +28,7 @@ type Settings struct {
 	IconMode           string                       `json:"icon_mode,omitempty"`
 	ActivityMode       string                       `json:"activity_mode,omitempty"`
 	AutoCompact        AutoCompact                  `json:"auto_compact,omitempty"`
+	AutoMemory         AutoMemory                   `json:"auto_memory,omitempty"`
 	Web                WebSettings                  `json:"web,omitempty"`
 	Subagents          SubagentSettings             `json:"subagents,omitempty"`
 	ModelCapabilities  map[string]ModelCapabilities `json:"model_capabilities,omitempty"`
@@ -78,6 +79,11 @@ type AutoCompact struct {
 	ThresholdPct int   `json:"threshold_pct,omitempty"`
 }
 
+type AutoMemory struct {
+	Enabled  *bool `json:"enabled,omitempty"`
+	MaxBytes int   `json:"max_bytes,omitempty"`
+}
+
 func boolPtr(v bool) *bool { return &v }
 
 // DefaultSubagentConcurrency returns the default subagent worker count for
@@ -109,6 +115,13 @@ func (a AutoCompact) EnabledValue() bool {
 	return *a.Enabled
 }
 
+func (a AutoMemory) EnabledValue() bool {
+	if a.Enabled == nil {
+		return true
+	}
+	return *a.Enabled
+}
+
 // DefaultOllamaNumCtx caps the Ollama KV cache at a workable size by default.
 // Thinking models (Qwen3, DeepSeek-R1) loaded at their stock 128K-256K context
 // stall on first token; 16384 is wide enough for typical code conversations
@@ -129,6 +142,7 @@ func DefaultSettings() Settings {
 		IconMode:        "unicode",
 		ActivityMode:    "arcane",
 		AutoCompact:     AutoCompact{Enabled: boolPtr(true), ThresholdPct: 80},
+		AutoMemory:      AutoMemory{Enabled: boolPtr(true), MaxBytes: 25000},
 		Web:             WebSettings{FetchEnabled: true, SearchEnabled: "auto", SearchProvider: "auto"},
 		Subagents:       SubagentSettings{Enabled: boolPtr(true), MaxConcurrent: DefaultSubagentConcurrency(), DefaultTimeoutSecs: 600, MaxCompletedRetain: 100},
 	}
@@ -197,6 +211,12 @@ func NormalizeSettings(s Settings) Settings {
 	}
 	if s.AutoCompact.ThresholdPct <= 0 || s.AutoCompact.ThresholdPct >= 100 {
 		s.AutoCompact.ThresholdPct = d.AutoCompact.ThresholdPct
+	}
+	if s.AutoMemory.Enabled == nil {
+		s.AutoMemory.Enabled = d.AutoMemory.Enabled
+	}
+	if s.AutoMemory.MaxBytes <= 0 {
+		s.AutoMemory.MaxBytes = d.AutoMemory.MaxBytes
 	}
 	if s.Web.SearchEnabled == "" {
 		s.Web.SearchEnabled = d.Web.SearchEnabled

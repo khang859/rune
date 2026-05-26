@@ -77,6 +77,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		ActivityMode:             s.ActivityMode,
 		AutoCompact:              onOff(s.AutoCompact.EnabledValue()),
 		AutoCompactThreshold:     fmt.Sprintf("%d%%", s.AutoCompact.ThresholdPct),
+		AutoMemory:               onOff(s.AutoMemory.EnabledValue()),
 		WebFetch:                 onOff(s.Web.FetchEnabled),
 		FetchPrivateURLs:         onOff(s.Web.FetchAllowPrivate),
 		WebSearch:                s.Web.SearchEnabled,
@@ -131,6 +132,10 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		AutoCompact: config.AutoCompact{
 			Enabled:      boolPtr(s.AutoCompact != "off"),
 			ThresholdPct: parsePercentDefault(s.AutoCompactThreshold, 80),
+		},
+		AutoMemory: config.AutoMemory{
+			Enabled:  boolPtr(s.AutoMemory != "off"),
+			MaxBytes: loaded.AutoMemory.MaxBytes,
 		},
 		Web: config.WebSettings{
 			FetchEnabled:      s.WebFetch != "off",
@@ -223,6 +228,7 @@ func (m *RootModel) applySettings(s modal.Settings) {
 	} else {
 		m.reconfigureWebTools()
 		m.reconfigureSubagentTools()
+		m.agent.SetMemoryEnabled(configFromModalSettings(s).AutoMemory.EnabledValue())
 	}
 	if m.showActivity() {
 		m.pendingTickCmd = m.startActivityTick()

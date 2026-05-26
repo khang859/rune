@@ -193,6 +193,7 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"✧ Memory",
 		"auto compact",
 		"compact threshold",
+		"auto memory",
 		"✧ Subagents",
 		"subagents",
 		"max concurrent",

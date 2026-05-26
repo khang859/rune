@@ -37,6 +37,16 @@ func TestDefaultSettingsIncludesAutoCompact(t *testing.T) {
 	}
 }
 
+func TestDefaultSettingsIncludesAutoMemory(t *testing.T) {
+	s := DefaultSettings()
+	if !s.AutoMemory.EnabledValue() {
+		t.Fatal("auto memory should be enabled by default")
+	}
+	if s.AutoMemory.MaxBytes != 25000 {
+		t.Fatalf("auto memory max bytes = %d, want 25000", s.AutoMemory.MaxBytes)
+	}
+}
+
 func TestDefaultSettingsIncludesSubagents(t *testing.T) {
 	s := DefaultSettings()
 	if !s.Subagents.EnabledValue() {
@@ -113,6 +123,16 @@ func TestNormalizeSettingsFillsAutoCompactDefaults(t *testing.T) {
 	}
 	if s.AutoCompact.ThresholdPct != 80 {
 		t.Fatalf("auto compact threshold = %d, want 80", s.AutoCompact.ThresholdPct)
+	}
+}
+
+func TestNormalizeSettingsFillsAutoMemoryDefaults(t *testing.T) {
+	s := NormalizeSettings(Settings{})
+	if !s.AutoMemory.EnabledValue() {
+		t.Fatal("auto memory should default to enabled")
+	}
+	if s.AutoMemory.MaxBytes != 25000 {
+		t.Fatalf("auto memory max bytes = %d, want 25000", s.AutoMemory.MaxBytes)
 	}
 }
 

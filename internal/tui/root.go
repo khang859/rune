@@ -31,6 +31,7 @@ import (
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/providers"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
@@ -47,6 +48,14 @@ type loginDoneMsg struct {
 	provider string
 	account  string
 	err      error
+}
+
+type memoryUpdateDoneMsg struct {
+	sess    *session.Session
+	nodeID  string
+	content string
+	changed bool
+	err     error
 }
 
 type RootModel struct {
@@ -86,6 +95,8 @@ type RootModel struct {
 	clipboardErr    error
 	copyMode        bool
 	planPending     bool
+	memoryWriting   bool
+	memoryLastNode  string
 	indexing        bool
 	indexingErr     error
 
@@ -120,7 +131,7 @@ var baseSlashCmds = []string{
 	"/quit", "/login", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
+	"/compact", "/memory", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -260,6 +271,28 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitPrimed = false
 		m.layout()
 		return m, nil
+	case memoryUpdateDoneMsg:
+		if v.nodeID == m.memoryLastNode {
+			m.memoryWriting = false
+		}
+		if v.sess != m.sess || v.nodeID != m.memoryLastNode {
+			return m, nil
+		}
+		if v.err != nil {
+			m.msgs.OnTurnError(fmt.Errorf("memory update failed: %v", v.err))
+		} else if v.changed && m.agent.MemoryEnabled() {
+			if store := m.agent.MemoryStore(); store != nil {
+				if err := store.Save(v.content); err != nil {
+					m.msgs.OnTurnError(fmt.Errorf("memory update failed: %v", err))
+				} else {
+					m.msgs.OnInfo("(memory: wrote project memory)")
+				}
+			}
+		}
+		m.layout()
+		m.refreshViewport()
+		return m, nil
+
 	case compactDoneMsg:
 		// Drop late completions from a session that was swapped out mid-compact.
 		if v.sess != m.sess {
@@ -291,7 +324,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSubagentContinuation = false
 			return m, m.startSubagentContinuationTurn()
 		}
-		return m, nil
+		return m, m.maybeStartMemoryUpdate()
 
 	case tea.WindowSizeMsg:
 		m.width, m.height = v.Width, v.Height
@@ -383,7 +416,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingSubagentContinuation = false
 			return m, m.startSubagentContinuationTurn()
 		}
-		return m, nil
+		return m, m.maybeStartMemoryUpdate()
 
 	case SubagentEventMsg:
 		if v.Ch != m.subagentCh {
@@ -953,6 +986,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.refreshViewport()
 		m.layout()
 		return tea.Batch(m.startCompact(), m.startActivityTick())
+	case "/memory":
+		m.handleMemoryCommand(arg)
 	case "/repomap":
 		switch {
 		case arg == "" || arg == "status":
@@ -2075,10 +2110,14 @@ func (m *RootModel) switchProviderChoice(choice modal.ProviderChoice) tea.Cmd {
 	m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
+	prevMemoryStore := m.agent.MemoryStore()
+	prevMemoryEnabled := m.agent.MemoryEnabled()
 	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
 	m.agent.SetModelCapabilities(loadedSettings.ModelCapabilities)
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
+	m.agent.SetMemoryStore(prevMemoryStore)
+	m.agent.SetMemoryEnabled(prevMemoryEnabled)
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
@@ -2202,11 +2241,15 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 func (m *RootModel) replaceActiveProvider(p ai.Provider) {
 	prev := m.agent.ReasoningEffort()
 	prevMode := m.agent.Mode()
+	prevMemoryStore := m.agent.MemoryStore()
+	prevMemoryEnabled := m.agent.MemoryEnabled()
 	settings, _ := config.LoadSettings(config.SettingsPath())
 	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), m.sess, m.agent.System(), currentSubagentConfig())
 	m.agent.SetModelCapabilities(settings.ModelCapabilities)
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
+	m.agent.SetMemoryStore(prevMemoryStore)
+	m.agent.SetMemoryEnabled(prevMemoryEnabled)
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}
@@ -2461,9 +2504,15 @@ func (m *RootModel) swapSession(s *session.Session) {
 			m.msgs.OnTurnError(err)
 		}
 	}
+	prevMemoryEnabled := m.agent.MemoryEnabled()
+	m.memoryWriting = false
+	m.memoryLastNode = ""
 	m.agent = agent.NewWithSubagentConfig(p, m.agent.Tools(), s, m.agent.System(), currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
 	m.agent.SetMode(prevMode)
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	m.agent.SetMemoryStore(memory.NewStore(s.Cwd, settings.AutoMemory.MaxBytes))
+	m.agent.SetMemoryEnabled(prevMemoryEnabled)
 	m.footer.Mode = footerMode(m.agent.Mode())
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
@@ -3058,8 +3107,12 @@ func (m *RootModel) refreshSystemPrompt() {
 	home, _ := os.UserHomeDir()
 	sys := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
 	prev := m.agent.ReasoningEffort()
+	prevMemoryStore := m.agent.MemoryStore()
+	prevMemoryEnabled := m.agent.MemoryEnabled()
 	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), m.sess, sys, currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)
+	m.agent.SetMemoryStore(prevMemoryStore)
+	m.agent.SetMemoryEnabled(prevMemoryEnabled)
 	m.agent.RegisterSubagentToolsEnabled(currentSubagentsEnabled())
 	m.subagents = map[string]agent.SubagentEvent{}
 	m.autoContinueSubagentResults = map[string]bool{}

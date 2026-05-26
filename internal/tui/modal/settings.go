@@ -15,6 +15,7 @@ type Settings struct {
 	ActivityMode             string
 	AutoCompact              string
 	AutoCompactThreshold     string
+	AutoMemory               string
 	WebFetch                 string
 	FetchPrivateURLs         string
 	WebSearch                string
@@ -83,6 +84,7 @@ const (
 	settingsRowActivityMode
 	settingsRowAutoCompact
 	settingsRowAutoCompactThreshold
+	settingsRowAutoMemory
 	settingsRowWebFetch
 	settingsRowFetchPrivateURLs
 	settingsRowWebSearch
@@ -119,6 +121,7 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
 		newSettingsRow("Memory", "auto compact", []string{"off", "on"}, cur.AutoCompact),
 		newSettingsRow("Memory", "compact threshold", []string{"70%", "80%", "90%"}, cur.AutoCompactThreshold),
+		newSettingsRow("Memory", "auto memory", []string{"off", "on"}, cur.AutoMemory),
 		newSettingsRow("Web Scrying", "web fetch", []string{"off", "on"}, cur.WebFetch),
 		newSettingsRow("Web Scrying", "fetch private urls", []string{"off", "on"}, cur.FetchPrivateURLs),
 		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
@@ -147,6 +150,9 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.AutoCompactThreshold == "" {
 		s.AutoCompactThreshold = "80%"
+	}
+	if s.AutoMemory == "" {
+		s.AutoMemory = "on"
 	}
 	if s.WebFetch == "" {
 		s.WebFetch = "on"
@@ -275,6 +281,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		ActivityMode:             s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
 		AutoCompact:              s.rows[settingsRowAutoCompact].options[s.rows[settingsRowAutoCompact].value],
 		AutoCompactThreshold:     s.rows[settingsRowAutoCompactThreshold].options[s.rows[settingsRowAutoCompactThreshold].value],
+		AutoMemory:               s.rows[settingsRowAutoMemory].options[s.rows[settingsRowAutoMemory].value],
 		WebFetch:                 s.rows[settingsRowWebFetch].options[s.rows[settingsRowWebFetch].value],
 		FetchPrivateURLs:         s.rows[settingsRowFetchPrivateURLs].options[s.rows[settingsRowFetchPrivateURLs].value],
 		WebSearch:                s.rows[settingsRowWebSearch].options[s.rows[settingsRowWebSearch].value],
