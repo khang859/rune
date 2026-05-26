@@ -25,6 +25,7 @@ func SkillsDir() string    { return filepath.Join(RuneDir(), "skills") }
 func MCPConfig() string    { return filepath.Join(RuneDir(), "mcp.json") }
 func LogPath() string      { return filepath.Join(RuneDir(), "log") }
 func HistoryPath() string  { return filepath.Join(RuneDir(), "history") }
+func ProjectsDir() string  { return filepath.Join(RuneDir(), "projects") }
 
 // EnsureRuneDir creates the rune dir tree if missing.
 func EnsureRuneDir() error {

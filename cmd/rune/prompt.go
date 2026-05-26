@@ -13,6 +13,7 @@ import (
 	"github.com/khang859/rune/internal/attachments"
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 )
@@ -57,6 +58,8 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
 	a.SetModelCapabilities(settings.ModelCapabilities)
+	a.SetMemoryStore(memory.NewStore(cwd, settings.AutoMemory.MaxBytes))
+	a.SetMemoryEnabled(settings.AutoMemory.EnabledValue())
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 	a.SetRepoMapEnabled(settings.RepoMap.Enabled || settings.RepoMap.MaxTokens == 0)
 	budget := settings.RepoMap.MaxTokens

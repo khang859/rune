@@ -10,6 +10,7 @@ import (
 
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/codeindex/repomap"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/session"
 )
 
@@ -84,6 +85,17 @@ func PlanModePrompt() string {
 
 // BuildRepoMapBlock assembles the per-turn <repo_map> system-prompt block.
 // Returns "" silently on any failure path — never fails a turn over the map.
+func (a *Agent) memoryBlock() string {
+	if a == nil || !a.memoryEnabled || a.memoryStore == nil {
+		return ""
+	}
+	content, err := a.memoryStore.Load()
+	if err != nil {
+		return ""
+	}
+	return memory.FormatBlock(content)
+}
+
 func BuildRepoMapBlock(s *session.Session, idx *codeindex.Index, enabled bool, maxTokens int) string {
 	if !enabled || s == nil || idx == nil {
 		return ""
