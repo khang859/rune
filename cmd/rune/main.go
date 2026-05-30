@@ -18,7 +18,7 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -26,6 +26,7 @@ func main() {
 	prompt := flag.String("prompt", "", "run a single turn against the configured provider and exit")
 	provider := flag.String("provider", "", "provider id (codex, groq, ollama, runpod, or openrouter; overrides RUNE_PROVIDER and settings)")
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
+	profileName := flag.String("profile", "", "named worker profile (~/.rune/profiles/<name>.md) applying a model, skills, and persona")
 	flag.Parse()
 
 	if *showVersion {
@@ -73,13 +74,13 @@ func main() {
 		return
 	}
 	if *prompt != "" {
-		if err := runPrompt(ctx, *prompt, *provider, *model, os.Stdout); err != nil {
+		if err := runPrompt(ctx, *prompt, *provider, *model, *profileName, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
 		return
 	}
-	if err := runInteractive(ctx, *provider, *model, Version); err != nil {
+	if err := runInteractive(ctx, *provider, *model, *profileName, Version); err != nil {
 		runelog.Error("interactive", "err", err.Error())
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

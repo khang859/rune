@@ -8,17 +8,22 @@ import (
 
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/mcp"
+	"github.com/khang859/rune/internal/profile"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
 )
 
 func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
-	return RunWithProfile(a, s, "", skills, mcpStatuses, version)
+	return RunWithProfile(a, s, "", skills, mcpStatuses, version, nil)
 }
 
-func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
+// RunWithProfile starts the TUI. activeProfile is the active provider profile
+// ID (settings/--provider, shown in the footer); worker is the optional
+// --profile worker role whose persona and skill set are applied to the agent.
+func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, skills []skill.Skill, mcpStatuses []mcp.Status, version string, worker *profile.Profile) error {
 	m := NewRootModel(a, s)
 	m.SetActiveProfile(activeProfile)
+	m.SetWorkerProfile(worker)
 	m.SetVersion(version)
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)
