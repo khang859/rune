@@ -326,7 +326,7 @@ func TestRunPrompt_LoadsSkillsIntoSystemPrompt(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, marker) {
@@ -351,7 +351,7 @@ func TestRunPrompt_MCPStartFailureDoesNotAbort(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", &buf); err != nil {
 		t.Fatalf("runPrompt should tolerate MCP startup failure: %v", err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
