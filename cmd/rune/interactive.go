@@ -40,7 +40,11 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	opts.OnRead = sess.RecordFileRead
 	tools.RegisterBuiltins(reg, opts)
 
-	mgr := mcp.NewManager(config.MCPConfig())
+	mcpCfg, err := resolveMCPConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[mcp] config load failed:", err)
+	}
+	mgr := mcp.NewManager(mcpCfg)
 	if err := mgr.Start(ctx, reg); err != nil {
 		fmt.Fprintln(os.Stderr, "[mcp] start failed:", err)
 	}

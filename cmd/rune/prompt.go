@@ -13,6 +13,7 @@ import (
 	"github.com/khang859/rune/internal/attachments"
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/tools"
 )
@@ -34,6 +35,16 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
 	opts.OnRead = sess.RecordFileRead
 	tools.RegisterBuiltins(reg, opts)
+
+	mcpCfg, err := resolveMCPConfig()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "[mcp] config load failed:", err)
+	}
+	mgr := mcp.NewManager(mcpCfg)
+	if err := mgr.Start(ctx, reg); err != nil {
+		fmt.Fprintln(os.Stderr, "[mcp] start failed:", err)
+	}
+	defer mgr.Shutdown()
 
 	cwd, _ := os.Getwd()
 	sess.Cwd = cwd
