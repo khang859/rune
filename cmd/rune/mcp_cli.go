@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -11,6 +13,19 @@ import (
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 )
+
+// resolveMCPConfig loads the effective MCP config for the current working
+// directory following precedence: RUNE_MCP_CONFIG > <cwd>/.rune/mcp.json merged
+// over ~/.rune/mcp.json. Shared by the interactive and --prompt paths and the
+// `mcp list`/`validate` commands.
+func resolveMCPConfig() (mcp.Config, error) {
+	cwd, _ := os.Getwd()
+	return mcp.ResolveConfig(
+		config.MCPConfig(),
+		filepath.Join(cwd, ".rune", "mcp.json"),
+		config.MCPConfigEnvOverride(),
+	)
+}
 
 func runMCP(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -30,7 +45,7 @@ func runMCP(args []string, stdout, stderr io.Writer) error {
 	case "remove", "rm":
 		return runMCPRemove(args[1:])
 	case "path":
-		fmt.Fprintln(stdout, config.MCPConfig())
+		fmt.Fprintln(stdout, config.MCPConfigWritePath())
 		return nil
 	case "validate":
 		return runMCPValidate(stdout)
@@ -60,7 +75,7 @@ func runMCPAdd(args []string) error {
 		return err
 	}
 
-	return mcp.AddServer(config.MCPConfig(), name, mcp.ServerConfig{
+	return mcp.AddServer(config.MCPConfigWritePath(), name, mcp.ServerConfig{
 		Command: commandArgs[0],
 		Args:    append([]string(nil), commandArgs[1:]...),
 	}, force)
@@ -107,7 +122,7 @@ func runMCPAddHTTP(args []string) error {
 		return err
 	}
 
-	return mcp.AddServer(config.MCPConfig(), name, mcp.ServerConfig{
+	return mcp.AddServer(config.MCPConfigWritePath(), name, mcp.ServerConfig{
 		Type:    "http",
 		URL:     url,
 		Headers: headers,
@@ -160,7 +175,7 @@ func parseMCPAddHTTPArgs(args []string) (name, url string, headers map[string]st
 }
 
 func runMCPList(stdout io.Writer) error {
-	cfg, err := loadMCPConfig()
+	cfg, err := resolveMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -191,11 +206,11 @@ func runMCPRemove(args []string) error {
 		return errors.New("remove requires exactly one server name")
 	}
 	name := args[0]
-	return mcp.RemoveServer(config.MCPConfig(), name)
+	return mcp.RemoveServer(config.MCPConfigWritePath(), name)
 }
 
 func runMCPValidate(stdout io.Writer) error {
-	cfg, err := loadMCPConfig()
+	cfg, err := resolveMCPConfig()
 	if err != nil {
 		return err
 	}
@@ -235,8 +250,4 @@ func planModeDescription(sc mcp.ServerConfig) string {
 		return "plan: " + strings.Join(tools, ",")
 	}
 	return "plan: disabled"
-}
-
-func loadMCPConfig() (mcp.Config, error) {
-	return mcp.LoadConfig(config.MCPConfig())
 }

@@ -1848,7 +1848,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 	case *modal.MCPWizard:
 		if res, ok := payload.(modal.MCPWizardResult); ok {
-			if err := mcp.AddServer(config.MCPConfig(), res.Name, res.Config, false); err != nil {
+			if err := mcp.AddServer(config.MCPConfigWritePath(), res.Name, res.Config, false); err != nil {
 				m.msgs.OnTurnError(fmt.Errorf("mcp: %v", err))
 			} else {
 				m.msgs.OnInfo(fmt.Sprintf("(added MCP server %q; restart rune to load its tools)", res.Name))
