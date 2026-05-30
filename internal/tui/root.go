@@ -31,6 +31,7 @@ import (
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
+	"github.com/khang859/rune/internal/profile"
 	"github.com/khang859/rune/internal/providers"
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
@@ -80,6 +81,7 @@ type RootModel struct {
 	modal           modal.Modal
 	settings        modal.Settings
 	activeProfile   string
+	workerProfile   *profile.Profile
 	lastModal       modal.Modal
 	pendingForkMode bool
 	clipboardReady  bool
@@ -198,6 +200,10 @@ func (m *RootModel) SetMCPStatuses(statuses []mcp.Status) {
 
 func (m *RootModel) SetActiveProfile(profileID string) {
 	m.activeProfile = strings.TrimSpace(profileID)
+}
+
+func (m *RootModel) SetWorkerProfile(p *profile.Profile) {
+	m.workerProfile = p
 }
 
 func (m *RootModel) SetVersion(version string) {
@@ -992,6 +998,13 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			filepath.Join(home, ".rune", "skills"),
 			filepath.Join(cwd, ".rune", "skills"),
 		}}).Load()
+		if m.workerProfile != nil {
+			var missing []string
+			sks, missing = skill.Filter(sks, m.workerProfile.Skills)
+			for _, name := range missing {
+				m.msgs.OnInfo(fmt.Sprintf("(profile %q: skill %q not found)", m.workerProfile.Name, name))
+			}
+		}
 		m.SetSkills(sks)
 		m.msgs.OnInfo(fmt.Sprintf("(reloaded %d skills)", len(sks)))
 		m.refreshSystemPrompt()
@@ -1835,7 +1848,7 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 		}
 	case *modal.MCPWizard:
 		if res, ok := payload.(modal.MCPWizardResult); ok {
-			if err := mcp.AddServer(config.MCPConfig(), res.Name, res.Config, false); err != nil {
+			if err := mcp.AddServer(config.MCPConfigWritePath(), res.Name, res.Config, false); err != nil {
 				m.msgs.OnTurnError(fmt.Errorf("mcp: %v", err))
 			} else {
 				m.msgs.OnInfo(fmt.Sprintf("(added MCP server %q; restart rune to load its tools)", res.Name))
@@ -3057,6 +3070,9 @@ func (m *RootModel) refreshSystemPrompt() {
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
 	sys := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	if m.workerProfile != nil && m.workerProfile.Instructions != "" {
+		sys = m.workerProfile.Instructions + "\n\n" + sys
+	}
 	prev := m.agent.ReasoningEffort()
 	m.agent = agent.NewWithSubagentConfig(m.agent.Provider(), m.agent.Tools(), m.sess, sys, currentSubagentConfig())
 	m.agent.SetReasoningEffort(prev)

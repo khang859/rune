@@ -15,6 +15,15 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
+func newManagerFromFile(t *testing.T, path string) *Manager {
+	t.Helper()
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return NewManager(cfg)
+}
+
 func TestManager_RegistersToolsFromAllServers(t *testing.T) {
 	bin := buildStubServer(t)
 
@@ -23,7 +32,7 @@ func TestManager_RegistersToolsFromAllServers(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
 
 	reg := tools.NewRegistry()
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -84,7 +93,7 @@ func TestManager_RegistersToolsFromHTTPServer(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
 
 	reg := tools.NewRegistry()
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -110,7 +119,7 @@ func TestManager_DefaultMCPToolsAreDeniedInPlanMode(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.SetPermissionMode(tools.PermissionModePlan)
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {
@@ -137,7 +146,7 @@ func TestManager_ReadOnlyMCPToolsAreAllowedInPlanMode(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.SetPermissionMode(tools.PermissionModePlan)
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {
@@ -168,7 +177,7 @@ func TestManager_PlanToolAllowlistAllowsSpecificMCPTools(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.SetPermissionMode(tools.PermissionModePlan)
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {
@@ -190,7 +199,7 @@ func TestManager_UnknownPlanToolAllowlistDoesNotAllowMCPTool(t *testing.T) {
 
 	reg := tools.NewRegistry()
 	reg.SetPermissionMode(tools.PermissionModePlan)
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {
@@ -222,7 +231,7 @@ func TestManager_StartupTimeoutRecordsFailedStatus(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
 
 	reg := tools.NewRegistry()
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	mgr.startupTimeout = 20 * time.Millisecond
 
 	start := time.Now()
@@ -244,7 +253,7 @@ func TestManager_RecordsFailedStatus(t *testing.T) {
 	_ = os.WriteFile(cfgPath, []byte(cfg), 0o644)
 
 	reg := tools.NewRegistry()
-	mgr := NewManager(cfgPath)
+	mgr := newManagerFromFile(t, cfgPath)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {
@@ -258,7 +267,7 @@ func TestManager_RecordsFailedStatus(t *testing.T) {
 
 func TestManager_MissingConfigIsNoOp(t *testing.T) {
 	reg := tools.NewRegistry()
-	mgr := NewManager(filepath.Join(t.TempDir(), "does-not-exist.json"))
+	mgr := newManagerFromFile(t, filepath.Join(t.TempDir(), "does-not-exist.json"))
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := mgr.Start(ctx, reg); err != nil {

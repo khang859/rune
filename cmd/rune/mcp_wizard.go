@@ -34,7 +34,7 @@ func (m *mcpWizardProgram) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.err = fmt.Errorf("unexpected wizard result %T", v.Payload)
 			return m, tea.Quit
 		}
-		if err := mcp.AddServer(config.MCPConfig(), res.Name, res.Config, false); err != nil {
+		if err := mcp.AddServer(config.MCPConfigWritePath(), res.Name, res.Config, false); err != nil {
 			m.err = err
 			return m, tea.Quit
 		}

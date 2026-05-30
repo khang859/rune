@@ -23,8 +23,20 @@ func SettingsPath() string { return filepath.Join(RuneDir(), "settings.json") }
 func SecretsPath() string  { return filepath.Join(RuneDir(), "secrets.json") }
 func SkillsDir() string    { return filepath.Join(RuneDir(), "skills") }
 func MCPConfig() string    { return filepath.Join(RuneDir(), "mcp.json") }
-func LogPath() string      { return filepath.Join(RuneDir(), "log") }
-func HistoryPath() string  { return filepath.Join(RuneDir(), "history") }
+
+// MCPConfigEnvOverride returns the path set in $RUNE_MCP_CONFIG, or "" if unset.
+func MCPConfigEnvOverride() string { return os.Getenv("RUNE_MCP_CONFIG") }
+
+// MCPConfigWritePath returns where `rune mcp add`/`remove` should write the MCP
+// config: $RUNE_MCP_CONFIG if set, otherwise the global ~/.rune/mcp.json.
+func MCPConfigWritePath() string {
+	if p := MCPConfigEnvOverride(); p != "" {
+		return p
+	}
+	return MCPConfig()
+}
+func LogPath() string     { return filepath.Join(RuneDir(), "log") }
+func HistoryPath() string { return filepath.Join(RuneDir(), "history") }
 
 // EnsureRuneDir creates the rune dir tree if missing.
 func EnsureRuneDir() error {
