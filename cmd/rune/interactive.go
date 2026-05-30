@@ -18,12 +18,18 @@ import (
 	"github.com/khang859/rune/internal/tui"
 )
 
-func runInteractive(ctx context.Context, providerOverride, modelOverride, version string) error {
+func runInteractive(ctx context.Context, providerOverride, modelOverride, profileName, version string) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	prof, err := loadProfile(profileName, cwd, home)
+	if err != nil {
+		return err
+	}
 	settings, _ := config.LoadSettings(config.SettingsPath())
-	selection, err := buildProvider(ctx, providerOverride, modelOverride)
+	selection, err := buildProvider(ctx, providerOverride, profileModel(modelOverride, prof))
 	if err != nil {
 		selection.AI = unavailable.New("no active provider configured")
 		if settings.Provider != "" || providerOverride != "" || os.Getenv("RUNE_PROVIDER") != "" {
@@ -33,6 +39,7 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 
 	sess := session.New(selection.Model)
 	sess.Provider = selection.Provider
+	sess.Cwd = cwd
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
 	reg := tools.NewRegistry()
@@ -50,9 +57,6 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	}
 	defer mgr.Shutdown()
 
-	cwd, _ := os.Getwd()
-	sess.Cwd = cwd
-	home, _ := os.UserHomeDir()
 	skills, _ := (&skill.Loader{
 		Roots: []string{
 			filepath.Join(home, ".rune", "skills"),
@@ -71,6 +75,7 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 	}
 
 	system := agent.BasePrompt() + "\n\n" + agent.LoadAgentsMD(cwd, home)
+	system, skills = prependProfile(system, prof, skills, false, os.Stderr)
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
@@ -89,5 +94,5 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, versio
 		}
 	}()
 
-	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version)
+	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version, prof)
 }

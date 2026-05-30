@@ -15,19 +15,27 @@ import (
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
 	"github.com/khang859/rune/internal/session"
+	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tools"
 )
 
-func runPrompt(ctx context.Context, text, providerOverride, modelOverride string, w io.Writer) error {
+func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
-	selection, err := buildProvider(ctx, providerOverride, modelOverride)
+	cwd, _ := os.Getwd()
+	home, _ := os.UserHomeDir()
+	prof, err := loadProfile(profileName, cwd, home)
+	if err != nil {
+		return err
+	}
+	selection, err := buildProvider(ctx, providerOverride, profileModel(modelOverride, prof))
 	if err != nil {
 		return err
 	}
 	sess := session.New(selection.Model)
 	sess.Provider = selection.Provider
+	sess.Cwd = cwd
 	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
 	settings, _ := config.LoadSettings(config.SettingsPath())
@@ -46,9 +54,6 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	}
 	defer mgr.Shutdown()
 
-	cwd, _ := os.Getwd()
-	sess.Cwd = cwd
-	home, _ := os.UserHomeDir()
 	customAgents, err := (&agentdef.Loader{
 		Roots: []string{
 			filepath.Join(home, ".rune", "agents"),
@@ -64,6 +69,13 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride string
 	if agentsMD != "" {
 		system += "\n\nProject context:\n" + agentsMD
 	}
+	skills, _ := (&skill.Loader{
+		Roots: []string{
+			filepath.Join(home, ".rune", "skills"),
+			filepath.Join(cwd, ".rune", "skills"),
+		},
+	}).Load()
+	system, _ = prependProfile(system, prof, skills, true, w)
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
