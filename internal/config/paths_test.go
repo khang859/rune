@@ -24,6 +24,23 @@ func TestRuneDir_RespectsRUNE_DIR(t *testing.T) {
 	}
 }
 
+func TestMCPConfigWritePath_DefaultsToGlobal(t *testing.T) {
+	t.Setenv("RUNE_DIR", "/r")
+	t.Setenv("RUNE_MCP_CONFIG", "")
+	want := filepath.Join("/r", "mcp.json")
+	if got := MCPConfigWritePath(); got != want {
+		t.Fatalf("MCPConfigWritePath() = %q, want %q", got, want)
+	}
+}
+
+func TestMCPConfigWritePath_RespectsEnvOverride(t *testing.T) {
+	t.Setenv("RUNE_DIR", "/r")
+	t.Setenv("RUNE_MCP_CONFIG", "/abs/path/mcp.json")
+	if got := MCPConfigWritePath(); got != "/abs/path/mcp.json" {
+		t.Fatalf("MCPConfigWritePath() = %q, want %q", got, "/abs/path/mcp.json")
+	}
+}
+
 func TestSessionsDir_IsUnderRuneDir(t *testing.T) {
 	t.Setenv("RUNE_DIR", "/r")
 	if got := SessionsDir(); !strings.HasSuffix(got, "/sessions") || !strings.HasPrefix(got, "/r") {

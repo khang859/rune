@@ -2,7 +2,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"sort"
@@ -41,30 +40,19 @@ type Status struct {
 const defaultStartupTimeout = 5 * time.Second
 
 type Manager struct {
-	path           string
+	cfg            Config
 	startupTimeout time.Duration
 	clients        map[string]*Client
 	statuses       map[string]Status
 	mu             sync.Mutex
 }
 
-func NewManager(path string) *Manager {
-	return &Manager{path: path, startupTimeout: defaultStartupTimeout, clients: map[string]*Client{}, statuses: map[string]Status{}}
+func NewManager(cfg Config) *Manager {
+	return &Manager{cfg: cfg, startupTimeout: defaultStartupTimeout, clients: map[string]*Client{}, statuses: map[string]Status{}}
 }
 
 func (m *Manager) Start(ctx context.Context, reg *tools.Registry) error {
-	b, err := os.ReadFile(m.path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-	var cfg Config
-	if err := json.Unmarshal(b, &cfg); err != nil {
-		return fmt.Errorf("mcp.json: %w", err)
-	}
-	for name, sc := range cfg.Servers {
+	for name, sc := range m.cfg.Servers {
 		status := Status{Name: name, Type: serverType(sc), Description: serverDescription(sc)}
 		serverCtx, cancel := m.serverStartupContext(ctx)
 		c, err := m.connect(ctx, name, sc)

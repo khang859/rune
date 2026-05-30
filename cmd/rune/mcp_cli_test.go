@@ -229,6 +229,71 @@ func TestRunMCPValidateRejectsEmptyPlanTool(t *testing.T) {
 	}
 }
 
+func TestRunMCPRespectsEnvOverride(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RUNE_DIR", dir)
+	override := filepath.Join(t.TempDir(), "scoped.json")
+	t.Setenv("RUNE_MCP_CONFIG", override)
+
+	if err := runMCP([]string{"add", "kanban", "--", "kanban-bin"}, ioDiscard{}, ioDiscard{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(config.MCPConfig()); !os.IsNotExist(err) {
+		t.Fatalf("global config should be untouched, stat err = %v", err)
+	}
+	cfg, err := mcp.LoadConfig(override)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Servers["kanban"]; !ok {
+		t.Fatalf("server not written to override file: %#v", cfg.Servers)
+	}
+
+	var out bytes.Buffer
+	if err := runMCP([]string{"path"}, &out, ioDiscard{}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(out.String()) != override {
+		t.Fatalf("path = %q, want %q", out.String(), override)
+	}
+}
+
+func TestRunMCPListMergesProjectLocal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("RUNE_DIR", dir)
+	t.Setenv("RUNE_MCP_CONFIG", "")
+	writeMCPConfig(t, mcp.Config{Servers: map[string]mcp.ServerConfig{
+		"global": {Command: "global-only"},
+		"shared": {Command: "global-shared"},
+	}})
+
+	work := t.TempDir()
+	t.Chdir(work)
+	localDir := filepath.Join(work, ".rune")
+	if err := os.MkdirAll(localDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	local := `{"servers":{"local":{"command":"local-only"},"shared":{"command":"local-shared"}}}`
+	if err := os.WriteFile(filepath.Join(localDir, "mcp.json"), []byte(local), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var out bytes.Buffer
+	if err := runMCP([]string{"list"}, &out, ioDiscard{}); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"global-only", "local-only", "local-shared"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("list output missing %q: %q", want, got)
+		}
+	}
+	if strings.Contains(got, "global-shared") {
+		t.Fatalf("project-local should win for shared key, but global-shared present: %q", got)
+	}
+}
+
 func readMCPConfig(t *testing.T) mcp.Config {
 	t.Helper()
 	b, err := os.ReadFile(config.MCPConfig())
