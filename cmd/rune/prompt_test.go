@@ -298,3 +298,63 @@ func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 		t.Fatalf("output = %q", buf.String())
 	}
 }
+
+func TestRunPrompt_LoadsSkillsIntoSystemPrompt(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b bytes.Buffer
+		_, _ = b.ReadFrom(r.Body)
+		gotBody = b.String()
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	t.Setenv("RUNE_DIR", tmp)
+	t.Setenv("HOME", tmp)
+	t.Setenv("RUNE_OPENROUTER_ENDPOINT", srv.URL)
+	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
+
+	skillsDir := filepath.Join(tmp, ".rune", "skills")
+	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const marker = "call-kanban-heartbeat-every-turn"
+	if err := os.WriteFile(filepath.Join(skillsDir, "kanban.md"), []byte(marker), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotBody, marker) {
+		t.Fatalf("skill body not sent to provider; request body = %q", gotBody)
+	}
+}
+
+func TestRunPrompt_MCPStartFailureDoesNotAbort(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ollama"},"done":true,"done_reason":"stop"}` + "\n"))
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	t.Setenv("RUNE_DIR", tmp)
+	t.Setenv("HOME", tmp)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	mcpJSON := `{"servers":{"bad":{"command":"rune-nonexistent-binary-xyz"}}}`
+	if err := os.WriteFile(filepath.Join(tmp, "mcp.json"), []byte(mcpJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", &buf); err != nil {
+		t.Fatalf("runPrompt should tolerate MCP startup failure: %v", err)
+	}
+	if !strings.Contains(buf.String(), "ollama") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
