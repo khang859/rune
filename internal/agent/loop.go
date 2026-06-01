@@ -34,6 +34,8 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 	autoCompactRemaining := 1
 	streamAttempt := 0
 	invalidToolAttempt := 0
+	headlessNudges := 0
+	a.requiredToolDone = false
 	for {
 		a.injectCompletedSubagentSummaries()
 		sys := a.system
@@ -51,6 +53,12 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 				sys += "\n\n"
 			}
 			sys += block
+		}
+		if len(a.requireTools) > 0 {
+			if sys != "" {
+				sys += "\n\n"
+			}
+			sys += RequireToolPrompt(a.requireTools)
 		}
 		var toolSpecs []ai.ToolSpec
 		if providers.ToolUseSupportWithSettings(a.session.Provider, a.session.Model, config.Settings{ModelCapabilities: a.modelCapabilities}) != providers.ToolUnsupported {
@@ -203,6 +211,20 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 					}
 				}
 			}
+			// Headless enforcement: the model tried to end its turn with plain
+			// text. If a required completion tool hasn't succeeded yet, nudge it
+			// to keep going instead of treating silence as "done". Bounded so a
+			// model that simply won't comply still terminates (exit 3 upstream).
+			if len(a.requireTools) > 0 && !a.requiredToolDone {
+				if headlessNudges < maxHeadlessNudges {
+					headlessNudges++
+					out <- RequiredToolPending{Names: sortedRequireNames(a.requireTools), Attempt: headlessNudges}
+					a.session.Append(buildRequireToolNudge(a.requireTools))
+					continue
+				}
+				out <- TurnDone{Reason: ReasonIncompleteRequiredTool}
+				return
+			}
 			out <- TurnDone{Reason: doneRsn}
 			return
 		}
@@ -216,8 +238,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		// real work — so an occasional malformed call alongside successful
 		// tool calls doesn't burn the budget. The cap exists to stop a
 		// model that's stuck producing nothing but malformed calls.
+		// Likewise reset the headless-nudge budget: it only caps a model that
+		// *repeatedly* stops without completing, not one making real progress.
 		if len(calls) > 0 {
 			invalidToolAttempt = 0
+			headlessNudges = 0
 		}
 		if len(invalidCallNames) > 0 {
 			if len(calls) == 0 {
@@ -284,6 +309,9 @@ func (a *Agent) runTools(ctx context.Context, calls []ai.ToolCall, out chan<- Ev
 			ToolCallID: call.ID,
 			Content:    []ai.ContentBlock{ai.ToolResultBlock{ToolCallID: call.ID, Output: res.Output, IsError: res.IsError}},
 		})
+		if !res.IsError && a.requireTools[call.Name] {
+			a.requiredToolDone = true
+		}
 		out <- ToolFinished{Call: call, Result: res}
 	}
 	return nil

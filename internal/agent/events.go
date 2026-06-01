@@ -29,6 +29,14 @@ type TurnError struct{ Err error }
 // the turn instead of failing.
 type InvalidToolCallRecovered struct{ Names []string }
 
+// RequiredToolPending fires in headless (--require-tool) mode when the model
+// ended its turn without calling a required completion tool. A nudge is
+// appended and the turn continues; Attempt is the 1-based nudge count.
+type RequiredToolPending struct {
+	Names   []string
+	Attempt int
+}
+
 func (AssistantText) isEvent()            {}
 func (ThinkingText) isEvent()             {}
 func (ToolStarted) isEvent()              {}
@@ -39,3 +47,4 @@ func (TurnAborted) isEvent()              {}
 func (TurnDone) isEvent()                 {}
 func (TurnError) isEvent()                {}
 func (InvalidToolCallRecovered) isEvent() {}
+func (RequiredToolPending) isEvent()      {}

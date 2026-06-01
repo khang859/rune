@@ -30,6 +30,8 @@ type Agent struct {
 	repomapEnabled    bool
 	repomapBudget     int
 	codeIndex         *codeindex.Index
+	requireTools      map[string]bool // headless: must call one of these before ending a turn
+	requiredToolDone  bool            // a required tool succeeded this run
 }
 
 func New(p ai.Provider, t *tools.Registry, s *session.Session, systemPrompt string) *Agent {
@@ -110,6 +112,19 @@ func (a *Agent) RegisterSubagentToolsEnabled(enabled bool) {
 
 func (a *Agent) ReasoningEffort() string          { return a.effort }
 func (a *Agent) SetReasoningEffort(effort string) { a.effort = effort }
+
+// SetRequireTools enables headless completion enforcement: the agent may only
+// end its turn after one of these tools succeeds; otherwise it is nudged to
+// continue (see loop.go). Pass nil/empty to disable.
+func (a *Agent) SetRequireTools(names map[string]bool) {
+	if len(names) == 0 {
+		a.requireTools = nil
+		return
+	}
+	a.requireTools = names
+}
+
+func (a *Agent) RequireTools() map[string]bool { return a.requireTools }
 
 func (a *Agent) SetModelCapabilities(caps map[string]config.ModelCapabilities) {
 	a.modelCapabilities = config.NormalizeModelCapabilities(caps)

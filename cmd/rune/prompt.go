@@ -19,7 +19,7 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
-func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName string, w io.Writer) error {
+func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName, requireTools string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
@@ -79,6 +79,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
+	a.SetRequireTools(agent.ParseRequireTools(requireTools))
 	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 	a.SetRepoMapEnabled(settings.RepoMap.Enabled || settings.RepoMap.MaxTokens == 0)
@@ -100,6 +101,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	content := []ai.ContentBlock{ai.TextBlock{Text: resolved.Text}}
 	content = append(content, resolved.Attachments...)
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
+	incomplete := false
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {
 		case agent.AssistantText:
@@ -108,10 +110,23 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 			fmt.Fprintf(w, "\n[tool: %s]", v.Call.Name)
 		case agent.ToolFinished:
 			fmt.Fprintf(w, "\n[done: %d bytes]", len(v.Result.Output))
+		case agent.RequiredToolPending:
+			fmt.Fprintf(w, "\n[persist: must call %v before ending (attempt %d)]", v.Names, v.Attempt)
 		case agent.TurnError:
 			fmt.Fprintf(w, "\n[error: %v]", v.Err)
+		case agent.TurnDone:
+			if v.Reason == agent.ReasonIncompleteRequiredTool {
+				incomplete = true
+				fmt.Fprintf(w, "\n[incomplete: ended without calling a required completion tool]")
+			}
 		}
 	}
 	fmt.Fprintln(w)
-	return sess.Save()
+	if err := sess.Save(); err != nil {
+		return err
+	}
+	if incomplete {
+		return agent.ErrIncompleteRequiredTool
+	}
+	return nil
 }

@@ -63,7 +63,7 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "hello") {
@@ -90,7 +90,7 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
@@ -120,7 +120,7 @@ func TestRunPrompt_CanceledContextCancelsProviderRequest(t *testing.T) {
 	done := make(chan error, 1)
 	var buf bytes.Buffer
 	go func() {
-		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", &buf)
+		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", "", &buf)
 	}()
 
 	select {
@@ -169,7 +169,7 @@ func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "runpod") {
@@ -210,7 +210,7 @@ func TestRunPrompt_UsesOllamaProfile(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "profile-ollama") {
@@ -233,7 +233,7 @@ func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_API_KEY", "ollama-token")
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama-auth") {
@@ -267,7 +267,7 @@ func TestRunPrompt_HitsOpenRouterAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "openrouter") {
@@ -291,7 +291,7 @@ func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_GROQ_API_KEY", strings.Repeat("g", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "groq", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "groq", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "groq") {
@@ -326,7 +326,7 @@ func TestRunPrompt_LoadsSkillsIntoSystemPrompt(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, marker) {
@@ -351,7 +351,7 @@ func TestRunPrompt_MCPStartFailureDoesNotAbort(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
 		t.Fatalf("runPrompt should tolerate MCP startup failure: %v", err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
+	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai/faux"
 	"github.com/khang859/rune/internal/config"
 	runelog "github.com/khang859/rune/internal/log"
@@ -27,6 +29,7 @@ func main() {
 	provider := flag.String("provider", "", "provider id (codex, groq, ollama, runpod, or openrouter; overrides RUNE_PROVIDER and settings)")
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
 	profileName := flag.String("profile", "", "named worker profile (~/.rune/profiles/<name>.md) applying a model, skills, and persona")
+	requireTool := flag.String("require-tool", "", "headless: comma-separated tools the agent must call before ending its turn; nudges it to continue otherwise, exits 3 if it never does")
 	flag.Parse()
 
 	if *showVersion {
@@ -74,7 +77,15 @@ func main() {
 		return
 	}
 	if *prompt != "" {
-		if err := runPrompt(ctx, *prompt, *provider, *model, *profileName, os.Stdout); err != nil {
+		err := runPrompt(ctx, *prompt, *provider, *model, *profileName, *requireTool, os.Stdout)
+		if errors.Is(err, agent.ErrIncompleteRequiredTool) {
+			// Distinct from a generic error (exit 1) or crash (exit 2): the run
+			// finished cleanly but the model never called a required completion
+			// tool. An orchestrator uses this to route to review instead of retry.
+			fmt.Fprintln(os.Stderr, "incomplete:", err)
+			os.Exit(3)
+		}
+		if err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
