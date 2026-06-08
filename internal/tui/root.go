@@ -60,6 +60,8 @@ type RootModel struct {
 	footer   Footer
 	queue    *Queue
 
+	startupNotice string
+
 	width  int
 	height int
 
@@ -210,8 +212,19 @@ func (m *RootModel) SetVersion(version string) {
 	m.version = version
 }
 
+// SetStartupNotice records a one-time banner shown when the TUI starts, used to
+// surface provider/auth recovery hints when the configured provider failed to
+// build. It is flushed into the message log by Init.
+func (m *RootModel) SetStartupNotice(notice string) {
+	m.startupNotice = strings.TrimSpace(notice)
+}
+
 func (m *RootModel) Init() tea.Cmd {
 	m.indexing = true
+	if m.startupNotice != "" {
+		m.msgs.OnInfo(m.startupNotice)
+		m.startupNotice = ""
+	}
 	return tea.Batch(emitFleetReadyMarker, enableKittyKeyboard, m.startSubagentListener(), m.startCodeIndex(), m.startActivityTick())
 }
 

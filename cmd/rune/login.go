@@ -1,16 +1,113 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/khang859/rune/internal/ai/oauth"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/providers"
 )
+
+// runLoginInteractive is `rune login` with no provider argument: an interactive
+// chooser that doubles as a CLI-level provider switch. It lists every provider,
+// persists the chosen one as the active provider, then either runs the OAuth
+// flow (Codex) or reports what's needed to use the chosen provider.
+func runLoginInteractive(ctx context.Context, in io.Reader, out io.Writer) error {
+	if err := config.EnsureRuneDir(); err != nil {
+		return err
+	}
+	all := providers.All()
+	settings, _ := config.LoadSettings(config.SettingsPath())
+	current := strings.TrimSpace(settings.Provider)
+
+	fmt.Fprintln(out, "Choose a provider:")
+	for i, p := range all {
+		active := " "
+		if p.ID == current {
+			active = "*"
+		}
+		fmt.Fprintf(out, " %s %d) %s\n", active, i+1, providerLoginLabel(p.ID))
+	}
+	fmt.Fprint(out, "> ")
+
+	line, err := bufio.NewReader(in).ReadString('\n')
+	if err != nil && strings.TrimSpace(line) == "" {
+		return fmt.Errorf("read selection: %w", err)
+	}
+	pick := strings.TrimSpace(line)
+	choice, perr := strconv.Atoi(pick)
+	if perr != nil || choice < 1 || choice > len(all) {
+		return fmt.Errorf("invalid selection %q (enter 1-%d)", pick, len(all))
+	}
+	chosen := all[choice-1].ID
+
+	// Persist the chosen provider as active so this doubles as a switcher.
+	prev := settings.Provider
+	settings.Provider = chosen
+	settings.ActiveProfile = ""
+	if err := config.SaveSettings(config.SettingsPath(), settings); err != nil {
+		return fmt.Errorf("save provider selection: %w", err)
+	}
+	fmt.Fprintf(out, "Active provider set to %s.\n", providerDisplay(chosen))
+
+	switch chosen {
+	case providers.Codex:
+		if err := runLogin(ctx, providers.Codex); err != nil {
+			// Don't strand the user on Codex if the sign-in they just started
+			// fails or is cancelled — restore their previous active provider.
+			settings.Provider = prev
+			_ = config.SaveSettings(config.SettingsPath(), settings)
+			return err
+		}
+		return nil
+	case providers.Groq, providers.Runpod, providers.OpenRouter:
+		if providerHasKey(chosen) {
+			fmt.Fprintf(out, "%s API key found — you're ready to go.\n", providerDisplay(chosen))
+		} else {
+			fmt.Fprintf(out, "%s needs an API key — add it from /settings in the TUI, or set the matching env var.\n", providerDisplay(chosen))
+		}
+		return nil
+	case providers.Ollama:
+		fmt.Fprintln(out, "Ollama runs locally — run `ollama serve` and `ollama pull <model>`, then start rune.")
+		return nil
+	default:
+		return nil
+	}
+}
+
+func providerLoginLabel(id string) string {
+	switch id {
+	case providers.Codex:
+		return "Codex (browser sign-in)"
+	case providers.Ollama:
+		return "Ollama (local)"
+	default:
+		return providerDisplay(id) + " (API key)"
+	}
+}
+
+func providerHasKey(id string) bool {
+	store := config.NewSecretStore(config.SecretsPath())
+	var key string
+	switch id {
+	case providers.Groq:
+		key, _ = store.GroqAPIKey()
+	case providers.Runpod:
+		key, _ = store.RunpodAPIKey()
+	case providers.OpenRouter:
+		key, _ = store.OpenRouterAPIKey()
+	}
+	return strings.TrimSpace(key) != ""
+}
 
 func runLogin(ctx context.Context, provider string) error {
 	if provider == "groq" {

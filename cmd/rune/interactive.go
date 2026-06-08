@@ -30,11 +30,13 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, profil
 	}
 	settings, _ := config.LoadSettings(config.SettingsPath())
 	selection, err := buildProvider(ctx, providerOverride, profileModel(modelOverride, prof))
+	var startupNotice string
 	if err != nil {
-		selection.AI = unavailable.New("no active provider configured")
-		if settings.Provider != "" || providerOverride != "" || os.Getenv("RUNE_PROVIDER") != "" {
-			return err
-		}
+		// Never trap the user at the CLI: drop into the TUI with an unavailable
+		// provider and a recovery banner so they can /login or /providers from
+		// inside, regardless of why the provider failed to build.
+		startupNotice = startupRecoveryNotice(selection.Provider, err)
+		selection.AI = unavailable.New(startupNotice)
 	}
 
 	sess := session.New(selection.Model)
@@ -94,5 +96,5 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, profil
 		}
 	}()
 
-	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version, prof)
+	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version, prof, startupNotice)
 }

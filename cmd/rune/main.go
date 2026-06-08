@@ -20,7 +20,7 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--version] | rune login codex | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--version] | rune login [provider] | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -61,10 +61,16 @@ func main() {
 		}
 		return
 	}
-	if len(args) >= 2 && args[0] == "login" {
-		if err := runLogin(ctx, args[1]); err != nil {
-			runelog.Error("login", "err", err.Error())
-			fmt.Fprintln(os.Stderr, "login error:", err)
+	if len(args) >= 1 && args[0] == "login" {
+		var loginErr error
+		if len(args) >= 2 {
+			loginErr = runLogin(ctx, args[1])
+		} else {
+			loginErr = runLoginInteractive(ctx, os.Stdin, os.Stdout)
+		}
+		if loginErr != nil {
+			runelog.Error("login", "err", loginErr.Error())
+			fmt.Fprintln(os.Stderr, "login error:", loginErr)
 			os.Exit(1)
 		}
 		return

@@ -14,19 +14,22 @@ import (
 )
 
 func Run(a *agent.Agent, s *session.Session, skills []skill.Skill, mcpStatuses []mcp.Status, version string) error {
-	return RunWithProfile(a, s, "", skills, mcpStatuses, version, nil)
+	return RunWithProfile(a, s, "", skills, mcpStatuses, version, nil, "")
 }
 
 // RunWithProfile starts the TUI. activeProfile is the active provider profile
 // ID (settings/--provider, shown in the footer); worker is the optional
 // --profile worker role whose persona and skill set are applied to the agent.
-func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, skills []skill.Skill, mcpStatuses []mcp.Status, version string, worker *profile.Profile) error {
+// startupNotice, when non-empty, is shown as an info banner on entry (e.g. a
+// provider/auth recovery hint when the configured provider failed to build).
+func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, skills []skill.Skill, mcpStatuses []mcp.Status, version string, worker *profile.Profile, startupNotice string) error {
 	m := NewRootModel(a, s)
 	m.SetActiveProfile(activeProfile)
 	m.SetWorkerProfile(worker)
 	m.SetVersion(version)
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)
+	m.SetStartupNotice(startupNotice)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	defer fmt.Print(ansi.PopKittyKeyboard(1))
 	final, err := p.Run()
