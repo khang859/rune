@@ -72,12 +72,12 @@ const (
 	settingsRowRunpodEndpoint
 	settingsRowOpenRouterAPIKey
 	settingsRowOpenRouterEndpoint
+	settingsRowActiveProfile
+	settingsRowAddProviderProfile
 	settingsRowOllamaAPIKey
 	settingsRowOllamaEndpoint
 	settingsRowOllamaNumCtx
 	settingsRowOllamaThink
-	settingsRowActiveProfile
-	settingsRowAddOllamaProfile
 	settingsRowEffort
 	settingsRowIconMode
 	settingsRowActivityMode
@@ -108,12 +108,12 @@ func NewSettings(cur Settings) Modal {
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
 		{kind: settingsRowAction, section: "Provider", label: "openrouter api key", action: "openrouter_api_key", status: cur.OpenRouterAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "openrouter endpoint", action: "openrouter_endpoint", status: cur.OpenRouterEndpointStatus},
+		{kind: settingsRowAction, section: "Provider", label: "active provider profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
+		{kind: settingsRowAction, section: "Provider", label: "add provider profile", action: "add_provider_profile", status: "Enter to create"},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama endpoint", action: "ollama_endpoint", status: cur.OllamaEndpointStatus},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama num_ctx", action: "ollama_num_ctx", status: cur.OllamaNumCtxStatus},
 		newSettingsRow("Ollama", "ollama think", []string{"off", "on"}, cur.OllamaThink),
-		{kind: settingsRowAction, section: "Ollama", label: "active profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
-		{kind: settingsRowAction, section: "Ollama", label: "add ollama profile", action: "add_ollama_profile", status: "Enter to create"},
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),

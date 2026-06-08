@@ -1162,6 +1162,11 @@ func (m *RootModel) openProviderPicker() tea.Cmd {
 		}
 	}
 	choices = append(choices, modal.ProviderChoice{ID: providers.OpenRouter, Label: "OpenRouter", Value: settings.OpenRouterModel})
+	for _, p := range settings.Profiles {
+		if p.Provider == providers.OpenRouter || p.Provider == providers.Codex || p.Provider == providers.Groq {
+			choices = append(choices, providerChoiceFromProfile(p))
+		}
+	}
 	return m.openModal(modal.NewProviderProfilePicker(choices, m.sess.Provider, m.activeProfile))
 }
 
@@ -1719,8 +1724,12 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 			if v.Action == "ollama_api_key" {
 				return m.openModal(modal.NewSecretInput("Ollama API key", "ollama_api_key"))
 			}
-			if v.Action == "add_ollama_profile" {
-				return m.openModal(modal.NewTextInput("Ollama profile name", "add_ollama_profile", ""))
+			if v.Action == "add_provider_profile" {
+				provider := v.Settings.Provider
+				if provider == "" {
+					provider = providers.Ollama
+				}
+				return m.openModal(modal.NewTextInput(providerDisplay(provider)+" profile name", "add_provider_profile", ""))
 			}
 			if v.Action == "edit_active_profile" {
 				return m.openEditActiveProfile()
@@ -1756,8 +1765,8 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 	case *modal.TextInput:
 		if res, ok := payload.(modal.TextInputResult); ok {
 			switch res.Action {
-			case "add_ollama_profile":
-				return m.addOllamaProfile(res.Value)
+			case "add_provider_profile":
+				return m.addProviderProfile(res.Value)
 			case "edit_profile_endpoint":
 				return m.saveActiveProfileEndpoint(res.Value)
 			case "ollama_model":
@@ -2352,31 +2361,35 @@ func (m *RootModel) openEditActiveProfile() tea.Cmd {
 	if p := config.FindProviderProfile(settings.Profiles, m.activeProfile); p != nil {
 		return m.openModal(modal.NewTextInput("Profile endpoint", "edit_profile_endpoint", p.Endpoint))
 	}
-	m.msgs.OnInfo("(no active profile to edit; use add ollama profile first)")
+	m.msgs.OnInfo("(no active provider profile to edit; add a provider profile first)")
 	m.refreshViewport()
 	return nil
 }
 
-func (m *RootModel) addOllamaProfile(name string) tea.Cmd {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		name = "Ollama"
-	}
+func (m *RootModel) addProviderProfile(name string) tea.Cmd {
 	settings, err := config.LoadSettings(config.SettingsPath())
 	if err != nil {
 		settings = config.DefaultSettings()
 	}
 	settings = config.NormalizeSettings(settings)
-	id := uniqueProfileID(settings.Profiles, "ollama-"+slug(name))
-	settings.Profiles = append(settings.Profiles, config.ProviderProfile{ID: id, Name: name, Provider: providers.Ollama, Endpoint: settings.OllamaEndpoint, Model: settings.OllamaModel})
-	settings.Provider = providers.Ollama
+	provider := providers.Normalize(m.sess.Provider)
+	if provider == "" {
+		provider = providers.Ollama
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = providerDisplay(provider)
+	}
+	id := uniqueProfileID(settings.Profiles, provider+"-"+slug(name))
+	settings.Profiles = append(settings.Profiles, config.ProviderProfile{ID: id, Name: name, Provider: provider, Endpoint: profileDefaultEndpoint(settings, provider), Model: profileDefaultModel(settings, provider)})
+	settings.Provider = provider
 	settings.ActiveProfile = id
 	if err := config.SaveSettings(config.SettingsPath(), settings); err != nil {
 		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
 		return nil
 	}
-	m.msgs.OnInfo(fmt.Sprintf("(added Ollama profile %s; edit active profile to set endpoint)", name))
-	return m.switchProviderChoice(modal.ProviderChoice{ID: providers.Ollama, ProfileID: id})
+	m.msgs.OnInfo(fmt.Sprintf("(added %s provider profile %s; edit active provider profile to set endpoint)", providerDisplay(provider), name))
+	return m.switchProviderChoice(modal.ProviderChoice{ID: provider, ProfileID: id})
 }
 
 func (m *RootModel) saveActiveProfileEndpoint(endpoint string) tea.Cmd {
@@ -2415,10 +2428,55 @@ func (m *RootModel) saveActiveProfileEndpoint(endpoint string) tea.Cmd {
 	return nil
 }
 
+func providerDisplay(provider string) string {
+	switch providers.Normalize(provider) {
+	case providers.Codex:
+		return "Codex"
+	case providers.Groq:
+		return "Groq"
+	case providers.Ollama:
+		return "Ollama"
+	case providers.Runpod:
+		return "Runpod"
+	case providers.OpenRouter:
+		return "OpenRouter"
+	default:
+		return strings.TrimSpace(provider)
+	}
+}
+
+func profileDefaultModel(settings config.Settings, provider string) string {
+	switch providers.Normalize(provider) {
+	case providers.Groq:
+		return settings.GroqModel
+	case providers.Ollama:
+		return settings.OllamaModel
+	case providers.Runpod:
+		return settings.RunpodModel
+	case providers.OpenRouter:
+		return settings.OpenRouterModel
+	default:
+		return settings.CodexModel
+	}
+}
+
+func profileDefaultEndpoint(settings config.Settings, provider string) string {
+	switch providers.Normalize(provider) {
+	case providers.Ollama:
+		return settings.OllamaEndpoint
+	case providers.Runpod:
+		return settings.RunpodEndpoint
+	case providers.OpenRouter:
+		return settings.OpenRouterEndpoint
+	default:
+		return ""
+	}
+}
+
 func uniqueProfileID(profiles []config.ProviderProfile, base string) string {
 	base = strings.Trim(base, "-")
 	if base == "" {
-		base = "ollama"
+		base = "profile"
 	}
 	id := base
 	for n := 2; config.FindProviderProfile(profiles, id) != nil; n++ {
