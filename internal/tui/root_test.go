@@ -1112,6 +1112,28 @@ func writeCodexTestCredentials(t *testing.T) {
 	}
 }
 
+func TestRoot_AddProviderProfileDefaultsToOllamaWhenNoProvider(t *testing.T) {
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	s := session.New("")
+	a := agent.New(unavailable.New("no active provider configured"), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.addProviderProfile("Local")
+
+	settings, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := config.FindProviderProfile(settings.Profiles, settings.ActiveProfile)
+	if p == nil {
+		t.Fatalf("active profile %q not found in %+v", settings.ActiveProfile, settings.Profiles)
+	}
+	if p.Provider != providers.Ollama || settings.Provider != providers.Ollama {
+		t.Fatalf("provider/profile = %q/%q, want ollama/ollama", settings.Provider, p.Provider)
+	}
+}
+
 func TestRoot_NoProviderBlocksSend(t *testing.T) {
 	s := session.New("")
 	a := agent.New(unavailable.New("no active provider configured"), tools.NewRegistry(), s, "")

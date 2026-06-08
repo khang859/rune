@@ -76,6 +76,50 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_UsesCodexProfileEndpoint(t *testing.T) {
+	sse := "event: response.output_text.delta\n" +
+		"data: {\"type\":\"response.output_text.delta\",\"delta\":\"profile-codex\"}\n\n" +
+		"event: response.completed\n" +
+		"data: {\"type\":\"response.completed\",\"response\":{\"status\":\"completed\",\"usage\":{}}}\n\n"
+
+	codex := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(sse))
+	}))
+	defer codex.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	settings := map[string]any{
+		"provider":       "codex",
+		"active_profile": "codex-test",
+		"profiles": []map[string]any{{
+			"id":       "codex-test",
+			"provider": "codex",
+			"endpoint": codex.URL + "/codex/responses",
+			"model":    "gpt-5.5",
+		}},
+	}
+	b, _ := json.Marshal(settings)
+	if err := os.WriteFile(filepath.Join(runeDir, "settings.json"), b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	store := oauth.NewStore(filepath.Join(runeDir, "auth.json"))
+	_ = store.Set("openai-codex", oauth.Credentials{
+		AccessToken:  fakeAccessToken("acct_xyz"),
+		RefreshToken: "RT",
+		ExpiresAt:    time.Now().Add(time.Hour),
+	})
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), "profile-codex") {
+		t.Fatalf("output = %q", buf.String())
+	}
+}
+
 func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "" {

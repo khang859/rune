@@ -35,9 +35,9 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 		// Headless can't recover interactively, so make the failure actionable:
 		// name both the re-login and the switch-provider paths.
 		if selection.Provider == providers.Codex {
-			return fmt.Errorf("%w\n  re-login:  rune login codex\n  or switch: rune --provider <groq|ollama|runpod|openrouter> --prompt ...", err)
+			return fmt.Errorf("%w\n  re-login:  rune login codex\n  or switch: rune --provider <groq|ollama|runpod|openrouter> --prompt <text>", err)
 		}
-		return fmt.Errorf("%w\n  fix it:    rune login   (interactive provider chooser)\n  or switch: rune --provider <id> --prompt ...", err)
+		return fmt.Errorf("%w\n  fix it:    rune login   (interactive provider chooser)\n  or switch: rune --provider <id> --prompt <text>", err)
 	}
 	sess := session.New(selection.Model)
 	sess.Provider = selection.Provider
