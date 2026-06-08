@@ -2212,7 +2212,10 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 		}
 		return openrouter.New(endpoint, key), nil
 	default:
-		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
+		endpoint := strings.TrimSpace(resolved.Endpoint)
+		if endpoint == "" {
+			endpoint = oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
+		}
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
 			endpoint = v
 		}
@@ -2372,9 +2375,11 @@ func (m *RootModel) addProviderProfile(name string) tea.Cmd {
 		settings = config.DefaultSettings()
 	}
 	settings = config.NormalizeSettings(settings)
-	provider := providers.Normalize(m.sess.Provider)
+	provider := strings.TrimSpace(m.sess.Provider)
 	if provider == "" {
 		provider = providers.Ollama
+	} else {
+		provider = providers.Normalize(provider)
 	}
 	name = strings.TrimSpace(name)
 	if name == "" {

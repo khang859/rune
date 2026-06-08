@@ -86,7 +86,10 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		}
 		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: openrouter.New(endpoint, key)}, nil
 	default:
-		endpoint := oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
+		endpoint := strings.TrimSpace(resolved.Endpoint)
+		if endpoint == "" {
+			endpoint = oauth.CodexResponsesBaseURL + oauth.CodexResponsesPath
+		}
 		if v := os.Getenv("RUNE_CODEX_ENDPOINT"); v != "" {
 			endpoint = v
 		}
