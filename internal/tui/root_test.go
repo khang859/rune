@@ -1677,7 +1677,7 @@ func (blockingTUIProvider) Stream(ctx context.Context, req ai.Request) (<-chan a
 	return out, nil
 }
 
-func TestRoot_ArcaneActivityRailRendersBesideMessages(t *testing.T) {
+func TestRoot_ArcaneActivityDoesNotRenderSideRail(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
 	m := NewRootModel(a, s)
@@ -1688,33 +1688,11 @@ func TestRoot_ArcaneActivityRailRendersBesideMessages(t *testing.T) {
 	m.refreshViewport()
 
 	out := m.View()
-	if !strings.Contains(out, "╎ᚱ╎") {
-		t.Fatalf("arcane activity rail not rendered: %q", out)
+	if strings.Contains(out, "╎ᚱ╎") {
+		t.Fatalf("arcane activity rail rendered: %q", out)
 	}
-	if m.viewport.Width != 76 {
-		t.Fatalf("viewport width = %d, want 76", m.viewport.Width)
-	}
-
-	before := m.renderArcaneActivityRail(8)
-	m.activityFrame++
-	after := m.renderArcaneActivityRail(8)
-	if before == after {
-		t.Fatalf("arcane activity rail did not animate: before=%q after=%q", before, after)
-	}
-}
-
-func TestRoot_ArcaneActivityRailUsesRunesInNerdFontMode(t *testing.T) {
-	s := session.New("gpt-5")
-	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
-	m := NewRootModel(a, s)
-	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	m.settings.IconMode = string(IconModeNerd)
-	m.styles.Icons = IconSetForMode(m.settings.IconMode)
-	m.streaming = true
-
-	rail := m.renderArcaneActivityRail(4)
-	if !strings.Contains(rail, "┃ᚱ┃") || !strings.Contains(rail, "┃ᚢ┃") {
-		t.Fatalf("nerd font rail did not use runes: %q", rail)
+	if m.viewport.Width != 80 {
+		t.Fatalf("viewport width = %d, want 80", m.viewport.Width)
 	}
 }
 

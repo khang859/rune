@@ -1302,9 +1302,6 @@ func (m *RootModel) View() string {
 		return m.modal.View(m.width, m.height)
 	}
 	msgArea := m.viewport.View()
-	if m.showArcaneActivityRail() {
-		msgArea = lipgloss.JoinHorizontal(lipgloss.Top, msgArea, strings.Repeat(" ", arcaneActivityRailGap), m.renderArcaneActivityRail(m.viewport.Height))
-	}
 	box := m.styles.EditorBox
 	switch m.editor.ShellMode() {
 	case editor.ShellModeInsert:
@@ -1461,9 +1458,6 @@ func (m *RootModel) layout() {
 		msgH = 3
 	}
 	msgW := m.width
-	if m.showArcaneActivityRail() {
-		msgW -= arcaneActivityRailWidth + arcaneActivityRailGap
-	}
 	if msgW < 1 {
 		msgW = 1
 	}
@@ -2749,38 +2743,6 @@ func (m *RootModel) activeSubagentCount() int {
 
 func isActiveSubagentStatus(status string) bool {
 	return status == string(agent.SubagentBlocked) || status == string(agent.SubagentPending) || status == string(agent.SubagentRunning)
-}
-
-const (
-	arcaneActivityRailWidth    = 3
-	arcaneActivityRailGap      = 1
-	arcaneActivityRailMinWidth = 80
-)
-
-func (m *RootModel) showArcaneActivityRail() bool {
-	return m.showActivity() && m.settings.ActivityMode == "arcane" && m.width >= arcaneActivityRailMinWidth
-}
-
-func (m *RootModel) renderArcaneActivityRail(height int) string {
-	if height <= 0 {
-		return ""
-	}
-	glyphs := []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ", "ᛇ", "ᛉ", "ᛏ", "ᛒ"}
-	leftEdge, rightEdge := "╎", "╎"
-	switch IconMode(m.settings.IconMode) {
-	case IconModeASCII:
-		glyphs = []string{"*", "|", ".", "+", "|", "*", ".", "|", "o", "|", ".", "+"}
-		leftEdge, rightEdge = ":", ":"
-	case IconModeNerd:
-		glyphs = []string{"ᚱ", "ᚢ", "ᚾ", "ᛖ", "ᛟ", "ᛞ", "ᚨ", "ᛗ", "ᛇ", "ᛉ", "ᛏ", "ᛒ"}
-		leftEdge, rightEdge = "┃", "┃"
-	}
-	lines := make([]string, 0, height)
-	for row := 0; row < height; row++ {
-		glyph := glyphs[(row+m.activityFrame)%len(glyphs)]
-		lines = append(lines, leftEdge+glyph+rightEdge)
-	}
-	return m.styles.Activity.Render(strings.Join(lines, "\n"))
 }
 
 func (m *RootModel) renderActivityLine() string {
