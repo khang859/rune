@@ -126,11 +126,11 @@ Ollama model names are local/user-controlled tags, so rune accepts arbitrary mod
 
 `rune login ollama` is not required; local Ollama does not use OAuth or API keys. If your Ollama-compatible endpoint is behind an authenticated proxy, save an optional Ollama API key from `/settings` or use an environment variable.
 
-### Multiple Ollama servers
+### Provider profiles and multiple Ollama servers
 
-Use `/settings` → `add ollama profile` to create a named Ollama server profile, then `edit active profile` to set its native `/api/chat` endpoint (or paste a legacy `/v1/chat/completions` URL — rune rewrites it transparently at request time). `/providers` shows configured profiles as separate entries such as `Ollama: Local` and `Ollama: GPU Box`, so switching servers is the same flow as switching providers. Each profile stores its own default model; `/model` updates the active profile's model.
+Use `/settings` → `add provider profile` to create a named profile for the current provider, then `active provider profile` to edit that profile's endpoint. For Ollama, set the native `/api/chat` endpoint (or paste a legacy `/v1/chat/completions` URL — rune rewrites it transparently at request time). `/providers` shows configured profiles as separate entries such as `Ollama: Local` and `Ollama: GPU Box`, so switching servers is the same flow as switching providers. Each profile stores its own default model; `/model` updates the active profile's model.
 
-Per-profile overrides for `ollama_num_ctx` (KV cache size) and `ollama_think` (enable thinking mode for Qwen3/DeepSeek-R1-style models) can be set in `settings.json` on the profile or at the top level. Defaults: `ollama_num_ctx: 16384`, `ollama_think: false`. Set `ollama_num_ctx` to a negative value to omit the option entirely and let the model's modelfile decide.
+Per-profile overrides for `ollama_num_ctx` (KV cache size) and `ollama_think` (enable thinking mode for Qwen3/DeepSeek-R1-style models) can be set in `settings.json` on Ollama profiles or at the top level. Defaults: `ollama_num_ctx: 16384`, `ollama_think: false`. Set `ollama_num_ctx` to a negative value to omit the option entirely and let the model's modelfile decide.
 
 Set `RUNE_PROVIDER_PROFILE=<profile-id>` to select a profile from the environment. CLI flags and provider/model environment variables still take precedence over profile defaults.
 

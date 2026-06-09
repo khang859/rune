@@ -68,7 +68,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	}
 	activeProfileStatus := "none"
 	if p := config.FindProviderProfile(s.Profiles, s.ActiveProfile); p != nil {
-		activeProfileStatus = config.ProfileDisplayName(*p) + " — Enter to edit"
+		activeProfileStatus = p.Provider + ": " + config.ProfileDisplayName(*p) + " — Enter to edit"
 	}
 	return modal.Settings{
 		Provider:                 s.Provider,
