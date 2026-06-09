@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/khang859/rune/internal/ai"
 )
@@ -116,6 +117,14 @@ func (s *Session) snapshotForSave() (string, wireSession, error) {
 	return s.path, w, nil
 }
 
+func LoadByID(dir, id string) (*Session, error) {
+	id = strings.TrimSpace(id)
+	if !validSessionID(id) {
+		return nil, fmt.Errorf("invalid session id %q", id)
+	}
+	return Load(filepath.Join(dir, id+".json"))
+}
+
 func Load(path string) (*Session, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -125,8 +134,23 @@ func Load(path string) (*Session, error) {
 	if err := json.Unmarshal(b, &w); err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(w.ID) == "" {
+		return nil, fmt.Errorf("malformed session: missing id")
+	}
+	if strings.TrimSpace(w.RootID) == "" {
+		return nil, fmt.Errorf("malformed session %q: missing root id", w.ID)
+	}
+	if strings.TrimSpace(w.ActiveID) == "" {
+		return nil, fmt.Errorf("malformed session %q: missing active id", w.ID)
+	}
 	nodes := map[string]*Node{}
 	for _, wn := range w.Nodes {
+		if strings.TrimSpace(wn.ID) == "" {
+			return nil, fmt.Errorf("malformed session %q: node missing id", w.ID)
+		}
+		if nodes[wn.ID] != nil {
+			return nil, fmt.Errorf("malformed session %q: duplicate node %q", w.ID, wn.ID)
+		}
 		created, _ := time.Parse(time.RFC3339, wn.Created)
 		n := &Node{ID: wn.ID, Usage: wn.Usage, Created: created, CompactedCount: wn.CompactedCount}
 		if wn.HasMessage {
@@ -137,11 +161,27 @@ func Load(path string) (*Session, error) {
 	for _, wn := range w.Nodes {
 		n := nodes[wn.ID]
 		if wn.ParentID != "" {
-			n.Parent = nodes[wn.ParentID]
+			parent := nodes[wn.ParentID]
+			if parent == nil {
+				return nil, fmt.Errorf("malformed session %q: node %q has missing parent %q", w.ID, wn.ID, wn.ParentID)
+			}
+			n.Parent = parent
 		}
 		for _, cid := range wn.ChildIDs {
-			n.Children = append(n.Children, nodes[cid])
+			child := nodes[cid]
+			if child == nil {
+				return nil, fmt.Errorf("malformed session %q: node %q has missing child %q", w.ID, wn.ID, cid)
+			}
+			n.Children = append(n.Children, child)
 		}
+	}
+	root := nodes[w.RootID]
+	if root == nil {
+		return nil, fmt.Errorf("malformed session %q: root node %q not found", w.ID, w.RootID)
+	}
+	active := nodes[w.ActiveID]
+	if active == nil {
+		return nil, fmt.Errorf("malformed session %q: active node %q not found", w.ID, w.ActiveID)
 	}
 	created, _ := time.Parse(time.RFC3339, w.Created)
 	return &Session{
@@ -151,8 +191,8 @@ func Load(path string) (*Session, error) {
 		Provider:  normalizeProvider(w.Provider),
 		Model:     w.Model,
 		Cwd:       normalizeCwd(w.Cwd),
-		Root:      nodes[w.RootID],
-		Active:    nodes[w.ActiveID],
+		Root:      root,
+		Active:    active,
 		Subagents: cloneSubagentTasks(w.Subagents),
 		FilesRead: append([]string(nil), w.FilesRead...),
 		path:      path,
@@ -166,10 +206,24 @@ func walk(n *Node, fn func(*Node)) {
 	}
 }
 
+func validSessionID(id string) bool {
+	if id == "" || id == "." || id == ".." || filepath.Base(id) != id {
+		return false
+	}
+	for _, r := range id {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func normalizeProvider(provider string) string {
-	switch strings.ToLower(strings.TrimSpace(provider)) {
-	case "", "codex", "groq", "ollama", "runpod":
-		return strings.ToLower(strings.TrimSpace(provider))
+	p := strings.ToLower(strings.TrimSpace(provider))
+	switch p {
+	case "", "codex", "groq", "ollama", "runpod", "openrouter":
+		return p
 	default:
 		return "codex"
 	}
