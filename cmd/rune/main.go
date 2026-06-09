@@ -20,12 +20,13 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--version] | rune login [provider] | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text> | --resume <session-id>] [--version] | rune login [provider] | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	script := flag.String("script", "", "run a JSON script (headless smoke runner)")
 	prompt := flag.String("prompt", "", "run a single turn against the configured provider and exit")
+	resume := flag.String("resume", "", "resume a saved session by id and continue interactively")
 	provider := flag.String("provider", "", "provider id (codex, groq, ollama, runpod, or openrouter; overrides RUNE_PROVIDER and settings)")
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
 	profileName := flag.String("profile", "", "named worker profile (~/.rune/profiles/<name>.md) applying a model, skills, and persona")
@@ -75,6 +76,10 @@ func main() {
 		}
 		return
 	}
+	if *resume != "" && (*script != "" || *prompt != "") {
+		fmt.Fprintln(os.Stderr, "error: --resume cannot be combined with --script or --prompt")
+		os.Exit(1)
+	}
 	if *script != "" {
 		if err := runScript(ctx, *script, os.Stdout, faux.New()); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
@@ -97,7 +102,13 @@ func main() {
 		}
 		return
 	}
-	if err := runInteractive(ctx, *provider, *model, *profileName, Version); err != nil {
+	if err := runInteractiveWithOptions(ctx, interactiveOptions{
+		ProviderOverride: *provider,
+		ModelOverride:    *model,
+		ProfileName:      *profileName,
+		Version:          Version,
+		ResumeID:         *resume,
+	}); err != nil {
 		runelog.Error("interactive", "err", err.Error())
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)

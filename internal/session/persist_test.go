@@ -61,7 +61,7 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 }
 
 func TestSave_AndLoad_PreservesSupportedProviders(t *testing.T) {
-	for _, provider := range []string{"", "codex", "groq", "ollama", "runpod"} {
+	for _, provider := range []string{"", "codex", "groq", "ollama", "runpod", "openrouter"} {
 		t.Run(provider, func(t *testing.T) {
 			dir := t.TempDir()
 			s := New("qwen3:4b")
@@ -97,6 +97,44 @@ func TestSave_AndLoad_NormalizesUnknownProviderToCodex(t *testing.T) {
 	}
 	if loaded.Provider != "codex" {
 		t.Fatalf("loaded provider = %q, want codex", loaded.Provider)
+	}
+}
+
+func TestLoadByID_LoadsFromDirectory(t *testing.T) {
+	dir := t.TempDir()
+	s := New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.Append(userMsg("hi"))
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadByID(dir, s.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.ID != s.ID || loaded.Path() != s.Path() {
+		t.Fatalf("loaded %q at %q, want %q at %q", loaded.ID, loaded.Path(), s.ID, s.Path())
+	}
+}
+
+func TestLoadByID_RejectsUnsafeIDs(t *testing.T) {
+	for _, id := range []string{"", "../x", "a/b", "a\\b", ".", "..", "has space"} {
+		t.Run(id, func(t *testing.T) {
+			if _, err := LoadByID(t.TempDir(), id); err == nil {
+				t.Fatal("expected error")
+			}
+		})
+	}
+}
+
+func TestLoad_RejectsMalformedSessionShape(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "bad.json")
+	if err := os.WriteFile(path, []byte(`{"id":"bad","created":"2026-01-01T00:00:00Z","model":"gpt","root_id":"missing","active_id":"missing","nodes":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err == nil {
+		t.Fatal("expected malformed session error")
 	}
 }
 

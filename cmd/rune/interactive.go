@@ -18,18 +18,38 @@ import (
 	"github.com/khang859/rune/internal/tui"
 )
 
-func runInteractive(ctx context.Context, providerOverride, modelOverride, profileName, version string) error {
+type interactiveOptions struct {
+	ProviderOverride string
+	ModelOverride    string
+	ProfileName      string
+	Version          string
+	ResumeID         string
+}
+
+func runInteractiveWithOptions(ctx context.Context, opt interactiveOptions) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
 	cwd, _ := os.Getwd()
 	home, _ := os.UserHomeDir()
-	prof, err := loadProfile(profileName, cwd, home)
+	prof, err := loadProfile(opt.ProfileName, cwd, home)
 	if err != nil {
 		return err
 	}
 	settings, _ := config.LoadSettings(config.SettingsPath())
-	selection, err := buildProvider(ctx, providerOverride, profileModel(modelOverride, prof))
+	sess, err := initialInteractiveSession(opt.ResumeID, cwd)
+	if err != nil {
+		return err
+	}
+	providerDefault := opt.ProviderOverride
+	if providerDefault == "" && sess.Provider != "" {
+		providerDefault = sess.Provider
+	}
+	modelDefault := profileModel(opt.ModelOverride, prof)
+	if modelDefault == "" && opt.ResumeID != "" {
+		modelDefault = sess.Model
+	}
+	selection, err := buildProvider(ctx, providerDefault, modelDefault)
 	var startupNotice string
 	if err != nil {
 		// Never trap the user at the CLI: drop into the TUI with an unavailable
@@ -39,10 +59,10 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, profil
 		selection.AI = unavailable.New(startupNotice)
 	}
 
-	sess := session.New(selection.Model)
+	if selection.Model != "" {
+		sess.Model = selection.Model
+	}
 	sess.Provider = selection.Provider
-	sess.Cwd = cwd
-	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
 
 	reg := tools.NewRegistry()
 	opts, _, _ := tools.BuiltinOptionsFromSettings(settings)
@@ -96,5 +116,19 @@ func runInteractive(ctx context.Context, providerOverride, modelOverride, profil
 		}
 	}()
 
-	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), version, prof, startupNotice)
+	return tui.RunWithProfile(a, sess, selection.ProfileID, skills, mgr.Statuses(), opt.Version, prof, startupNotice)
+}
+
+func initialInteractiveSession(resumeID, cwd string) (*session.Session, error) {
+	if resumeID == "" {
+		sess := session.New("")
+		sess.Cwd = cwd
+		sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
+		return sess, nil
+	}
+	sess, err := session.LoadByID(config.SessionsDir(), resumeID)
+	if err != nil {
+		return nil, fmt.Errorf("resume session %q: %w", resumeID, err)
+	}
+	return sess, nil
 }

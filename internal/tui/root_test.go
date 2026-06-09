@@ -857,6 +857,21 @@ func TestRoot_StaleEventsAfterSwapSessionAreDropped(t *testing.T) {
 	}
 }
 
+func TestRoot_RebuildMessagesFromLoadedSession(t *testing.T) {
+	s := session.New("gpt-5")
+	s.Append(ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: "saved prompt"}}})
+	s.Append(ai.Message{Role: ai.RoleAssistant, Content: []ai.ContentBlock{ai.TextBlock{Text: "saved answer"}}})
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	m.rebuildMessagesFromSession()
+
+	view := m.msgs.Render(m.styles, false, false, time.Time{})
+	if !strings.Contains(view, "saved prompt") || !strings.Contains(view, "saved answer") {
+		t.Fatalf("expected saved transcript in messages:\n%s", view)
+	}
+}
+
 func TestRoot_ResumeListsOnlyCurrentCWD(t *testing.T) {
 	runeDir := t.TempDir()
 	t.Setenv("RUNE_DIR", runeDir)

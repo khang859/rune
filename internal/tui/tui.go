@@ -29,6 +29,9 @@ func RunWithProfile(a *agent.Agent, s *session.Session, activeProfile string, sk
 	m.SetVersion(version)
 	m.SetSkills(skills)
 	m.SetMCPStatuses(mcpStatuses)
+	if s != nil && len(s.PathToActiveNodes()) > 0 {
+		m.rebuildMessagesFromSession()
+	}
 	m.SetStartupNotice(startupNotice)
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	defer fmt.Print(ansi.PopKittyKeyboard(1))
