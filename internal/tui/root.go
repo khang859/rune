@@ -182,6 +182,10 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	}
 }
 
+func (m *RootModel) refreshGitBranch() {
+	m.footer.GitBranch = currentGitBranch(m.editor.Cwd())
+}
+
 func (m *RootModel) SetSkills(skills []skill.Skill) {
 	m.skills = make(map[string]string, len(skills))
 	cmds := append([]string{}, baseSlashCmds...)
@@ -389,6 +393,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !m.copyMode && !m.compacting {
 			m.editor.Focus()
 		}
+		m.refreshGitBranch()
 		m.layout()
 		if compactCmd != nil {
 			return m, compactCmd
@@ -1537,6 +1542,7 @@ func (m *RootModel) handleEvent(e agent.Event) {
 		m.msgs.OnToolStarted(v.Call)
 	case agent.ToolFinished:
 		m.msgs.OnToolFinished(v)
+		m.refreshGitBranch()
 	case agent.TurnUsage:
 		m.currentTokens = v.Usage.Input + v.Usage.Output
 		m.footer.Tokens = m.currentTokens
@@ -1552,6 +1558,7 @@ func (m *RootModel) handleEvent(e agent.Event) {
 		m.msgs.OnTurnError(fmt.Errorf("(aborted)"))
 	case agent.TurnDone:
 		m.msgs.OnTurnDone(v.Reason)
+		m.refreshGitBranch()
 	}
 }
 

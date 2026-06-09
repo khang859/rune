@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -263,6 +264,71 @@ func TestFormatUserMessageForDisplayIncludesImageCount(t *testing.T) {
 	if got := formatUserMessageForDisplay("", 1); got != "[1 image(s) attached]" {
 		t.Fatalf("display = %q", got)
 	}
+}
+
+func TestRoot_RefreshesGitBranchAfterToolFinished(t *testing.T) {
+	dir := initTestGitRepo(t, "main")
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	if got := m.footer.GitBranch; got != "main" {
+		t.Fatalf("initial GitBranch = %q, want main", got)
+	}
+
+	runGit(t, dir, "checkout", "-b", "feature")
+	m.handleEvent(agent.ToolFinished{
+		Call:   ai.ToolCall{Name: "bash"},
+		Result: tools.Result{Output: "switched"},
+	})
+
+	if got := m.footer.GitBranch; got != "feature" {
+		t.Fatalf("GitBranch after ToolFinished = %q, want feature", got)
+	}
+}
+
+func TestRoot_RefreshesGitBranchAfterTurnDone(t *testing.T) {
+	dir := initTestGitRepo(t, "main")
+	oldWd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldWd) })
+
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	if got := m.footer.GitBranch; got != "main" {
+		t.Fatalf("initial GitBranch = %q, want main", got)
+	}
+
+	runGit(t, dir, "checkout", "-b", "feature")
+	m.handleEvent(agent.TurnDone{Reason: "stop"})
+
+	if got := m.footer.GitBranch; got != "feature" {
+		t.Fatalf("GitBranch after TurnDone = %q, want feature", got)
+	}
+}
+
+func initTestGitRepo(t *testing.T, branch string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found")
+	}
+	dir := t.TempDir()
+	runGit(t, dir, "init", "-b", branch)
+	return dir
 }
 
 func TestRoot_SavesAssistantMessageWhenTurnCompletes(t *testing.T) {
