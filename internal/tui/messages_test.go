@@ -558,13 +558,24 @@ func TestMessages_OnSubagentEvent_SeparateBlocksForDifferentTasks(t *testing.T) 
 }
 
 func TestRenderSubagentEventText_TrimmedLabels(t *testing.T) {
+	started := time.Date(2026, 6, 9, 7, 0, 0, 0, time.UTC)
+	completed := started.Add(2*time.Minute + 4*time.Second)
 	mk := func(status agent.SubagentStatus, summary, errMsg string) agent.SubagentEvent {
-		return agent.SubagentEvent{
-			Task: tools.SubagentTask{
-				ID: "t1", Name: "inspect", FamiliarName: "Nyx", Summary: summary, Error: errMsg,
-			},
-			Status: status,
+		task := tools.SubagentTask{
+			ID: "t1", Name: "inspect", FamiliarName: "Nyx", Summary: summary, Error: errMsg,
 		}
+		if status == agent.SubagentRunning {
+			task.StartedAt = &started
+			task.InputTokens = 1_200
+			task.OutputTokens = 34
+		}
+		if status == agent.SubagentCompleted {
+			task.StartedAt = &started
+			task.CompletedAt = &completed
+			task.InputTokens = 12_000
+			task.OutputTokens = 345
+		}
+		return agent.SubagentEvent{Task: task, Status: status}
 	}
 	// Variant with no task name so familiarLabel returns just "Nyx" — lets us
 	// pin the literal "Nyx waiting on dependencies" substring for the blocked case.
@@ -581,16 +592,16 @@ func TestRenderSubagentEventText_TrimmedLabels(t *testing.T) {
 		expect string
 	}{
 		{"pending", mk(agent.SubagentPending, "", ""), "summoning Nyx"},
-		{"running", mk(agent.SubagentRunning, "", ""), "working…"},
+		{"running", mk(agent.SubagentRunning, "", ""), "working… · 2m04s · 1.2k tok"},
 		{"blocked", mkBare(agent.SubagentBlocked), "Nyx waiting on dependencies"},
-		{"completed", mk(agent.SubagentCompleted, "line a\nline b", ""), "returned (2 lines)"},
+		{"completed", mk(agent.SubagentCompleted, "line a\nline b", ""), "returned (2 lines) · 2m04s · 12k tok"},
 		{"completed-empty", mk(agent.SubagentCompleted, "", ""), "returned"},
 		{"failed", mk(agent.SubagentFailed, "", "boom"), "failed: boom"},
 		{"cancelled", mk(agent.SubagentCancelled, "", ""), "dismissed"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := renderSubagentEventText(c.ev)
+			got := renderSubagentEventTextAt(c.ev, completed)
 			if !strings.Contains(got, c.expect) {
 				t.Fatalf("expected %q to contain %q", got, c.expect)
 			}

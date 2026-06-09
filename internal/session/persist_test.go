@@ -179,6 +179,8 @@ func TestSave_AndLoad_PreservesSubagentTaskMetadata(t *testing.T) {
 			CreatedAt:    created,
 			StartedAt:    &started,
 			CompletedAt:  &completed,
+			InputTokens:  1_200,
+			OutputTokens: 34,
 			Summary:      "done",
 		},
 		{
@@ -204,6 +206,9 @@ func TestSave_AndLoad_PreservesSubagentTaskMetadata(t *testing.T) {
 	}
 	if got[0].ID != "subagent_1" || got[0].Name != "inspect" || got[0].AgentType != "general" || got[0].Status != "completed" || got[0].Summary != "done" {
 		t.Fatalf("unexpected subagent[0]: %+v", got[0])
+	}
+	if got[0].InputTokens != 1_200 || got[0].OutputTokens != 34 {
+		t.Fatalf("tokens not preserved: %+v", got[0])
 	}
 	if len(got[0].Dependencies) != 1 || got[0].Dependencies[0] != "subagent_0" {
 		t.Fatalf("dependencies = %#v", got[0].Dependencies)

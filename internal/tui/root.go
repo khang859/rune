@@ -2833,7 +2833,26 @@ func (m *RootModel) renderSubagentActivityIndicator() string {
 	if n != 1 {
 		label = "familiars"
 	}
-	return subagentSpinnerText(fmt.Sprintf("%d %s working", n, label), m.activityFrame)
+	parts := []string{fmt.Sprintf("%d %s working", n, label)}
+	var longest time.Duration
+	tokens := 0
+	now := time.Now()
+	for _, ev := range m.subagents {
+		if !isActiveSubagentStatus(string(ev.Status)) {
+			continue
+		}
+		if elapsed := subagentElapsed(ev.Task, now); elapsed > longest {
+			longest = elapsed
+		}
+		tokens += ev.Task.InputTokens + ev.Task.OutputTokens
+	}
+	if longest > 0 {
+		parts = append(parts, formatElapsed(longest))
+	}
+	if tokens > 0 {
+		parts = append(parts, fmt.Sprintf("%s tok", compactCount(tokens)))
+	}
+	return subagentSpinnerText(strings.Join(parts, " · "), m.activityFrame)
 }
 
 func composeActivityLine(left, right string, width int) string {

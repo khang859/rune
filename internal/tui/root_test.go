@@ -1768,13 +1768,17 @@ func TestRoot_ActivityLineShowsSubagentsOnRightWhileStreaming(t *testing.T) {
 	m := NewRootModel(a, s)
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.streaming = true
+	started := time.Now().Add(-75 * time.Second)
 	m.subagents["subagent_1"] = agent.SubagentEvent{
 		Status: agent.SubagentRunning,
-		Task:   tools.SubagentTask{ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: time.Now()},
+		Task: tools.SubagentTask{
+			ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: time.Now(),
+			StartedAt: &started, InputTokens: 1_000, OutputTokens: 234,
+		},
 	}
 
 	line := m.renderActivityLine()
-	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 familiar working") {
+	if !strings.Contains(line, "consulting the runes") || !strings.Contains(line, "1 familiar working") || !strings.Contains(line, "1m") || !strings.Contains(line, "1.2k tok") {
 		t.Fatalf("combined activity line missing main/familiar indicators: %q", line)
 	}
 	if strings.Index(line, "consulting the runes") > strings.Index(line, "1 familiar working") {
@@ -1817,19 +1821,23 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 
 	created := time.Now()
+	started := created.Add(-2 * time.Minute)
 	ev := agent.SubagentEvent{
 		Status: agent.SubagentRunning,
-		Task:   tools.SubagentTask{ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: created},
+		Task: tools.SubagentTask{
+			ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: created,
+			StartedAt: &started, InputTokens: 2_000, OutputTokens: 345,
+		},
 	}
 	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
 	out := m.msgs.Render(m.styles, false, false, time.Now())
-	if !strings.Contains(out, "familiar of repo-plan") || !strings.Contains(out, "working") {
+	if !strings.Contains(out, "familiar of repo-plan") || !strings.Contains(out, "working") || !strings.Contains(out, "2.3k tok") {
 		t.Fatalf("running familiar not rendered: %q", out)
 	}
 	if m.activeSubagentCount() != 1 {
 		t.Fatalf("activeSubagentCount = %d, want 1", m.activeSubagentCount())
 	}
-	if !strings.Contains(m.View(), "1 familiar working") {
+	if !strings.Contains(m.View(), "1 familiar working") || !strings.Contains(m.View(), "2.3k tok") {
 		t.Fatalf("familiar activity indicator not rendered in view: %q", m.View())
 	}
 	before := m.renderSubagentActivityIndicator()

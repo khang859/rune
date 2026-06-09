@@ -38,6 +38,8 @@ type SubagentTask struct {
 	CreatedAt    time.Time      `json:"created_at"`
 	StartedAt    *time.Time     `json:"started_at,omitempty"`
 	CompletedAt  *time.Time     `json:"completed_at,omitempty"`
+	InputTokens  int            `json:"input_tokens,omitempty"`
+	OutputTokens int            `json:"output_tokens,omitempty"`
 	Summary      string         `json:"summary,omitempty"`
 	Error        string         `json:"error,omitempty"`
 	injected     bool
@@ -192,6 +194,8 @@ func (s *SubagentSupervisor) restoreFromSession() {
 			CreatedAt:    wt.CreatedAt,
 			StartedAt:    wt.StartedAt,
 			CompletedAt:  wt.CompletedAt,
+			InputTokens:  wt.InputTokens,
+			OutputTokens: wt.OutputTokens,
 			Summary:      wt.Summary,
 			Error:        wt.Error,
 			injected:     status == SubagentCompleted,
@@ -464,7 +468,7 @@ func (s *SubagentSupervisor) runTask(parentCtx context.Context, id string, req t
 	case s.sem <- struct{}{}:
 		defer func() { <-s.sem }()
 	case <-parentCtx.Done():
-		s.finish(id, SubagentCancelled, "", parentCtx.Err().Error())
+		s.finish(id, SubagentCancelled, "", ai.Usage{}, parentCtx.Err().Error())
 		return
 	}
 
@@ -493,23 +497,33 @@ func (s *SubagentSupervisor) runTask(parentCtx context.Context, id string, req t
 	}
 	s.mu.Unlock()
 
+	onUsage := func(u ai.Usage) {
+		s.mu.Lock()
+		if t := s.tasks[id]; t != nil && (t.Status == SubagentRunning || t.Status == SubagentPending || t.Status == SubagentBlocked) {
+			t.InputTokens += u.Input
+			t.OutputTokens += u.Output
+			s.publishLocked(t)
+		}
+		s.mu.Unlock()
+	}
+
 	prompt := s.promptWithDependencySummaries(req)
-	summary, err := s.runIsolatedAgent(ctx, req, prompt)
+	summary, usage, err := s.runIsolatedAgent(ctx, req, prompt, onUsage)
 	s.mu.Lock()
 	delete(s.cancels, id)
 	s.mu.Unlock()
 	if err != nil {
 		if ctx.Err() != nil {
-			s.finish(id, SubagentCancelled, summary, ctx.Err().Error())
+			s.finish(id, SubagentCancelled, summary, usage, ctx.Err().Error())
 			return
 		}
-		s.finish(id, SubagentFailed, summary, err.Error())
+		s.finish(id, SubagentFailed, summary, usage, err.Error())
 		return
 	}
-	s.finish(id, SubagentCompleted, summary, "")
+	s.finish(id, SubagentCompleted, summary, usage, "")
 }
 
-func (s *SubagentSupervisor) runIsolatedAgent(ctx context.Context, req tools.SpawnSubagentRequest, prompt string) (string, error) {
+func (s *SubagentSupervisor) runIsolatedAgent(ctx context.Context, req tools.SpawnSubagentRequest, prompt string, onUsage func(ai.Usage)) (string, ai.Usage, error) {
 	def, _ := s.subagentDefinition(req.AgentType)
 	model := s.parent.session.Model
 	if strings.TrimSpace(def.Model) != "" {
@@ -530,20 +544,28 @@ func (s *SubagentSupervisor) runIsolatedAgent(ctx context.Context, req tools.Spa
 
 	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: prompt}}}
 	var b strings.Builder
+	var usage ai.Usage
 	for ev := range child.Run(ctx, msg) {
 		switch v := ev.(type) {
 		case AssistantText:
 			b.WriteString(v.Delta)
+		case TurnUsage:
+			usage.Input += v.Usage.Input
+			usage.Output += v.Usage.Output
+			usage.CacheRead += v.Usage.CacheRead
+			if onUsage != nil {
+				onUsage(v.Usage)
+			}
 		case TurnError:
-			return strings.TrimSpace(b.String()), v.Err
+			return strings.TrimSpace(b.String()), usage, v.Err
 		case TurnAborted:
-			return strings.TrimSpace(b.String()), context.Canceled
+			return strings.TrimSpace(b.String()), usage, context.Canceled
 		}
 	}
-	return strings.TrimSpace(b.String()), nil
+	return strings.TrimSpace(b.String()), usage, nil
 }
 
-func (s *SubagentSupervisor) finish(id string, status SubagentStatus, summary, errMsg string) {
+func (s *SubagentSupervisor) finish(id string, status SubagentStatus, summary string, usage ai.Usage, errMsg string) {
 	var toStart []string
 	s.mu.Lock()
 	t := s.tasks[id]
@@ -558,6 +580,8 @@ func (s *SubagentSupervisor) finish(id string, status SubagentStatus, summary, e
 	now := time.Now()
 	t.Status = status
 	t.CompletedAt = &now
+	t.InputTokens = usage.Input
+	t.OutputTokens = usage.Output
 	t.Summary = summary
 	t.Error = errMsg
 	s.publishLocked(t)
@@ -684,6 +708,8 @@ func (s *SubagentSupervisor) persistLocked() {
 			CreatedAt:    t.CreatedAt,
 			StartedAt:    t.StartedAt,
 			CompletedAt:  t.CompletedAt,
+			InputTokens:  t.InputTokens,
+			OutputTokens: t.OutputTokens,
 			Summary:      t.Summary,
 			Error:        t.Error,
 		})
@@ -870,6 +896,8 @@ func toToolSubagentTask(t *SubagentTask) tools.SubagentTask {
 		CreatedAt:    t.CreatedAt,
 		StartedAt:    t.StartedAt,
 		CompletedAt:  t.CompletedAt,
+		InputTokens:  t.InputTokens,
+		OutputTokens: t.OutputTokens,
 		Summary:      t.Summary,
 		Error:        t.Error,
 	}
