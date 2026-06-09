@@ -20,7 +20,7 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
-func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName, requireTools string, w io.Writer) error {
+func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName, requireTools, resumeID string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
@@ -30,7 +30,24 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	if err != nil {
 		return err
 	}
-	selection, err := buildProvider(ctx, providerOverride, profileModel(modelOverride, prof))
+	var sess *session.Session
+	if resumeID != "" {
+		sess, err = session.LoadByID(config.SessionsDir(), resumeID)
+		if err != nil {
+			return fmt.Errorf("resume session %q: %w", resumeID, err)
+		}
+	}
+	// A resumed session supplies the provider/model defaults so the turn
+	// continues on the same backend it started on (mirrors interactive resume).
+	providerDefault := providerOverride
+	if providerDefault == "" && sess != nil && sess.Provider != "" {
+		providerDefault = sess.Provider
+	}
+	modelDefault := profileModel(modelOverride, prof)
+	if modelDefault == "" && sess != nil {
+		modelDefault = sess.Model
+	}
+	selection, err := buildProvider(ctx, providerDefault, modelDefault)
 	if err != nil {
 		// Headless can't recover interactively, so make the failure actionable:
 		// name both the re-login and the switch-provider paths.
@@ -39,10 +56,18 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 		}
 		return fmt.Errorf("%w\n  fix it:    rune login   (interactive provider chooser)\n  or switch: rune --provider <id> --prompt <text>", err)
 	}
-	sess := session.New(selection.Model)
+	if sess == nil {
+		sess = session.New(selection.Model)
+		sess.Cwd = cwd
+		sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
+	}
+	if selection.Model != "" {
+		sess.Model = selection.Model
+	}
 	sess.Provider = selection.Provider
-	sess.Cwd = cwd
-	sess.SetPath(filepath.Join(config.SessionsDir(), sess.ID+".json"))
+	// Callers driving rune programmatically need the id to resume the
+	// conversation later; stderr keeps it out of the assistant text on stdout.
+	fmt.Fprintf(os.Stderr, "session-id: %s\n", sess.ID)
 
 	settings, _ := config.LoadSettings(config.SettingsPath())
 	reg := tools.NewRegistry()

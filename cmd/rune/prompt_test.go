@@ -63,7 +63,7 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "hello") {
@@ -112,7 +112,7 @@ func TestRunPrompt_UsesCodexProfileEndpoint(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "profile-codex") {
@@ -134,7 +134,7 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
@@ -164,7 +164,7 @@ func TestRunPrompt_CanceledContextCancelsProviderRequest(t *testing.T) {
 	done := make(chan error, 1)
 	var buf bytes.Buffer
 	go func() {
-		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", "", &buf)
+		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", "", "", &buf)
 	}()
 
 	select {
@@ -213,7 +213,7 @@ func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "runpod") {
@@ -254,7 +254,7 @@ func TestRunPrompt_UsesOllamaProfile(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "profile-ollama") {
@@ -277,7 +277,7 @@ func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_API_KEY", "ollama-token")
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama-auth") {
@@ -311,7 +311,7 @@ func TestRunPrompt_HitsOpenRouterAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "openrouter") {
@@ -335,7 +335,7 @@ func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_GROQ_API_KEY", strings.Repeat("g", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "groq", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "groq", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "groq") {
@@ -370,7 +370,7 @@ func TestRunPrompt_LoadsSkillsIntoSystemPrompt(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, marker) {
@@ -395,10 +395,59 @@ func TestRunPrompt_MCPStartFailureDoesNotAbort(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
 		t.Fatalf("runPrompt should tolerate MCP startup failure: %v", err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
 		t.Fatalf("output = %q", buf.String())
+	}
+}
+
+func TestRunPrompt_ResumeContinuesSavedSession(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ollama"},"done":true,"done_reason":"stop"}` + "\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "first turn", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := os.ReadDir(filepath.Join(runeDir, "sessions"))
+	if err != nil || len(sessions) != 1 {
+		t.Fatalf("sessions after first turn = %v, err = %v", sessions, err)
+	}
+	id := strings.TrimSuffix(sessions[0].Name(), ".json")
+
+	if err := runPrompt(context.Background(), "second turn", "ollama", "qwen3:4b", "", "", id, &buf); err != nil {
+		t.Fatal(err)
+	}
+	sessions, _ = os.ReadDir(filepath.Join(runeDir, "sessions"))
+	if len(sessions) != 1 {
+		t.Fatalf("resume created a new session; sessions = %d, want 1", len(sessions))
+	}
+	raw, err := os.ReadFile(filepath.Join(runeDir, "sessions", id+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"first turn", "second turn"} {
+		if !strings.Contains(string(raw), want) {
+			t.Fatalf("session file missing %q", want)
+		}
+	}
+}
+
+func TestRunPrompt_ResumeUnknownSessionFails(t *testing.T) {
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+
+	var buf bytes.Buffer
+	err := runPrompt(context.Background(), "hi", "ollama", "qwen3:4b", "", "", "missing123", &buf)
+	if err == nil || !strings.Contains(err.Error(), "resume session") {
+		t.Fatalf("err = %v, want resume session error", err)
 	}
 }
