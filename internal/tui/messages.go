@@ -242,10 +242,6 @@ func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time
 	return ""
 }
 
-func renderSubagentEventText(ev agent.SubagentEvent) string {
-	return renderSubagentEventTextAt(ev, time.Now())
-}
-
 func renderSubagentEventTextAt(ev agent.SubagentEvent, now time.Time) string {
 	t := ev.Task
 	label := familiarLabel(t.FamiliarName, t.Name)
