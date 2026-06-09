@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/khang859/rune/internal/agent"
 	"github.com/khang859/rune/internal/ai"
+	"github.com/khang859/rune/internal/tools"
 )
 
 type Messages struct {
@@ -40,6 +41,7 @@ type block struct {
 	startedAt time.Time
 	endedAt   time.Time
 	taskID    string
+	task      tools.SubagentTask
 }
 
 func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
@@ -149,13 +151,13 @@ func (m *Messages) AppendSummary(text string, count int) {
 func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 	m.FinalizeStreamingThinking(time.Now())
 	m.streamingAsstIdx = -1
-	text := renderSubagentEventText(ev)
 	taskID := ev.Task.ID
 	if taskID != "" {
 		for i := range m.blocks {
 			if m.blocks[i].kind == bkSubagent && m.blocks[i].taskID == taskID {
 				m.blocks[i].meta = string(ev.Status)
-				m.blocks[i].text = text
+				m.blocks[i].text = renderSubagentEventTextAt(ev, time.Now())
+				m.blocks[i].task = ev.Task
 				return
 			}
 		}
@@ -163,8 +165,9 @@ func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 	m.blocks = append(m.blocks, block{
 		kind:   bkSubagent,
 		meta:   string(ev.Status),
-		text:   text,
+		text:   renderSubagentEventTextAt(ev, time.Now()),
 		taskID: taskID,
+		task:   ev.Task,
 	})
 }
 
@@ -224,43 +227,99 @@ func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time
 		header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
 		return s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
 	case bkSubagent:
+		text := b.text
+		if b.meta == string(agent.SubagentRunning) {
+			text = renderRunningSubagentText(b, now)
+		}
 		if b.meta == string(agent.SubagentCompleted) {
-			return s.FamiliarSuccess.Render(b.text)
+			return s.FamiliarSuccess.Render(text)
 		}
 		if b.meta == string(agent.SubagentFailed) || b.meta == string(agent.SubagentCancelled) {
-			return s.ToolError.Render(b.text)
+			return s.ToolError.Render(text)
 		}
-		return s.FamiliarActive.Render(b.text)
+		return s.FamiliarActive.Render(text)
 	}
 	return ""
 }
 
-func renderSubagentEventText(ev agent.SubagentEvent) string {
+func renderSubagentEventTextAt(ev agent.SubagentEvent, now time.Time) string {
 	t := ev.Task
 	label := familiarLabel(t.FamiliarName, t.Name)
+	suffix := subagentProgressSuffix(t, now)
 	switch ev.Status {
 	case agent.SubagentBlocked:
-		return fmt.Sprintf("◌ %s waiting on dependencies", label)
+		return fmt.Sprintf("◌ %s waiting on dependencies%s", label, suffix)
 	case agent.SubagentPending:
-		return fmt.Sprintf("◌ summoning %s", label)
+		return fmt.Sprintf("◌ summoning %s%s", label, suffix)
 	case agent.SubagentRunning:
-		return fmt.Sprintf("◐ %s working…", label)
+		return fmt.Sprintf("◐ %s working…%s", label, suffix)
 	case agent.SubagentCompleted:
 		if strings.TrimSpace(t.Summary) == "" {
-			return fmt.Sprintf("✓ %s returned", label)
+			return fmt.Sprintf("✓ %s returned%s", label, suffix)
 		}
 		lines := strings.Count(strings.TrimSpace(t.Summary), "\n") + 1
-		return fmt.Sprintf("✓ %s returned (%d lines)", label, lines)
+		return fmt.Sprintf("✓ %s returned (%d lines)%s", label, lines, suffix)
 	case agent.SubagentFailed:
 		if strings.TrimSpace(t.Error) == "" {
-			return fmt.Sprintf("✗ %s failed", label)
+			return fmt.Sprintf("✗ %s failed%s", label, suffix)
 		}
-		return fmt.Sprintf("✗ %s failed: %s", label, strings.TrimSpace(t.Error))
+		return fmt.Sprintf("✗ %s failed: %s%s", label, strings.TrimSpace(t.Error), suffix)
 	case agent.SubagentCancelled:
-		return fmt.Sprintf("⊘ %s dismissed", label)
+		return fmt.Sprintf("⊘ %s dismissed%s", label, suffix)
 	default:
-		return fmt.Sprintf("%s %s", label, ev.Status)
+		return fmt.Sprintf("%s %s%s", label, ev.Status, suffix)
 	}
+}
+
+func subagentProgressSuffix(t tools.SubagentTask, now time.Time) string {
+	parts := []string{}
+	if elapsed := subagentElapsed(t, now); elapsed > 0 {
+		parts = append(parts, formatElapsed(elapsed))
+	}
+	if tokens := t.InputTokens + t.OutputTokens; tokens > 0 {
+		parts = append(parts, fmt.Sprintf("%s tok", compactCount(tokens)))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " · " + strings.Join(parts, " · ")
+}
+
+func renderRunningSubagentText(b block, now time.Time) string {
+	ev := agent.SubagentEvent{Task: b.task, Status: agent.SubagentStatus(b.meta)}
+	return renderSubagentEventTextAt(ev, now)
+}
+
+func subagentElapsed(t tools.SubagentTask, now time.Time) time.Duration {
+	if t.StartedAt == nil {
+		return 0
+	}
+	end := now
+	if t.CompletedAt != nil {
+		end = *t.CompletedAt
+	}
+	if end.Before(*t.StartedAt) {
+		return 0
+	}
+	return end.Sub(*t.StartedAt)
+}
+
+func formatElapsed(d time.Duration) string {
+	seconds := int(d.Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	if seconds < 60 {
+		return fmt.Sprintf("%ds", seconds)
+	}
+	minutes := seconds / 60
+	seconds %= 60
+	if minutes < 60 {
+		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	}
+	hours := minutes / 60
+	minutes %= 60
+	return fmt.Sprintf("%dh%02dm", hours, minutes)
 }
 
 func familiarLabel(familiar, task string) string {

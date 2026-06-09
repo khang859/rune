@@ -916,7 +916,7 @@ func TestRun_WaitsForInFlightSubagentBeforeTurnDone(t *testing.T) {
 	// Simulate the subagent finishing 50ms after Run starts.
 	go func() {
 		time.Sleep(50 * time.Millisecond)
-		sup.finish("t1", SubagentCompleted, "subagent result", "")
+		sup.finish("t1", SubagentCompleted, "subagent result", ai.Usage{}, "")
 	}()
 
 	var texts []string

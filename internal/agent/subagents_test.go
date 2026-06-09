@@ -39,6 +39,9 @@ func TestSubagentSupervisor_SpawnGeneralForeground(t *testing.T) {
 	if task.AgentType != "general" {
 		t.Fatalf("agent type = %q", task.AgentType)
 	}
+	if task.InputTokens != 1 || task.OutputTokens != 1 {
+		t.Fatalf("subagent tokens = %d/%d, want 1/1", task.InputTokens, task.OutputTokens)
+	}
 }
 
 func TestSubagentSupervisor_DefaultsToGeneral(t *testing.T) {
@@ -268,19 +271,37 @@ func TestSubagentSupervisor_PublishesLifecycleEvents(t *testing.T) {
 	}
 
 	var statuses []SubagentStatus
-	for len(statuses) < 3 {
+	// Drain all lifecycle events; onUsage may publish extra running events.
+	for {
 		select {
 		case ev := <-events:
 			statuses = append(statuses, ev.Status)
+			if ev.Status == SubagentCompleted || ev.Status == SubagentFailed || ev.Status == SubagentCancelled {
+				// terminal — exit the loop after collecting all remaining events
+				for {
+					select {
+					case ev2 := <-events:
+						statuses = append(statuses, ev2.Status)
+					default:
+						goto done
+					}
+				}
+			}
 		case <-time.After(time.Second):
 			t.Fatalf("timed out waiting for lifecycle events; got %v", statuses)
 		}
 	}
+done:
+	// Must contain at least pending, running, completed in order.
 	want := []SubagentStatus{SubagentPending, SubagentRunning, SubagentCompleted}
-	for i := range want {
-		if statuses[i] != want[i] {
-			t.Fatalf("statuses = %v, want prefix %v", statuses, want)
+	j := 0
+	for _, s := range statuses {
+		if j < len(want) && s == want[j] {
+			j++
 		}
+	}
+	if j != len(want) {
+		t.Fatalf("statuses = %v, want sequence containing %v", statuses, want)
 	}
 }
 
@@ -865,7 +886,7 @@ func TestSubagentSupervisor_AnyCompletion_FiresOnFinish(t *testing.T) {
 	default:
 	}
 
-	go sup.finish("t1", SubagentCompleted, "done", "")
+	go sup.finish("t1", SubagentCompleted, "done", ai.Usage{}, "")
 
 	select {
 	case <-ch:
@@ -900,7 +921,7 @@ func TestSubagentSupervisor_WaitForAnyCompletion_AtomicCaptureUnderLock(t *testi
 	default:
 	}
 
-	go sup.finish("t1", SubagentCompleted, "done", "")
+	go sup.finish("t1", SubagentCompleted, "done", ai.Usage{}, "")
 	select {
 	case <-ch:
 		// ok
@@ -920,7 +941,7 @@ func TestSubagentSupervisor_AnyCompletion_FreshChannelPerWait(t *testing.T) {
 	sup.mu.Unlock()
 
 	first := sup.AnyCompletion()
-	sup.finish("t1", SubagentCompleted, "first", "")
+	sup.finish("t1", SubagentCompleted, "first", ai.Usage{}, "")
 	select {
 	case <-first:
 	case <-time.After(time.Second):
@@ -937,7 +958,7 @@ func TestSubagentSupervisor_AnyCompletion_FreshChannelPerWait(t *testing.T) {
 	default:
 	}
 
-	sup.finish("t2", SubagentCompleted, "second", "")
+	sup.finish("t2", SubagentCompleted, "second", ai.Usage{}, "")
 	select {
 	case <-second:
 	case <-time.After(time.Second):

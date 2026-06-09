@@ -15,6 +15,8 @@ type SubagentTask struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	StartedAt    *time.Time `json:"started_at,omitempty"`
 	CompletedAt  *time.Time `json:"completed_at,omitempty"`
+	InputTokens  int        `json:"input_tokens,omitempty"`
+	OutputTokens int        `json:"output_tokens,omitempty"`
 	Summary      string     `json:"summary,omitempty"`
 	Error        string     `json:"error,omitempty"`
 }
