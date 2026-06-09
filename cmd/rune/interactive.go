@@ -26,15 +26,6 @@ type interactiveOptions struct {
 	ResumeID         string
 }
 
-func runInteractive(ctx context.Context, providerOverride, modelOverride, profileName, version string) error {
-	return runInteractiveWithOptions(ctx, interactiveOptions{
-		ProviderOverride: providerOverride,
-		ModelOverride:    modelOverride,
-		ProfileName:      profileName,
-		Version:          version,
-	})
-}
-
 func runInteractiveWithOptions(ctx context.Context, opt interactiveOptions) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
