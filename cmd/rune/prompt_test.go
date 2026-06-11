@@ -451,3 +451,33 @@ func TestRunPrompt_ResumeUnknownSessionFails(t *testing.T) {
 		t.Fatalf("err = %v, want resume session error", err)
 	}
 }
+
+func TestRunPrompt_TurnErrorReturnsError(t *testing.T) {
+	// HTTP 400 classifies as ai.ErrFatal in the ollama provider — not retried,
+	// so the agent loop emits a single TurnError.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"error":"boom"}`, http.StatusBadRequest)
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	var buf bytes.Buffer
+	err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf)
+	if err == nil {
+		t.Fatalf("want non-nil error; transcript = %q", buf.String())
+	}
+	if !strings.Contains(err.Error(), "status 400") {
+		t.Fatalf("err = %v, want provider status 400 error", err)
+	}
+	if !strings.Contains(buf.String(), "[error:") {
+		t.Fatalf("transcript missing [error: ...] line: %q", buf.String())
+	}
+	// The session must still be saved before the error is returned.
+	sessions, _ := os.ReadDir(filepath.Join(runeDir, "sessions"))
+	if len(sessions) == 0 {
+		t.Fatal("session not saved before error return")
+	}
+}
