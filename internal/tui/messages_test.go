@@ -178,6 +178,51 @@ func TestMessages_SubagentToolCallRendersAsFamiliar(t *testing.T) {
 	}
 }
 
+func TestMessages_GroupedSpawnCallLinesShowSubagentProgress(t *testing.T) {
+	m := NewMessages(120)
+	call1 := ai.ToolCall{ID: "t1", Name: "spawn_subagent", Args: []byte(`{"name":"task-a","prompt":"p","agent_type":"code-explorer"}`)}
+	call2 := ai.ToolCall{ID: "t2", Name: "spawn_subagent", Args: []byte(`{"name":"task-b","prompt":"p","agent_type":"code-explorer"}`)}
+	m.OnToolStarted(call1)
+	m.OnToolFinished(agent.ToolFinished{Call: call1, Result: tools.Result{Output: "spawned"}})
+	m.OnToolStarted(call2)
+	m.OnToolFinished(agent.ToolFinished{Call: call2, Result: tools.Result{Output: "spawned"}})
+
+	now := time.Now()
+	started := now.Add(-75 * time.Second)
+	m.OnSubagentEvent(agent.SubagentEvent{Status: agent.SubagentRunning, Task: tools.SubagentTask{
+		ID: "subagent_1", Name: "task-a", AgentType: "code-explorer", Status: string(agent.SubagentRunning),
+		CreatedAt: now, StartedAt: &started, InputTokens: 1_000, OutputTokens: 234,
+	}})
+
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, now)
+	if !strings.Contains(out, "summon familiar (2)") {
+		t.Fatalf("expected grouped summon header, got:\n%s", out)
+	}
+	if !strings.Contains(out, "task-a [code-explorer] · 1m15s · 1.2k tok") {
+		t.Fatalf("expected live progress suffix on task-a line, got:\n%s", out)
+	}
+	if strings.Contains(out, "task-b [code-explorer] ·") {
+		t.Fatalf("task-b has no subagent events; expected no suffix, got:\n%s", out)
+	}
+}
+
+func TestMessages_SingleSpawnCallShowsSubagentProgress(t *testing.T) {
+	m := NewMessages(120)
+	m.OnToolStarted(ai.ToolCall{ID: "t1", Name: "spawn_subagent", Args: []byte(`{"name":"repo-plan","prompt":"p"}`)})
+
+	now := time.Now()
+	started := now.Add(-30 * time.Second)
+	m.OnSubagentEvent(agent.SubagentEvent{Status: agent.SubagentRunning, Task: tools.SubagentTask{
+		ID: "subagent_1", Name: "repo-plan", Status: string(agent.SubagentRunning),
+		CreatedAt: now, StartedAt: &started, InputTokens: 500, OutputTokens: 100,
+	}})
+
+	out := m.Render(DefaultStylesWithIconMode("unicode"), false, false, now)
+	if !strings.Contains(out, "open a summoning circle for repo-plan · 30s · 600 tok") {
+		t.Fatalf("expected progress suffix on summon line, got:\n%s", out)
+	}
+}
+
 func TestMessages_GroupsConsecutiveReadCallsAcrossResults(t *testing.T) {
 	m := NewMessages(120)
 	call1 := ai.ToolCall{ID: "t1", Name: "read", Args: []byte(`{"path":"something.png"}`)}
