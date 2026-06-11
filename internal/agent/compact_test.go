@@ -32,6 +32,34 @@ func TestCompact_UsesProviderForSummary(t *testing.T) {
 	}
 }
 
+func TestCompact_OverflowDuringSummaryFailsWithoutMutatingHistory(t *testing.T) {
+	s := session.New("gpt-5")
+	s.Append(userMsg("u1"))
+	s.Append(asstMsg("a1"))
+	s.Append(userMsg("u2"))
+	before := s.PathToActive()
+
+	f := faux.New().Reply("partial summary").DoneOverflow()
+	a := New(f, tools.NewRegistry(), s, "")
+	err := a.Compact(context.Background(), "")
+	if err == nil {
+		t.Fatal("expected compact to fail when summarizer overflows")
+	}
+	if !strings.Contains(err.Error(), "context overflow") {
+		t.Fatalf("error = %q, want it to mention context overflow", err)
+	}
+
+	after := s.PathToActive()
+	if len(after) != len(before) {
+		t.Fatalf("history mutated on overflow: len before=%d after=%d", len(before), len(after))
+	}
+	for i := range before {
+		if before[i].Content[0].(ai.TextBlock).Text != after[i].Content[0].(ai.TextBlock).Text {
+			t.Fatalf("message %d changed: %#v -> %#v", i, before[i], after[i])
+		}
+	}
+}
+
 func TestShrinkHistoryForCompact_TruncatesOversizedToolResults(t *testing.T) {
 	big := strings.Repeat("X", 50_000)
 	history := []ai.Message{
