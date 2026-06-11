@@ -181,10 +181,10 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 		if b.kind == bkToolCall {
 			interactions, consumed := collectToolRun(m.blocks, i)
 			if len(interactions) > 1 {
-				rendered = renderToolGroup(s, b.meta, interactions, showToolResults)
+				rendered = m.renderToolGroup(s, b.meta, interactions, showToolResults, now)
 				next = i + consumed
 			} else {
-				rendered = renderToolCall(s, b)
+				rendered = renderToolCall(s, b, m.spawnProgressSuffix(b.meta, json.RawMessage(b.text), now))
 			}
 		} else {
 			rendered = renderBlock(s, b, showThinking, showToolResults, now, i == m.streamingAsstIdx)
@@ -216,7 +216,7 @@ func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time
 	case bkThinking:
 		return renderThinking(s, b, showThinking, now)
 	case bkToolCall:
-		return renderToolCall(s, b)
+		return renderToolCall(s, b, "")
 	case bkToolResult:
 		return renderToolResult(s, b, showToolResults)
 	case bkError:
@@ -363,7 +363,7 @@ func renderThinking(s Styles, b block, showThinking bool, now time.Time) string 
 	return headerLine + "\n" + s.Thinking.Render(b.text)
 }
 
-func renderToolCall(s Styles, b block) string {
+func renderToolCall(s Styles, b block, spawnSuffix string) string {
 	args := json.RawMessage(b.text)
 	switch b.meta {
 	case "edit":
@@ -383,7 +383,7 @@ func renderToolCall(s Styles, b block) string {
 			return r
 		}
 	case "spawn_subagent":
-		if r, ok := formatSpawnSubagentCall(s, args); ok {
+		if r, ok := formatSpawnSubagentCall(s, args, spawnSuffix); ok {
 			return r
 		}
 	case "list_subagents":
@@ -442,7 +442,7 @@ func isToolOutcomeFor(b block, name string) bool {
 	return (b.kind == bkToolResult || b.kind == bkError) && b.meta == name
 }
 
-func renderToolGroup(s Styles, name string, interactions []toolInteraction, showToolResults bool) string {
+func (m *Messages) renderToolGroup(s Styles, name string, interactions []toolInteraction, showToolResults bool, now time.Time) string {
 	var sb strings.Builder
 	if isFamiliarTool(name) {
 		sb.WriteString(familiarHeader(s, fmt.Sprintf("%s (%d)", groupedToolTitle(name), len(interactions))))
@@ -457,7 +457,7 @@ func renderToolGroup(s Styles, name string, interactions []toolInteraction, show
 			line, ok = formatGroupedEditSummary(s, args)
 		}
 		if !ok {
-			line = groupedToolItemStyle(s, name).Render("  " + toolCallSummary(name, args))
+			line = groupedToolItemStyle(s, name).Render("  " + toolCallSummary(name, args) + m.spawnProgressSuffix(name, args, now))
 		}
 		sb.WriteString(line)
 		if interaction.result != nil && (showToolResults || interaction.result.kind == bkError) {
@@ -526,7 +526,29 @@ func familiarHeader(s Styles, body string) string {
 	return s.FamiliarCall.Render(iconLabel(s.Icons.Familiar, "familiar") + " " + body)
 }
 
-func formatSpawnSubagentCall(s Styles, args json.RawMessage) (string, bool) {
+// spawnProgressSuffix resolves a spawn_subagent call's task by name against
+// the latest subagent event blocks, so summon call lines can show the same
+// live elapsed/token suffix as the familiar status lines.
+func (m *Messages) spawnProgressSuffix(toolName string, args json.RawMessage, now time.Time) string {
+	if toolName != "spawn_subagent" {
+		return ""
+	}
+	var a struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(args, &a); err != nil || strings.TrimSpace(a.Name) == "" {
+		return ""
+	}
+	for i := len(m.blocks) - 1; i >= 0; i-- {
+		b := m.blocks[i]
+		if b.kind == bkSubagent && b.task.Name == a.Name {
+			return subagentProgressSuffix(b.task, now)
+		}
+	}
+	return ""
+}
+
+func formatSpawnSubagentCall(s Styles, args json.RawMessage, suffix string) (string, bool) {
 	var a struct {
 		Name         string   `json:"name"`
 		AgentType    string   `json:"agent_type"`
@@ -558,7 +580,7 @@ func formatSpawnSubagentCall(s Styles, args json.RawMessage) (string, bool) {
 	if len(details) > 0 {
 		body += " (" + strings.Join(details, ", ") + ")"
 	}
-	return familiarHeader(s, body), true
+	return familiarHeader(s, body+suffix), true
 }
 
 func formatGetSubagentCall(s Styles, args json.RawMessage) (string, bool) {

@@ -341,7 +341,7 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.activityFrame%activityPhraseChangeFrames == 0 {
 			m.activityPhrase = nextActivityPhraseIndex(m.activityPhrase, len(m.activityPhrases()))
 		}
-		if m.indexing && m.msgs.IsEmpty() {
+		if (m.indexing && m.msgs.IsEmpty()) || m.activeSubagentCount() > 0 {
 			m.refreshViewport()
 		}
 		return m, m.startActivityTick()

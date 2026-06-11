@@ -1938,6 +1938,38 @@ func TestRoot_SubagentEventsRenderAndTrackActivity(t *testing.T) {
 	}
 }
 
+func TestRoot_ActivityTickRefreshesRunningSubagentElapsed(t *testing.T) {
+	s := session.New("gpt-5")
+	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	started := time.Now().Add(-75 * time.Second)
+	ev := agent.SubagentEvent{
+		Status: agent.SubagentRunning,
+		Task: tools.SubagentTask{
+			ID: "subagent_1", Name: "repo-plan", AgentType: "general", Status: string(agent.SubagentRunning), CreatedAt: time.Now(),
+			StartedAt: &started,
+		},
+	}
+	_, _ = m.Update(SubagentEventMsg{Event: ev, Ch: m.subagentCh})
+	if got := m.viewport.View(); !strings.Contains(got, "1m15s") {
+		t.Fatalf("viewport missing initial elapsed: %q", got)
+	}
+
+	// Simulate time passing with no new subagent event arriving.
+	earlier := time.Now().Add(-10 * time.Minute)
+	for i := range m.msgs.blocks {
+		if m.msgs.blocks[i].taskID == "subagent_1" {
+			m.msgs.blocks[i].task.StartedAt = &earlier
+		}
+	}
+	_, _ = m.Update(activityTickMsg{seq: m.activitySeq})
+	if got := m.viewport.View(); !strings.Contains(got, "10m") {
+		t.Fatalf("activity tick did not refresh running familiar elapsed: %q", got)
+	}
+}
+
 func TestRoot_BlockedSubagentCountsAsActivity(t *testing.T) {
 	s := session.New("gpt-5")
 	a := agent.New(faux.New(), tools.NewRegistry(), s, "")
