@@ -285,8 +285,7 @@ func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, invalidNames 
 	for _, c := range calls {
 		content = append(content, ai.ToolUseBlock(c))
 	}
-	n := a.session.Append(ai.Message{Role: ai.RoleAssistant, Content: content})
-	n.Usage = usage
+	a.session.AppendWithUsage(ai.Message{Role: ai.RoleAssistant, Content: content}, usage)
 }
 
 // runTools dispatches each tool call and appends its result to the session.

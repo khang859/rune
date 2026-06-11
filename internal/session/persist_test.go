@@ -3,6 +3,8 @@ package session
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -57,6 +59,47 @@ func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	}
 	if loaded.Active.Parent.Parent != loaded.Root {
 		t.Fatal("parent pointers do not chain to root")
+	}
+}
+
+// TestSession_AppendWithUsage_ConcurrentWithSnapshot pins the locking
+// contract between Save's snapshot walk and usage-bearing appends from the
+// agent goroutine. It hammers snapshotForSave directly so the read side stays
+// on the lock instead of in Save's disk I/O. Only fails meaningfully under
+// -race.
+func TestSession_AppendWithUsage_ConcurrentWithSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	s := New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.Append(userMsg("hi"))
+
+	var wg sync.WaitGroup
+	for g := 0; g < 4; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200; i++ {
+				s.AppendWithUsage(asstMsg("reply"), ai.Usage{Input: i, Output: i})
+			}
+		}()
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	for {
+		if _, _, err := s.snapshotForSave(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case <-done:
+			return
+		default:
+			// Yield so the appender goroutines can take the write lock even
+			// on a single-CPU scheduler; a tight RLock loop can starve them.
+			runtime.Gosched()
+		}
 	}
 }
 

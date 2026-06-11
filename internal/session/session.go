@@ -68,6 +68,18 @@ func (s *Session) Append(msg ai.Message) *Node {
 	return s.appendLocked(msg)
 }
 
+// AppendWithUsage appends msg and records its token usage in the same lock
+// acquisition. Callers must not set Usage on the returned node themselves:
+// once Append returns, the node is reachable by concurrent tree walkers
+// (e.g. Save), so any later unlocked write races with them.
+func (s *Session) AppendWithUsage(msg ai.Message, usage ai.Usage) *Node {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := s.appendLocked(msg)
+	n.Usage = usage
+	return n
+}
+
 func (s *Session) appendLocked(msg ai.Message) *Node {
 	n := &Node{
 		ID:      newID(),
