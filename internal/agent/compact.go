@@ -95,6 +95,9 @@ func (a *Agent) Compact(ctx context.Context, userInstructions string) error {
 			case ai.StreamError:
 				return "", v.Err
 			case ai.Done:
+				if v.Reason == "context_overflow" {
+					return "", fmt.Errorf("compact failed: context overflow")
+				}
 				return strings.TrimSpace(b.String()), nil
 			}
 		}
