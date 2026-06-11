@@ -72,6 +72,7 @@ func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) erro
 
 	a := agent.New(f, reg, sess, "")
 	msg := ai.Message{Role: ai.RoleUser, Content: []ai.ContentBlock{ai.TextBlock{Text: sc.UserMessage}}}
+	var turnErr error
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {
 		case agent.AssistantText:
@@ -81,6 +82,9 @@ func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) erro
 		case agent.ToolFinished:
 			fmt.Fprintf(w, "\n[tool done: %s -> %q]", v.Call.Name, truncate(v.Result.Output, 80))
 		case agent.TurnError:
+			if turnErr == nil {
+				turnErr = v.Err
+			}
 			fmt.Fprintf(w, "\n[error: %v]", v.Err)
 		case agent.TurnDone:
 			fmt.Fprintf(w, "\n[done: %s]", v.Reason)
@@ -91,7 +95,7 @@ func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) erro
 			return fmt.Errorf("save session: %w", err)
 		}
 	}
-	return nil
+	return turnErr
 }
 
 func truncate(s string, n int) string {
