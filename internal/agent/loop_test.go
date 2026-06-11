@@ -665,6 +665,71 @@ func TestRun_OrphanOutputHealsAndRetries(t *testing.T) {
 	}
 }
 
+// nonClosingErrThenSucceedProvider emits a retryable stream error on a channel
+// it deliberately never closes (simulating a provider bug or parser edge case),
+// then succeeds on the retry. The first stream must not block retry recovery.
+type nonClosingErrThenSucceedProvider struct {
+	calls int
+}
+
+func (p *nonClosingErrThenSucceedProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	p.calls++
+	if p.calls == 1 {
+		// Unbuffered, never closed: send one retryable error, then leave the
+		// channel open forever. A synchronous drain would hang here.
+		out := make(chan ai.Event)
+		go func() {
+			select {
+			case out <- ai.StreamError{Err: errStr("transient blip"), Class: ai.ErrTransient}:
+			case <-ctx.Done():
+			}
+		}()
+		return out, nil
+	}
+	out := make(chan ai.Event, 3)
+	out <- ai.TextDelta{Text: "ok"}
+	out <- ai.Usage{Input: 1, Output: 1}
+	out <- ai.Done{Reason: "stop"}
+	close(out)
+	return out, nil
+}
+
+// TestRun_NonClosingErroredStreamDoesNotBlockRetry is the regression test for
+// issue #29: a retryable ai.StreamError on a channel that never closes must not
+// hang the retry path. The agent must proceed to the next provider attempt and
+// complete the turn. A deadline guards against the hang so failure is fast.
+func TestRun_NonClosingErroredStreamDoesNotBlockRetry(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel() // release the background drain parked on the never-closing channel
+
+	p := &nonClosingErrThenSucceedProvider{}
+	a := New(p, tools.NewRegistry(), session.New("gpt-5"), "")
+
+	done := make(chan []Event, 1)
+	go func() { done <- collect(t, a.Run(ctx, userMsg("anything"))) }()
+
+	// ErrTransient retries after a 500ms backoff; allow generous slack for CI.
+	var evs []Event
+	select {
+	case evs = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retry path blocked on a non-closing errored stream")
+	}
+
+	if p.calls != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", p.calls)
+	}
+	var sawDone bool
+	for _, e := range evs {
+		if v, ok := e.(TurnDone); ok && v.Reason == "stop" {
+			sawDone = true
+		}
+	}
+	if !sawDone {
+		t.Fatalf("expected TurnDone on retry success, got events: %#v", evs)
+	}
+}
+
 // TestRun_InvalidToolCallOnlyNudgesAndContinues simulates a model (e.g. Llama
 // on Groq) emitting a malformed tool name. The bad call must be filtered out
 // of the assistant message, a nudge appended, and the loop continues so the

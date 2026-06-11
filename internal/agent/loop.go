@@ -122,10 +122,11 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 				if r := classifyRetry(v.Class, streamAttempt); r != nil {
 					retry = r
 					lastStreamErr = v.Err
-					// Drop any remaining events on this stream — don't
-					// forward them to the UI so a retry doesn't double up.
-					for range events {
-					}
+					// Discard any remaining events from this stream in the
+					// background — don't forward them to the UI so a retry
+					// doesn't double up, but don't block the retry path on a
+					// provider that errored without closing its channel.
+					go drainDiscard(ctx, events)
 				} else {
 					out <- TurnError{Err: v.Err}
 					return
@@ -137,6 +138,12 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 					doneRsn = v.Reason
 					done = true
 				}
+			}
+			// A retryable stream error abandons the rest of this stream (now
+			// drained in the background); stop reading and fall through to the
+			// retry logic below.
+			if retry != nil {
+				break
 			}
 		}
 
@@ -314,6 +321,23 @@ func (a *Agent) runTools(ctx context.Context, calls []ai.ToolCall, out chan<- Ev
 		out <- ToolFinished{Call: call, Result: res}
 	}
 	return nil
+}
+
+// drainDiscard consumes any remaining events from an abandoned stream so a
+// retry never blocks on a provider that emitted a retryable error without
+// closing its channel. It exits on channel close or context cancellation.
+// Run it in a goroutine — the retry must not wait for the old stream to drain.
+func drainDiscard(ctx context.Context, events <-chan ai.Event) {
+	for {
+		select {
+		case _, ok := <-events:
+			if !ok {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func sendErrOrAbort(ctx context.Context, out chan<- Event, err error) {
