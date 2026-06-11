@@ -133,6 +133,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	content = append(content, resolved.Attachments...)
 	msg := ai.Message{Role: ai.RoleUser, Content: content}
 	incomplete := false
+	var turnErr error
 	for ev := range a.Run(ctx, msg) {
 		switch v := ev.(type) {
 		case agent.AssistantText:
@@ -144,6 +145,9 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 		case agent.RequiredToolPending:
 			fmt.Fprintf(w, "\n[persist: must call %v before ending (attempt %d)]", v.Names, v.Attempt)
 		case agent.TurnError:
+			if turnErr == nil {
+				turnErr = v.Err
+			}
 			fmt.Fprintf(w, "\n[error: %v]", v.Err)
 		case agent.TurnDone:
 			if v.Reason == agent.ReasonIncompleteRequiredTool {
@@ -155,6 +159,9 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	fmt.Fprintln(w)
 	if err := sess.Save(); err != nil {
 		return err
+	}
+	if turnErr != nil {
+		return turnErr
 	}
 	if incomplete {
 		return agent.ErrIncompleteRequiredTool
