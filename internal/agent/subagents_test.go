@@ -44,6 +44,66 @@ func TestSubagentSupervisor_SpawnGeneralForeground(t *testing.T) {
 	}
 }
 
+func TestSubagentSupervisor_UsesLatestUsageSnapshotPerChildTurn(t *testing.T) {
+	p := &turnProvider{turns: [][]ai.Event{{
+		ai.Usage{Input: 10, Output: 5},
+		ai.TextDelta{Text: "ok"},
+		ai.Usage{Input: 20, Output: 8},
+		ai.Done{Reason: "stop"},
+	}}}
+	a := New(p, tools.NewRegistry(), session.New("gpt-test"), "")
+
+	task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{
+		Name:       "inspect",
+		Prompt:     "inspect something",
+		AgentType:  "general",
+		Background: false,
+	})
+	if err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+	if task.Status != string(SubagentCompleted) {
+		t.Fatalf("status = %q, want completed", task.Status)
+	}
+	if task.InputTokens != 20 || task.OutputTokens != 8 {
+		t.Fatalf("subagent tokens = %d/%d, want latest final snapshot 20/8", task.InputTokens, task.OutputTokens)
+	}
+}
+
+func TestSubagentSupervisor_SumsUsageAcrossChildTurns(t *testing.T) {
+	p := &turnProvider{turns: [][]ai.Event{
+		{
+			ai.ToolCall{ID: "read-1", Name: "read", Args: []byte(`{"path":"/tmp/x"}`)},
+			ai.Usage{Input: 10, Output: 2},
+			ai.Done{Reason: "tool_use"},
+		},
+		{
+			ai.TextDelta{Text: "done"},
+			ai.Usage{Input: 20, Output: 3},
+			ai.Done{Reason: "stop"},
+		},
+	}}
+	reg := tools.NewRegistry()
+	reg.Register(stubReadTool{output: "file"})
+	a := New(p, reg, session.New("gpt-test"), "")
+
+	task, err := a.Subagents().Spawn(context.Background(), tools.SpawnSubagentRequest{
+		Name:       "inspect",
+		Prompt:     "inspect something",
+		AgentType:  "general",
+		Background: false,
+	})
+	if err != nil {
+		t.Fatalf("Spawn error: %v", err)
+	}
+	if task.Status != string(SubagentCompleted) {
+		t.Fatalf("status = %q, want completed", task.Status)
+	}
+	if task.InputTokens != 30 || task.OutputTokens != 5 {
+		t.Fatalf("subagent tokens = %d/%d, want one final usage snapshot per child turn summed to 30/5", task.InputTokens, task.OutputTokens)
+	}
+}
+
 func TestSubagentSupervisor_DefaultsToGeneral(t *testing.T) {
 	p := faux.New().Reply("ok").Done()
 	a := New(p, tools.NewRegistry(), session.New("gpt-test"), "")

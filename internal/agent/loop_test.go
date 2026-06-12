@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -58,10 +59,92 @@ func TestRun_TextOnlyTurn(t *testing.T) {
 	}
 }
 
+func TestRun_EmitsOnlyFinalUsageSnapshotForCompletedStream(t *testing.T) {
+	p := &turnProvider{turns: [][]ai.Event{{
+		ai.Usage{Input: 100, Output: 10},
+		ai.TextDelta{Text: "ok"},
+		ai.Usage{Input: 120, Output: 12},
+		ai.Done{Reason: "stop"},
+	}}}
+	s := session.New("gpt-5")
+	a := New(p, tools.NewRegistry(), s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("hello")))
+	var usages []ai.Usage
+	for _, e := range evs {
+		if v, ok := e.(TurnUsage); ok {
+			usages = append(usages, v.Usage)
+		}
+	}
+	if len(usages) != 1 {
+		t.Fatalf("TurnUsage count = %d, want 1: %#v", len(usages), usages)
+	}
+	if got, want := usages[0], (ai.Usage{Input: 120, Output: 12}); got != want {
+		t.Fatalf("TurnUsage = %#v, want %#v", got, want)
+	}
+	nodes := s.PathToActiveNodes()
+	if len(nodes) != 2 {
+		t.Fatalf("path len = %d, want 2", len(nodes))
+	}
+	if got, want := nodes[1].Usage, (ai.Usage{Input: 120, Output: 12}); got != want {
+		t.Fatalf("persisted usage = %#v, want %#v", got, want)
+	}
+}
+
+func TestRun_DoesNotEmitUsageFromRetriedStream(t *testing.T) {
+	p := &turnProvider{turns: [][]ai.Event{
+		{
+			ai.Usage{Input: 1_000_000, Output: 100_000},
+			ai.StreamError{Err: errors.New("temporary"), Class: ai.ErrTransient},
+		},
+		{
+			ai.TextDelta{Text: "ok"},
+			ai.Usage{Input: 10, Output: 1},
+			ai.Done{Reason: "stop"},
+		},
+	}}
+	s := session.New("gpt-5")
+	a := New(p, tools.NewRegistry(), s, "")
+
+	evs := collect(t, a.Run(context.Background(), userMsg("hello")))
+	var usages []ai.Usage
+	for _, e := range evs {
+		if v, ok := e.(TurnUsage); ok {
+			usages = append(usages, v.Usage)
+		}
+	}
+	if len(usages) != 1 {
+		t.Fatalf("TurnUsage count = %d, want 1: %#v", len(usages), usages)
+	}
+	if got, want := usages[0], (ai.Usage{Input: 10, Output: 1}); got != want {
+		t.Fatalf("TurnUsage = %#v, want %#v", got, want)
+	}
+}
+
 // captureToolsProvider records each Stream call's req.Tools and replies with
 // a trivial text-only turn so the loop terminates cleanly.
 type captureToolsProvider struct {
 	gotTools [][]ai.ToolSpec
+}
+
+type turnProvider struct {
+	turns [][]ai.Event
+	next  int
+}
+
+func (p *turnProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	out := make(chan ai.Event, 16)
+	if p.next >= len(p.turns) {
+		close(out)
+		return out, nil
+	}
+	events := p.turns[p.next]
+	p.next++
+	for _, ev := range events {
+		out <- ev
+	}
+	close(out)
+	return out, nil
 }
 
 func (p *captureToolsProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {

@@ -82,6 +82,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			calls            []ai.ToolCall
 			invalidCallNames []string
 			usage            ai.Usage
+			sawUsage         bool
 			doneRsn          string
 			done             bool
 			overflow         bool
@@ -113,7 +114,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 				}
 			case ai.Usage:
 				usage = v
-				out <- TurnUsage{Usage: v}
+				sawUsage = true
 			case ai.StreamError:
 				if errors.Is(v.Err, context.Canceled) {
 					out <- TurnAborted{}
@@ -205,6 +206,9 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			return
 		}
 
+		if sawUsage {
+			out <- TurnUsage{Usage: usage}
+		}
 		a.persistAssistant(text.String(), calls, invalidCallNames, usage)
 		if len(calls) == 0 && len(invalidCallNames) == 0 {
 			if a.subagents != nil {
