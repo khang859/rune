@@ -42,6 +42,58 @@ func TestRunScript_FauxTextTurn(t *testing.T) {
 	}
 }
 
+func TestRunScript_UsesInjectedFauxProvider(t *testing.T) {
+	dir := t.TempDir()
+
+	// The script defines no faux steps; the entire turn comes from the
+	// injected provider. If runScript ignored fauxBase it would build an empty
+	// faux (which streams a bare "stop") and this text would never appear.
+	sc := scriptFile{
+		Provider:    "faux",
+		Model:       "gpt-5",
+		UserMessage: "hi",
+	}
+	b, _ := json.Marshal(sc)
+	scriptPath := filepath.Join(dir, "in.json")
+	_ = os.WriteFile(scriptPath, b, 0o644)
+
+	injected := faux.New().Reply("from injected provider").Done()
+	var out bytes.Buffer
+	if err := runScript(context.Background(), scriptPath, &out, injected); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "from injected provider") {
+		t.Fatalf("injected faux provider not used: %q", out.String())
+	}
+}
+
+func TestRunScript_NilFauxBaseUsesScriptSteps(t *testing.T) {
+	dir := t.TempDir()
+
+	// Passing nil must preserve current behavior: runScript builds its own
+	// faux from the script-defined steps.
+	sc := scriptFile{
+		Provider: "faux",
+		Model:    "gpt-5",
+		Faux: []fauxStep{
+			{Reply: "scripted reply"},
+			{Done: true},
+		},
+		UserMessage: "hi",
+	}
+	b, _ := json.Marshal(sc)
+	scriptPath := filepath.Join(dir, "in.json")
+	_ = os.WriteFile(scriptPath, b, 0o644)
+
+	var out bytes.Buffer
+	if err := runScript(context.Background(), scriptPath, &out, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "scripted reply") {
+		t.Fatalf("nil fauxBase did not fall back to script steps: %q", out.String())
+	}
+}
+
 func TestRunScript_TurnErrorReturnsError(t *testing.T) {
 	dir := t.TempDir()
 	sessPath := filepath.Join(dir, "s.json")

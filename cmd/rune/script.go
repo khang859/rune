@@ -37,7 +37,7 @@ type fauxToolCall struct {
 
 // runScript drives one turn from the script and writes a transcript to w.
 // fauxBase is injected for testability; pass faux.New() in main.
-func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) error {
+func runScript(ctx context.Context, path string, w io.Writer, fauxBase *faux.Faux) error {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return err
@@ -47,7 +47,10 @@ func runScript(ctx context.Context, path string, w io.Writer, _ *faux.Faux) erro
 		return err
 	}
 
-	f := faux.New()
+	f := fauxBase
+	if f == nil {
+		f = faux.New()
+	}
 	for _, st := range sc.Faux {
 		switch {
 		case st.Reply != "":
