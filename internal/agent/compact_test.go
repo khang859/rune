@@ -82,8 +82,8 @@ func TestShrinkHistoryForCompact_TruncatesOversizedToolResults(t *testing.T) {
 	}
 	out := shrinkHistoryForCompact(history, 1_000)
 	tr := out[2].Content[0].(ai.ToolResultBlock)
-	if len(tr.Output) > 1_300 {
-		t.Fatalf("expected output truncated near 1KB, got %d bytes", len(tr.Output))
+	if len(tr.Output) > 1_000 {
+		t.Fatalf("expected output within 1KB budget, got %d bytes", len(tr.Output))
 	}
 	if !strings.Contains(tr.Output, "[... truncated") {
 		t.Fatalf("expected truncation marker, got: %q", tr.Output)
@@ -119,6 +119,38 @@ func TestShrinkHistoryForCompact_LeavesSmallOutputsAlone(t *testing.T) {
 	tr := out[0].Content[0].(ai.ToolResultBlock)
 	if tr.Output != "small" {
 		t.Fatalf("small output altered: %q", tr.Output)
+	}
+}
+
+// TestTruncateMiddle_NeverExceedsBudget is the regression test for issue #31:
+// the returned string, marker included, must never exceed maxBytes — even for
+// budgets too small to fit the marker (which hard-caps instead).
+func TestTruncateMiddle_NeverExceedsBudget(t *testing.T) {
+	s := strings.Repeat("X", 50_000)
+	for _, maxBytes := range []int{1, 5, 50, 99, 100, 1_000, 8_000, 49_999} {
+		got := truncateMiddle(s, maxBytes)
+		if len(got) > maxBytes {
+			t.Fatalf("maxBytes=%d: output len=%d exceeds budget", maxBytes, len(got))
+		}
+	}
+}
+
+// TestTruncateMiddle_PreservesHeadTailWithinBudget verifies that for a normal
+// budget the marker is present and head/tail content is preserved.
+func TestTruncateMiddle_PreservesHeadTailWithinBudget(t *testing.T) {
+	s := strings.Repeat("A", 25_000) + strings.Repeat("B", 25_000)
+	got := truncateMiddle(s, 1_000)
+	if len(got) > 1_000 {
+		t.Fatalf("output len=%d exceeds budget 1000", len(got))
+	}
+	if !strings.Contains(got, "[... truncated") {
+		t.Fatalf("missing truncation marker: %q", got)
+	}
+	if !strings.HasPrefix(got, "A") {
+		t.Fatalf("head content not preserved: %q", got[:20])
+	}
+	if !strings.HasSuffix(got, "B") {
+		t.Fatalf("tail content not preserved: %q", got[len(got)-20:])
 	}
 }
 
