@@ -141,13 +141,34 @@ func shrinkHistoryForCompact(history []ai.Message, maxBytes int) []ai.Message {
 	return out
 }
 
+// truncateMiddle shrinks s so the returned string — head + marker + tail — is
+// at most maxBytes long. The marker's footprint is reserved inside the budget
+// (the old version added it on top of maxBytes, overshooting the cap). When the
+// budget is too small to fit the marker, s is hard-capped to maxBytes bytes.
 func truncateMiddle(s string, maxBytes int) string {
 	if len(s) <= maxBytes {
 		return s
 	}
-	headLen := maxBytes / 2
-	tailLen := maxBytes - headLen
-	omitted := len(s) - maxBytes
-	return fmt.Sprintf("%s\n\n[... truncated %d bytes from middle (%d total) ...]\n\n%s",
-		s[:headLen], omitted, len(s), s[len(s)-tailLen:])
+	if maxBytes <= 0 {
+		return ""
+	}
+	marker := func(omitted int) string {
+		return fmt.Sprintf("\n\n[... truncated %d bytes from middle (%d total) ...]\n\n", omitted, len(s))
+	}
+	// First pass estimates the marker size to find the content budget; the
+	// second pass uses the accurate omitted count, then re-derives the budget
+	// so a change in the number's digit count can't push us over maxBytes.
+	mk := marker(len(s) - maxBytes)
+	if len(mk) >= maxBytes {
+		return s[:maxBytes]
+	}
+	keep := maxBytes - len(mk)
+	mk = marker(len(s) - keep)
+	keep = maxBytes - len(mk)
+	if keep < 0 {
+		return s[:maxBytes]
+	}
+	headLen := keep / 2
+	tailLen := keep - headLen
+	return s[:headLen] + mk + s[len(s)-tailLen:]
 }
