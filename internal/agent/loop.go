@@ -352,5 +352,5 @@ func panicErr(r any) error {
 	if e, ok := r.(error); ok {
 		return e
 	}
-	return errors.New("agent panic")
+	return fmt.Errorf("agent panic: %v", r)
 }

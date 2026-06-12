@@ -1007,6 +1007,32 @@ func TestRun_WaitsForInFlightSubagentBeforeTurnDone(t *testing.T) {
 	}
 }
 
+// panicProvider panics with an arbitrary value when the loop calls Stream,
+// exercising the agent's panic recovery path.
+type panicProvider struct{ val any }
+
+func (p panicProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	panic(p.val)
+}
+
+// TestRun_NonErrorPanicPreservesDetail is the regression test for issue #32:
+// a non-error panic value must surface its detail in the emitted TurnError,
+// not a generic "agent panic".
+func TestRun_NonErrorPanicPreservesDetail(t *testing.T) {
+	a := New(panicProvider{val: "boom-detail"}, tools.NewRegistry(), session.New("gpt-5"), "")
+	evs := collect(t, a.Run(context.Background(), userMsg("anything")))
+
+	var msg string
+	for _, e := range evs {
+		if v, ok := e.(TurnError); ok {
+			msg = v.Err.Error()
+		}
+	}
+	if !strings.Contains(msg, "boom-detail") {
+		t.Fatalf("panic detail missing from TurnError: %q", msg)
+	}
+}
+
 func assertNoOrphans(t *testing.T, s *session.Session) {
 	t.Helper()
 	used := map[string]bool{}
