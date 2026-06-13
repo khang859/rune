@@ -122,7 +122,7 @@ const (
 
 var baseSlashCmds = []string{
 	"/quit", "/login", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
-	"/git-status", "/new", "/clear", "/name", "/session", "/fork", "/clone", "/copy", "/copy-mode",
+	"/git-status", "/new", "/clear", "/name", "/session", "/usage", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
 	"/compact", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
 }
@@ -920,6 +920,11 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.refreshViewport()
 	case "/session":
 		m.msgs.OnInfo(fmt.Sprintf("session id=%s name=%q provider=%s model=%s", m.sess.ID, m.sess.Name, m.sess.Provider, m.sess.Model))
+	case "/usage":
+		for _, line := range formatUsageStats(m.sess.UsageStats()) {
+			m.msgs.OnInfo(line)
+		}
+		m.refreshViewport()
 	case "/fork":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -1610,6 +1615,35 @@ func thinkingLevelsForModel(model string) []string {
 		return levels
 	}
 	return nil
+}
+
+func formatUsageStats(st session.UsageStats) []string {
+	effort := st.Effort
+	if effort == "" {
+		effort = "—"
+	}
+	total := st.Input + st.Output + st.CacheRead
+	dur := time.Duration(st.DurationMs) * time.Millisecond
+	avg := time.Duration(0)
+	if st.Turns > 0 {
+		avg = dur / time.Duration(st.Turns)
+	}
+	lines := []string{
+		fmt.Sprintf("session usage — model=%s provider=%s effort=%s", st.Model, st.Provider, effort),
+		fmt.Sprintf("turns=%d  tokens: in=%d out=%d cache=%d (total %d)", st.Turns, st.Input, st.Output, st.CacheRead, total),
+		fmt.Sprintf("latency: total %s  avg %s", dur.Round(time.Millisecond), avg.Round(time.Millisecond)),
+	}
+	if st.SubagentCount > 0 {
+		lines = append(lines, fmt.Sprintf("subagents=%d  tokens: in=%d out=%d", st.SubagentCount, st.SubagentInput, st.SubagentOutput))
+	}
+	if !st.Created.IsZero() {
+		updated := "—"
+		if !st.Updated.IsZero() {
+			updated = st.Updated.Local().Format("2006-01-02 15:04")
+		}
+		lines = append(lines, fmt.Sprintf("created %s  updated %s", st.Created.Local().Format("2006-01-02 15:04"), updated))
+	}
+	return lines
 }
 
 func supportedThinkingEffort(model, effort string) bool {
