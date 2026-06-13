@@ -70,6 +70,12 @@ func ListSessions(dir string) ([]Summary, error) {
 			continue
 		}
 		ts, _ := time.Parse(time.RFC3339, w.Created)
+		updated := info.ModTime()
+		if w.Updated != "" {
+			if u, err := time.Parse(time.RFC3339, w.Updated); err == nil {
+				updated = u
+			}
+		}
 		msgCount := 0
 		for _, n := range w.Nodes {
 			if n.HasMessage {
@@ -81,7 +87,7 @@ func ListSessions(dir string) ([]Summary, error) {
 			Name:         w.Name,
 			Preview:      activePathPreview(w),
 			Created:      ts,
-			Updated:      info.ModTime(),
+			Updated:      updated,
 			Path:         p,
 			MessageCount: msgCount,
 			Model:        w.Model,

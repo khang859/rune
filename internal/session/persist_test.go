@@ -11,6 +11,66 @@ import (
 	"github.com/khang859/rune/internal/ai"
 )
 
+func TestSave_AndLoad_MetadataRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s := New("gpt-5")
+	s.Provider = "codex"
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.SetEffort("high")
+	s.Append(userMsg("hi"))
+	s.AppendWithUsage(asstMsg("hello"), ai.Usage{Input: 100, Output: 50, CacheRead: 20}, 1234)
+
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Effort != "high" {
+		t.Fatalf("effort = %q, want high", loaded.Effort)
+	}
+	if loaded.Updated.IsZero() {
+		t.Fatal("updated not persisted")
+	}
+	if loaded.Active.DurationMs != 1234 {
+		t.Fatalf("duration_ms = %d, want 1234", loaded.Active.DurationMs)
+	}
+	if loaded.Active.Usage.CacheRead != 20 {
+		t.Fatalf("cache read = %d, want 20", loaded.Active.Usage.CacheRead)
+	}
+}
+
+func TestUsageStats_AggregatesActiveBranch(t *testing.T) {
+	s := New("gpt-5")
+	s.Provider = "codex"
+	s.SetEffort("medium")
+	s.Append(userMsg("q1"))
+	s.AppendWithUsage(asstMsg("a1"), ai.Usage{Input: 100, Output: 40, CacheRead: 10}, 1000)
+	s.Append(userMsg("q2"))
+	s.AppendWithUsage(asstMsg("a2"), ai.Usage{Input: 200, Output: 60, CacheRead: 30}, 2000)
+	s.Subagents = []SubagentTask{
+		{ID: "t1", InputTokens: 500, OutputTokens: 80},
+	}
+
+	st := s.UsageStats()
+	if st.Turns != 2 {
+		t.Fatalf("turns = %d, want 2", st.Turns)
+	}
+	if st.Input != 300 || st.Output != 100 || st.CacheRead != 40 {
+		t.Fatalf("tokens = in:%d out:%d cache:%d", st.Input, st.Output, st.CacheRead)
+	}
+	if st.DurationMs != 3000 {
+		t.Fatalf("duration = %d, want 3000", st.DurationMs)
+	}
+	if st.SubagentCount != 1 || st.SubagentInput != 500 || st.SubagentOutput != 80 {
+		t.Fatalf("subagents = count:%d in:%d out:%d", st.SubagentCount, st.SubagentInput, st.SubagentOutput)
+	}
+	if st.Effort != "medium" || st.Model != "gpt-5" || st.Provider != "codex" {
+		t.Fatalf("meta = effort:%q model:%q provider:%q", st.Effort, st.Model, st.Provider)
+	}
+}
+
 func TestSave_AndLoad_RoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	s := New("gpt-5")
@@ -79,7 +139,7 @@ func TestSession_AppendWithUsage_ConcurrentWithSnapshot(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 200; i++ {
-				s.AppendWithUsage(asstMsg("reply"), ai.Usage{Input: i, Output: i})
+				s.AppendWithUsage(asstMsg("reply"), ai.Usage{Input: i, Output: i}, i)
 			}
 		}()
 	}

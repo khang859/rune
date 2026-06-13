@@ -108,12 +108,8 @@ func TestListSessions_SortsByUpdatedTime(t *testing.T) {
 
 	oldTime := time.Date(2026, 4, 29, 12, 0, 0, 0, time.Local)
 	newTime := oldTime.Add(time.Hour)
-	if err := os.Chtimes(oldSession.Path(), oldTime, oldTime); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chtimes(newSession.Path(), newTime, newTime); err != nil {
-		t.Fatal(err)
-	}
+	setUpdated(t, oldSession.Path(), oldTime)
+	setUpdated(t, newSession.Path(), newTime)
 
 	summaries, err := ListSessions(dir)
 	if err != nil {
@@ -124,6 +120,28 @@ func TestListSessions_SortsByUpdatedTime(t *testing.T) {
 	}
 	if summaries[0].ID != newSession.ID {
 		t.Fatalf("first id = %q, want %q", summaries[0].ID, newSession.ID)
+	}
+}
+
+// setUpdated rewrites the persisted "updated" timestamp of a session file so
+// tests can control sort order independent of save time.
+func setUpdated(t *testing.T, path string, ts time.Time) {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var w wireSession
+	if err := json.Unmarshal(b, &w); err != nil {
+		t.Fatal(err)
+	}
+	w.Updated = ts.Format("2006-01-02T15:04:05Z07:00")
+	out, err := json.Marshal(w)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, out, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

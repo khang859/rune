@@ -15,8 +15,10 @@ type Session struct {
 	ID        string
 	Name      string
 	Created   time.Time
+	Updated   time.Time
 	Provider  string
 	Model     string
+	Effort    string
 	Cwd       string
 	Root      *Node
 	Active    *Node
@@ -32,16 +34,21 @@ type Node struct {
 	Message  ai.Message
 	Usage    ai.Usage
 	Created  time.Time
+	// DurationMs is the wall-clock time of the turn that produced this node
+	// (request start to stream end), in milliseconds. 0 for non-assistant nodes.
+	DurationMs int
 	// CompactedCount > 0 marks this node as a compaction summary that
 	// replaced N prior messages along its branch.
 	CompactedCount int
 }
 
 func New(model string) *Session {
-	root := &Node{ID: newID(), Created: time.Now()}
+	now := time.Now()
+	root := &Node{ID: newID(), Created: now}
 	return &Session{
 		ID:      newID(),
-		Created: time.Now(),
+		Created: now,
+		Updated: now,
 		Model:   model,
 		Root:    root,
 		Active:  root,
@@ -68,16 +75,24 @@ func (s *Session) Append(msg ai.Message) *Node {
 	return s.appendLocked(msg)
 }
 
-// AppendWithUsage appends msg and records its token usage in the same lock
-// acquisition. Callers must not set Usage on the returned node themselves:
-// once Append returns, the node is reachable by concurrent tree walkers
-// (e.g. Save), so any later unlocked write races with them.
-func (s *Session) AppendWithUsage(msg ai.Message, usage ai.Usage) *Node {
+// AppendWithUsage appends msg and records its token usage and turn duration in
+// the same lock acquisition. Callers must not set Usage on the returned node
+// themselves: once Append returns, the node is reachable by concurrent tree
+// walkers (e.g. Save), so any later unlocked write races with them.
+func (s *Session) AppendWithUsage(msg ai.Message, usage ai.Usage, durationMs int) *Node {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := s.appendLocked(msg)
 	n.Usage = usage
+	n.DurationMs = durationMs
 	return n
+}
+
+// SetEffort records the reasoning-effort level used for the most recent turn.
+func (s *Session) SetEffort(effort string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Effort = effort
 }
 
 func (s *Session) appendLocked(msg ai.Message) *Node {
@@ -147,6 +162,53 @@ func (s *Session) PathToActiveNodes() []*Node {
 		nodes = append([]*Node{n}, nodes...)
 	}
 	return nodes
+}
+
+// UsageStats aggregates token, latency, and turn metadata across the active
+// branch (root → Active), plus subagent token totals for the whole session.
+type UsageStats struct {
+	Provider       string
+	Model          string
+	Effort         string
+	Created        time.Time
+	Updated        time.Time
+	Turns          int
+	Input          int
+	Output         int
+	CacheRead      int
+	DurationMs     int
+	SubagentCount  int
+	SubagentInput  int
+	SubagentOutput int
+}
+
+// UsageStats computes per-session usage metadata over the active branch.
+func (s *Session) UsageStats() UsageStats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	st := UsageStats{
+		Provider: s.Provider,
+		Model:    s.Model,
+		Effort:   s.Effort,
+		Created:  s.Created,
+		Updated:  s.Updated,
+	}
+	for n := s.Active; n != nil && n.Parent != nil; n = n.Parent {
+		if n.Usage.Input == 0 && n.Usage.Output == 0 && n.Usage.CacheRead == 0 {
+			continue
+		}
+		st.Turns++
+		st.Input += n.Usage.Input
+		st.Output += n.Usage.Output
+		st.CacheRead += n.Usage.CacheRead
+		st.DurationMs += n.DurationMs
+	}
+	for _, t := range s.Subagents {
+		st.SubagentCount++
+		st.SubagentInput += t.InputTokens
+		st.SubagentOutput += t.OutputTokens
+	}
+	return st
 }
 
 const maxFilesRead = 50

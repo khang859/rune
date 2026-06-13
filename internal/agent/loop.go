@@ -71,6 +71,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 			Tools:     toolSpecs,
 			Reasoning: ai.ReasoningConfig{Effort: a.effort},
 		}
+		turnStart := time.Now()
 		events, err := a.provider.Stream(ctx, req)
 		if err != nil {
 			sendErrOrAbort(ctx, out, err)
@@ -209,7 +210,7 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		if sawUsage {
 			out <- TurnUsage{Usage: usage}
 		}
-		a.persistAssistant(text.String(), calls, invalidCallNames, usage)
+		a.persistAssistant(text.String(), calls, invalidCallNames, usage, time.Since(turnStart))
 		if len(calls) == 0 && len(invalidCallNames) == 0 {
 			if a.subagents != nil {
 				if ch, busy := a.subagents.WaitForAnyCompletion(); busy {
@@ -279,7 +280,7 @@ func (a *Agent) injectCompletedSubagentSummaries() {
 	}
 }
 
-func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, invalidNames []string, usage ai.Usage) {
+func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, invalidNames []string, usage ai.Usage, dur time.Duration) {
 	body := text
 	if len(invalidNames) > 0 {
 		note := formatInvalidCallsNote(invalidNames)
@@ -296,7 +297,8 @@ func (a *Agent) persistAssistant(text string, calls []ai.ToolCall, invalidNames 
 	for _, c := range calls {
 		content = append(content, ai.ToolUseBlock(c))
 	}
-	a.session.AppendWithUsage(ai.Message{Role: ai.RoleAssistant, Content: content}, usage)
+	a.session.AppendWithUsage(ai.Message{Role: ai.RoleAssistant, Content: content}, usage, int(dur.Milliseconds()))
+	a.session.SetEffort(a.effort)
 }
 
 // runTools dispatches each tool call and appends its result to the session.

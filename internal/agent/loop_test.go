@@ -1136,3 +1136,34 @@ func assertNoOrphans(t *testing.T, s *session.Session) {
 		}
 	}
 }
+
+// slowTurnProvider sleeps briefly before completing so the captured turn
+// duration is non-zero.
+type slowTurnProvider struct{}
+
+func (slowTurnProvider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
+	out := make(chan ai.Event, 4)
+	go func() {
+		time.Sleep(5 * time.Millisecond)
+		out <- ai.TextDelta{Text: "ok"}
+		out <- ai.Usage{Input: 10, Output: 1}
+		out <- ai.Done{Reason: "stop"}
+		close(out)
+	}()
+	return out, nil
+}
+
+func TestRun_RecordsTurnLatencyAndEffort(t *testing.T) {
+	s := session.New("gpt-5")
+	a := New(slowTurnProvider{}, tools.NewRegistry(), s, "")
+	a.SetReasoningEffort("high")
+
+	collect(t, a.Run(context.Background(), userMsg("hello")))
+
+	if s.Active.DurationMs <= 0 {
+		t.Fatalf("DurationMs = %d, want > 0", s.Active.DurationMs)
+	}
+	if s.Effort != "high" {
+		t.Fatalf("session effort = %q, want high", s.Effort)
+	}
+}

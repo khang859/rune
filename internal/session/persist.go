@@ -16,8 +16,10 @@ type wireSession struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name,omitempty"`
 	Created   string         `json:"created"`
+	Updated   string         `json:"updated,omitempty"`
 	Provider  string         `json:"provider,omitempty"`
 	Model     string         `json:"model"`
+	Effort    string         `json:"effort,omitempty"`
 	Cwd       string         `json:"cwd,omitempty"`
 	RootID    string         `json:"root_id"`
 	ActiveID  string         `json:"active_id"`
@@ -34,6 +36,7 @@ type wireNode struct {
 	HasMessage     bool       `json:"has_message"`
 	Usage          ai.Usage   `json:"usage,omitempty"`
 	Created        string     `json:"created"`
+	DurationMs     int        `json:"duration_ms,omitempty"`
 	CompactedCount int        `json:"compacted_count,omitempty"`
 }
 
@@ -73,6 +76,9 @@ func (s *Session) Save() error {
 		return err
 	}
 	_ = os.Chmod(path, 0o600)
+	s.mu.Lock()
+	s.Updated = time.Now()
+	s.mu.Unlock()
 	return nil
 }
 
@@ -87,8 +93,10 @@ func (s *Session) snapshotForSave() (string, wireSession, error) {
 		ID:        s.ID,
 		Name:      s.Name,
 		Created:   s.Created.Format("2006-01-02T15:04:05Z07:00"),
+		Updated:   time.Now().Format("2006-01-02T15:04:05Z07:00"),
 		Provider:  normalizeProvider(s.Provider),
 		Model:     s.Model,
+		Effort:    s.Effort,
 		Cwd:       normalizeCwd(s.Cwd),
 		RootID:    s.Root.ID,
 		ActiveID:  s.Active.ID,
@@ -100,6 +108,7 @@ func (s *Session) snapshotForSave() (string, wireSession, error) {
 			ID:             n.ID,
 			Usage:          n.Usage,
 			Created:        n.Created.Format("2006-01-02T15:04:05Z07:00"),
+			DurationMs:     n.DurationMs,
 			CompactedCount: n.CompactedCount,
 		}
 		if n.Parent != nil {
@@ -152,7 +161,7 @@ func Load(path string) (*Session, error) {
 			return nil, fmt.Errorf("malformed session %q: duplicate node %q", w.ID, wn.ID)
 		}
 		created, _ := time.Parse(time.RFC3339, wn.Created)
-		n := &Node{ID: wn.ID, Usage: wn.Usage, Created: created, CompactedCount: wn.CompactedCount}
+		n := &Node{ID: wn.ID, Usage: wn.Usage, Created: created, DurationMs: wn.DurationMs, CompactedCount: wn.CompactedCount}
 		if wn.HasMessage {
 			n.Message = wn.Message
 		}
@@ -184,12 +193,15 @@ func Load(path string) (*Session, error) {
 		return nil, fmt.Errorf("malformed session %q: active node %q not found", w.ID, w.ActiveID)
 	}
 	created, _ := time.Parse(time.RFC3339, w.Created)
+	updated, _ := time.Parse(time.RFC3339, w.Updated)
 	return &Session{
 		ID:        w.ID,
 		Name:      w.Name,
 		Created:   created,
+		Updated:   updated,
 		Provider:  normalizeProvider(w.Provider),
 		Model:     w.Model,
+		Effort:    w.Effort,
 		Cwd:       normalizeCwd(w.Cwd),
 		Root:      root,
 		Active:    active,
