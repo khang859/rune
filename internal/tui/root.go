@@ -1628,10 +1628,14 @@ func formatUsageStats(st session.UsageStats) []string {
 	if st.Turns > 0 {
 		avg = dur / time.Duration(st.Turns)
 	}
+	tps := "—"
+	if st.DurationMs > 0 {
+		tps = fmt.Sprintf("%.1f tok/s", float64(st.Output)/(float64(st.DurationMs)/1000))
+	}
 	lines := []string{
 		fmt.Sprintf("session usage — model=%s provider=%s effort=%s", st.Model, st.Provider, effort),
 		fmt.Sprintf("turns=%d  tokens: in=%d out=%d cache=%d (total %d)", st.Turns, st.Input, st.Output, st.CacheRead, total),
-		fmt.Sprintf("latency: total %s  avg %s", dur.Round(time.Millisecond), avg.Round(time.Millisecond)),
+		fmt.Sprintf("latency: total %s  avg %s  output %s", dur.Round(time.Millisecond), avg.Round(time.Millisecond), tps),
 	}
 	if st.SubagentCount > 0 {
 		lines = append(lines, fmt.Sprintf("subagents=%d  tokens: in=%d out=%d", st.SubagentCount, st.SubagentInput, st.SubagentOutput))
