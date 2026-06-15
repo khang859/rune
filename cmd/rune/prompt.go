@@ -122,12 +122,20 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	if idx, err := codeindex.BuildCached(ctx, codeindex.BuildOptions{Root: cwd}); err == nil {
 		a.SetCodeIndex(idx)
 	}
-	resolved := attachments.ResolveUserInput(text, attachments.Options{CWD: cwd, Provider: selection.Provider, Model: selection.Model})
-	if summary := promptAttachmentSummary(resolved.Attached); summary != "" {
-		fmt.Fprintln(w, summary)
-	}
-	for _, warning := range resolved.Warnings {
-		fmt.Fprintf(w, "(%s)\n", warning)
+	// Auto-attach scans the prompt for file references, inlines on-disk files, and
+	// prints "(could not attach …)" warnings. That's a human-input affordance; a
+	// programmatic caller feeding bulk text (e.g. a serialized transcript full of
+	// incidental path mentions) wants the prompt treated literally. RUNE_NO_ATTACH
+	// (or --no-attach) opts out — no scan, no inlining, no warnings on stdout.
+	resolved := attachments.ResolvedUserInput{Text: text}
+	if os.Getenv("RUNE_NO_ATTACH") == "" {
+		resolved = attachments.ResolveUserInput(text, attachments.Options{CWD: cwd, Provider: selection.Provider, Model: selection.Model})
+		if summary := promptAttachmentSummary(resolved.Attached); summary != "" {
+			fmt.Fprintln(w, summary)
+		}
+		for _, warning := range resolved.Warnings {
+			fmt.Fprintf(w, "(%s)\n", warning)
+		}
 	}
 	content := []ai.ContentBlock{ai.TextBlock{Text: resolved.Text}}
 	content = append(content, resolved.Attachments...)

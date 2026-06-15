@@ -20,7 +20,7 @@ var Version = "0.0.0-dev"
 
 func main() {
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--resume <session-id>] [--version] | rune login [provider] | rune mcp <command>")
+		fmt.Fprintln(os.Stderr, "usage: rune [--provider codex|groq|ollama|runpod|openrouter] [--model <id>] [--profile <name>] [--prompt <text>] [--no-attach] [--resume <session-id>] [--version] | rune login [provider] | rune mcp <command>")
 		flag.PrintDefaults()
 	}
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -31,11 +31,20 @@ func main() {
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
 	profileName := flag.String("profile", "", "named worker profile (~/.rune/profiles/<name>.md) applying a model, skills, and persona")
 	requireTool := flag.String("require-tool", "", "headless: comma-separated tools the agent must call before ending its turn; nudges it to continue otherwise, exits 3 if it never does")
+	noAttach := flag.Bool("no-attach", false, "headless: treat --prompt as literal text; skip file-reference auto-attachment (also via RUNE_NO_ATTACH). For programmatic callers feeding bulk text.")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println("rune", Version)
 		return
+	}
+
+	// Fold the flag into the env var that runPrompt reads, so the two opt-in paths
+	// (--no-attach and RUNE_NO_ATTACH) share one code path. Programmatic callers
+	// prefer the env var: an older rune that predates this flag ignores it instead
+	// of failing flag parsing.
+	if *noAttach {
+		_ = os.Setenv("RUNE_NO_ATTACH", "1")
 	}
 
 	if err := config.EnsureRuneDir(); err == nil {
