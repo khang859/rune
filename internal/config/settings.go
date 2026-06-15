@@ -19,6 +19,7 @@ type Settings struct {
 	OllamaModel        string                       `json:"ollama_model,omitempty"`
 	RunpodModel        string                       `json:"runpod_model,omitempty"`
 	OpenRouterModel    string                       `json:"openrouter_model,omitempty"`
+	OpenRouterProvider string                       `json:"openrouter_provider,omitempty"`
 	OllamaEndpoint     string                       `json:"ollama_endpoint,omitempty"`
 	OllamaNumCtx       int                          `json:"ollama_num_ctx,omitempty"`
 	OllamaThink        bool                         `json:"ollama_think,omitempty"`
@@ -40,11 +41,12 @@ type RepoMapSettings struct {
 }
 
 type ProviderProfile struct {
-	ID       string `json:"id"`
-	Name     string `json:"name,omitempty"`
-	Provider string `json:"provider"`
-	Endpoint string `json:"endpoint,omitempty"`
-	Model    string `json:"model,omitempty"`
+	ID                 string `json:"id"`
+	Name               string `json:"name,omitempty"`
+	Provider           string `json:"provider"`
+	Endpoint           string `json:"endpoint,omitempty"`
+	Model              string `json:"model,omitempty"`
+	OpenRouterProvider string `json:"openrouter_provider,omitempty"`
 	// OllamaNumCtx overrides Settings.OllamaNumCtx for this profile. Use a
 	// pointer so we can distinguish "unset" (inherit) from "explicit zero" —
 	// zero on the pointer target means "let Ollama choose", which is different
@@ -228,6 +230,7 @@ func NormalizeProviderProfiles(profiles []ProviderProfile) []ProviderProfile {
 		p.Provider = normalizeProviderID(p.Provider)
 		p.Endpoint = strings.TrimSpace(p.Endpoint)
 		p.Model = strings.TrimSpace(p.Model)
+		p.OpenRouterProvider = strings.TrimSpace(p.OpenRouterProvider)
 		if p.ID == "" || p.Provider == "" || seen[p.ID] {
 			continue
 		}

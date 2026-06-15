@@ -35,6 +35,7 @@ type Settings struct {
 	OllamaThink              string
 	RunpodEndpointStatus     string
 	OpenRouterEndpointStatus string
+	OpenRouterProviderStatus string
 }
 
 type SettingsAction struct {
@@ -72,6 +73,7 @@ const (
 	settingsRowRunpodEndpoint
 	settingsRowOpenRouterAPIKey
 	settingsRowOpenRouterEndpoint
+	settingsRowOpenRouterProvider
 	settingsRowActiveProfile
 	settingsRowAddProviderProfile
 	settingsRowOllamaAPIKey
@@ -108,6 +110,7 @@ func NewSettings(cur Settings) Modal {
 		{kind: settingsRowAction, section: "Provider", label: "runpod endpoint", action: "runpod_endpoint", status: cur.RunpodEndpointStatus},
 		{kind: settingsRowAction, section: "Provider", label: "openrouter api key", action: "openrouter_api_key", status: cur.OpenRouterAPIKeyStatus},
 		{kind: settingsRowAction, section: "Provider", label: "openrouter endpoint", action: "openrouter_endpoint", status: cur.OpenRouterEndpointStatus},
+		{kind: settingsRowAction, section: "Provider", label: "openrouter provider", action: "openrouter_provider", status: cur.OpenRouterProviderStatus},
 		{kind: settingsRowAction, section: "Provider", label: "active provider profile", action: "edit_active_profile", status: cur.ActiveProfileStatus},
 		{kind: settingsRowAction, section: "Provider", label: "add provider profile", action: "add_provider_profile", status: "Enter to create"},
 		{kind: settingsRowAction, section: "Ollama", label: "ollama api key", action: "ollama_api_key", status: cur.OllamaAPIKeyStatus},
@@ -208,6 +211,9 @@ func normalizeSettings(s Settings) Settings {
 	if s.OpenRouterEndpointStatus == "" {
 		s.OpenRouterEndpointStatus = "default — Enter to set"
 	}
+	if s.OpenRouterProviderStatus == "" {
+		s.OpenRouterProviderStatus = "auto — Enter to set"
+	}
 	return s
 }
 
@@ -295,6 +301,7 @@ func (s *SettingsModal) selectedSettings() Settings {
 		OllamaThink:              s.rows[settingsRowOllamaThink].options[s.rows[settingsRowOllamaThink].value],
 		RunpodEndpointStatus:     s.cur.RunpodEndpointStatus,
 		OpenRouterEndpointStatus: s.cur.OpenRouterEndpointStatus,
+		OpenRouterProviderStatus: s.cur.OpenRouterProviderStatus,
 	}
 }
 

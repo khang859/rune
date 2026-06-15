@@ -40,6 +40,38 @@ func TestBuildPayloadIncludesMessagesToolsAndNoReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadIncludesProviderRouting(t *testing.T) {
+	body, err := buildPayload(ai.Request{
+		Model:           "anthropic/claude-sonnet-4.5",
+		ProviderRouting: "anthropic",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	provider, ok := got["provider"].(map[string]any)
+	if !ok {
+		t.Fatalf("provider missing: %s", body)
+	}
+	order := provider["order"].([]any)
+	if len(order) != 1 || order[0] != "anthropic" {
+		t.Fatalf("provider.order = %v, want [anthropic]", order)
+	}
+}
+
+func TestBuildPayloadOmitsProviderRoutingWhenEmpty(t *testing.T) {
+	body, err := buildPayload(ai.Request{Model: "anthropic/claude-sonnet-4.5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), `"provider"`) {
+		t.Fatalf("payload should omit provider: %s", body)
+	}
+}
+
 func TestBuildPayloadSerializesImageToolCallAndToolResult(t *testing.T) {
 	body, err := buildPayload(ai.Request{
 		Model: "m",

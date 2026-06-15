@@ -11,11 +11,12 @@ type Provider interface {
 }
 
 type Request struct {
-	Model     string          `json:"model"`
-	System    string          `json:"system,omitempty"`
-	Messages  []Message       `json:"messages"`
-	Tools     []ToolSpec      `json:"tools,omitempty"`
-	Reasoning ReasoningConfig `json:"reasoning,omitempty"`
+	Model           string          `json:"model"`
+	ProviderRouting string          `json:"provider_routing,omitempty"`
+	System          string          `json:"system,omitempty"`
+	Messages        []Message       `json:"messages"`
+	Tools           []ToolSpec      `json:"tools,omitempty"`
+	Reasoning       ReasoningConfig `json:"reasoning,omitempty"`
 }
 
 type Role string

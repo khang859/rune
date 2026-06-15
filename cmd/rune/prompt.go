@@ -20,7 +20,7 @@ import (
 	"github.com/khang859/rune/internal/tools"
 )
 
-func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profileName, requireTools, resumeID string, w io.Writer) error {
+func runPrompt(ctx context.Context, text, providerOverride, modelOverride, openrouterProviderOverride, profileName, requireTools, resumeID string, w io.Writer) error {
 	if err := config.EnsureRuneDir(); err != nil {
 		return err
 	}
@@ -47,7 +47,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, profi
 	if modelDefault == "" && sess != nil {
 		modelDefault = sess.Model
 	}
-	selection, err := buildProvider(ctx, providerDefault, modelDefault)
+	selection, err := buildProvider(ctx, providerDefault, modelDefault, openrouterProviderOverride)
 	if err != nil {
 		// Headless can't recover interactively, so make the failure actionable:
 		// name both the re-login and the switch-provider paths.
