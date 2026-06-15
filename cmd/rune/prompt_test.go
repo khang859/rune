@@ -142,6 +142,45 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	}
 }
 
+func TestRunPrompt_NoAttachSkipsFileResolution(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"message":{"role":"assistant","content":"ok"},"done":true,"done_reason":"stop"}` + "\n"))
+	}))
+	defer srv.Close()
+
+	t.Setenv("RUNE_DIR", t.TempDir())
+	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
+
+	// A path-like token in the prompt is auto-attached; the missing file yields a
+	// "(could not attach …)" warning on the writer. RUNE_NO_ATTACH must suppress it
+	// so a bulk-text caller's prompt is treated literally.
+	const prompt = "summarize the session; it edited missing-xyz.ts"
+
+	t.Run("default resolves and warns", func(t *testing.T) {
+		var buf bytes.Buffer
+		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(buf.String(), "could not attach missing-xyz.ts") {
+			t.Fatalf("expected attach warning, output = %q", buf.String())
+		}
+	})
+
+	t.Run("RUNE_NO_ATTACH suppresses resolution", func(t *testing.T) {
+		t.Setenv("RUNE_NO_ATTACH", "1")
+		var buf bytes.Buffer
+		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(buf.String(), "could not attach") {
+			t.Fatalf("RUNE_NO_ATTACH should suppress attach warnings, output = %q", buf.String())
+		}
+		if !strings.Contains(buf.String(), "ok") {
+			t.Fatalf("assistant text should still stream, output = %q", buf.String())
+		}
+	})
+}
+
 func TestRunPrompt_CanceledContextCancelsProviderRequest(t *testing.T) {
 	requestStarted := make(chan struct{})
 	releaseHandler := make(chan struct{})
