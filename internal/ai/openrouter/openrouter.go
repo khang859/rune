@@ -20,11 +20,12 @@ const (
 )
 
 type Provider struct {
-	endpoint       string
-	apiKey         string
-	httpClient     *http.Client
-	maxRetries     int
-	retryBaseDelay time.Duration
+	endpoint        string
+	apiKey          string
+	providerRouting string
+	httpClient      *http.Client
+	maxRetries      int
+	retryBaseDelay  time.Duration
 }
 
 func New(endpoint, apiKey string) *Provider {
@@ -38,6 +39,12 @@ func New(endpoint, apiKey string) *Provider {
 		maxRetries:     3,
 		retryBaseDelay: time.Second,
 	}
+}
+
+func NewWithProviderRouting(endpoint, apiKey, providerRouting string) *Provider {
+	p := New(endpoint, apiKey)
+	p.providerRouting = strings.TrimSpace(providerRouting)
+	return p
 }
 
 func NormalizeEndpoint(endpoint string) string {
@@ -55,6 +62,9 @@ func NormalizeEndpoint(endpoint string) string {
 func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event, error) {
 	if strings.TrimSpace(p.apiKey) == "" {
 		return nil, fmt.Errorf("openrouter API key is required (set OPENROUTER_API_KEY, RUNE_OPENROUTER_API_KEY, or configure it in /settings)")
+	}
+	if req.ProviderRouting == "" && p.providerRouting != "" {
+		req.ProviderRouting = p.providerRouting
 	}
 	body, err := buildPayload(req)
 	if err != nil {

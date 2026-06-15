@@ -264,9 +264,27 @@ The OpenRouter catalog changes often. Use `custom…` to paste exact slugs from 
 
 OpenRouter defaults to `https://openrouter.ai/api/v1/chat/completions`. Set `RUNE_OPENROUTER_ENDPOINT` or save `openrouter_endpoint` from `/settings` to use a different compatible endpoint. Base URLs are accepted and `/chat/completions` is appended when needed.
 
+### Provider routing
+
+OpenRouter hosts the same model across multiple providers. By default OpenRouter load-balances between providers, but you can pin requests to a specific provider slug with `RUNE_OPENROUTER_PROVIDER` or by saving `openrouter_provider` from `/settings`. The value is sent as `provider.order` in the chat-completion request.
+
+```bash
+rune --provider openrouter --model anthropic/claude-sonnet-4.5 --openrouter-provider anthropic
+```
+
+In the TUI:
+
+```text
+/settings
+# select "openrouter provider" and enter a slug such as `anthropic`, `openai`, or `deepinfra/turbo`
+```
+
+Set an empty value to let OpenRouter choose (the default behavior).
+
 ### Env overrides
 
 - `RUNE_OPENROUTER_MODEL` — model default for OpenRouter.
+- `RUNE_OPENROUTER_PROVIDER` — route requests to a specific provider slug.
 - `RUNE_OPENROUTER_ENDPOINT` — override the chat completions endpoint.
 - `RUNE_OPENROUTER_API_KEY` / `OPENROUTER_API_KEY` — API key.
 

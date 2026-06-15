@@ -8,12 +8,17 @@ import (
 )
 
 type payload struct {
-	Model         string        `json:"model"`
-	Messages      []messageWire `json:"messages"`
-	Stream        bool          `json:"stream"`
-	StreamOptions streamOptions `json:"stream_options"`
-	Tools         []toolWire    `json:"tools,omitempty"`
-	ToolChoice    string        `json:"tool_choice,omitempty"`
+	Model         string               `json:"model"`
+	Provider      *providerRoutingWire `json:"provider,omitempty"`
+	Messages      []messageWire        `json:"messages"`
+	Stream        bool                 `json:"stream"`
+	StreamOptions streamOptions        `json:"stream_options"`
+	Tools         []toolWire           `json:"tools,omitempty"`
+	ToolChoice    string               `json:"tool_choice,omitempty"`
+}
+
+type providerRoutingWire struct {
+	Order []string `json:"order"`
 }
 
 type streamOptions struct {
@@ -64,6 +69,9 @@ func buildPayload(req ai.Request) ([]byte, error) {
 		Model:         req.Model,
 		Stream:        true,
 		StreamOptions: streamOptions{IncludeUsage: true},
+	}
+	if req.ProviderRouting != "" {
+		p.Provider = &providerRoutingWire{Order: []string{req.ProviderRouting}}
 	}
 	if req.System != "" {
 		p.Messages = append(p.Messages, messageWire{Role: "system", Content: req.System})

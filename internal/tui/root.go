@@ -1797,6 +1797,10 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				settings, _ := config.LoadSettings(config.SettingsPath())
 				return m.openModal(modal.NewTextInput("OpenRouter endpoint", "openrouter_endpoint", settings.OpenRouterEndpoint))
 			}
+			if v.Action == "openrouter_provider" {
+				settings, _ := config.LoadSettings(config.SettingsPath())
+				return m.openModal(modal.NewTextInput("OpenRouter provider (slug, e.g. anthropic)", "openrouter_provider", settings.OpenRouterProvider))
+			}
 		case modal.Settings:
 			if v.Provider != m.sess.Provider {
 				return m.switchProvider(v.Provider)
@@ -1820,6 +1824,8 @@ func (m *RootModel) applyModalResult(cur modal.Modal, payload any) tea.Cmd {
 				m.saveOllamaNumCtx(res.Value)
 			case "runpod_endpoint":
 				m.saveEndpointSetting(providers.Runpod, res.Value)
+			case "openrouter_provider":
+				m.saveOpenRouterProvider(res.Value)
 			case "openrouter_endpoint":
 				m.saveEndpointSetting(providers.OpenRouter, res.Value)
 			}
@@ -2251,7 +2257,7 @@ func buildTUIProviderResolved(resolved providers.ResolvedProvider) (ai.Provider,
 		if err != nil {
 			return nil, err
 		}
-		return openrouter.New(endpoint, key), nil
+		return openrouter.NewWithProviderRouting(endpoint, key, resolved.OpenRouterProvider), nil
 	default:
 		endpoint := strings.TrimSpace(resolved.Endpoint)
 		if endpoint == "" {
@@ -2360,6 +2366,33 @@ func (m *RootModel) saveEndpointSetting(provider, endpoint string) {
 		m.msgs.OnInfo("(ollama endpoint reset to default local)")
 	} else {
 		m.msgs.OnInfo(fmt.Sprintf("(%s endpoint saved)", provider))
+	}
+	m.refreshViewport()
+}
+
+func (m *RootModel) saveOpenRouterProvider(provider string) {
+	s, err := config.LoadSettings(config.SettingsPath())
+	if err != nil {
+		s = config.DefaultSettings()
+	}
+	s.OpenRouterProvider = strings.TrimSpace(provider)
+	if err := config.SaveSettings(config.SettingsPath(), s); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("settings: %v", err))
+		return
+	}
+	updated, _ := config.LoadSettings(config.SettingsPath())
+	m.settings = modalSettingsFromConfig(updated, braveKeyConfigured(), tavilyKeyConfigured())
+	if m.sess.Provider == providers.OpenRouter {
+		if p, err := buildTUIProvider(providers.OpenRouter); err == nil {
+			m.replaceActiveProvider(p)
+		} else {
+			m.msgs.OnTurnError(err)
+		}
+	}
+	if s.OpenRouterProvider == "" {
+		m.msgs.OnInfo("(openrouter provider reset to auto)")
+	} else {
+		m.msgs.OnInfo(fmt.Sprintf("(openrouter provider: %s)", s.OpenRouterProvider))
 	}
 	m.refreshViewport()
 }

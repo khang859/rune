@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 func TestDefaultSettingsIncludesProvider(t *testing.T) {
 	s := DefaultSettings()
@@ -89,8 +92,8 @@ func TestNormalizeSettingsPreservesRunpod(t *testing.T) {
 }
 
 func TestNormalizeSettingsPreservesOpenRouter(t *testing.T) {
-	s := NormalizeSettings(Settings{Provider: "openrouter", OpenRouterModel: "anthropic/claude-sonnet-4.5", OpenRouterEndpoint: "https://example.test/v1"})
-	if s.Provider != "openrouter" || s.OpenRouterModel != "anthropic/claude-sonnet-4.5" || s.OpenRouterEndpoint != "https://example.test/v1" {
+	s := NormalizeSettings(Settings{Provider: "openrouter", OpenRouterModel: "anthropic/claude-sonnet-4.5", OpenRouterProvider: "anthropic", OpenRouterEndpoint: "https://example.test/v1"})
+	if s.Provider != "openrouter" || s.OpenRouterModel != "anthropic/claude-sonnet-4.5" || s.OpenRouterProvider != "anthropic" || s.OpenRouterEndpoint != "https://example.test/v1" {
 		t.Fatalf("settings = %+v", s)
 	}
 }
@@ -129,6 +132,22 @@ func TestNormalizeSettingsFillsSubagentDefaults(t *testing.T) {
 	}
 	if s.Subagents.MaxCompletedRetain != 100 {
 		t.Fatalf("MaxCompletedRetain = %d, want 100", s.Subagents.MaxCompletedRetain)
+	}
+}
+
+func TestSaveLoadSettingsPreservesOpenRouterProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings.json")
+	original := NormalizeSettings(Settings{Provider: "openrouter", OpenRouterModel: "anthropic/claude-sonnet-4.5", OpenRouterProvider: "anthropic"})
+	if err := SaveSettings(path, original); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.OpenRouterProvider != "anthropic" {
+		t.Fatalf("openrouter provider = %q, want anthropic", loaded.OpenRouterProvider)
 	}
 }
 

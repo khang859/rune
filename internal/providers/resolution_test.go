@@ -76,12 +76,31 @@ func TestResolveOpenRouterDefault(t *testing.T) {
 	}
 }
 
+func TestResolveOpenRouterProviderFromProfile(t *testing.T) {
+	s := config.NormalizeSettings(config.Settings{
+		Provider:           OpenRouter,
+		OpenRouterProvider: "settings-provider",
+		ActiveProfile:      "or",
+		Profiles: []config.ProviderProfile{{
+			ID:                 "or",
+			Provider:           OpenRouter,
+			Model:              "profile/model",
+			OpenRouterProvider: "profile-provider",
+		}},
+	})
+	got := Resolve(s, ResolveOptions{})
+	if got.OpenRouterProvider != "profile-provider" {
+		t.Fatalf("openrouter provider = %q, want profile-provider", got.OpenRouterProvider)
+	}
+}
+
 func TestResolveOpenRouterEnvOverrides(t *testing.T) {
 	t.Setenv("RUNE_OPENROUTER_MODEL", "env/model")
 	t.Setenv("RUNE_OPENROUTER_ENDPOINT", "https://env.test/v1/chat/completions")
-	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter, OpenRouterModel: "settings/model", OpenRouterEndpoint: "https://settings.test/v1", ActiveProfile: "or", Profiles: []config.ProviderProfile{{ID: "or", Provider: OpenRouter, Model: "profile/model", Endpoint: "https://profile.test/v1"}}})
+	t.Setenv("RUNE_OPENROUTER_PROVIDER", "env-provider")
+	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter, OpenRouterModel: "settings/model", OpenRouterProvider: "settings-provider", OpenRouterEndpoint: "https://settings.test/v1", ActiveProfile: "or", Profiles: []config.ProviderProfile{{ID: "or", Provider: OpenRouter, Model: "profile/model", OpenRouterProvider: "profile-provider", Endpoint: "https://profile.test/v1"}}})
 	got := Resolve(s, ResolveOptions{})
-	if got.Model != "env/model" || got.Endpoint != "https://env.test/v1/chat/completions" {
+	if got.Model != "env/model" || got.Endpoint != "https://env.test/v1/chat/completions" || got.OpenRouterProvider != "env-provider" {
 		t.Fatalf("resolved = %+v", got)
 	}
 }
@@ -101,6 +120,21 @@ func TestSaveResolvedSelectionPersistsOpenRouterModelOnly(t *testing.T) {
 	}
 	if saved.OpenRouterEndpoint != "" {
 		t.Fatalf("openrouter endpoint persisted = %q", saved.OpenRouterEndpoint)
+	}
+}
+
+func TestSaveResolvedSelectionPersistsOpenRouterProvider(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	s := config.NormalizeSettings(config.Settings{Provider: OpenRouter})
+	if err := SaveResolvedSelection(path, s, ResolvedProvider{Provider: OpenRouter, Model: "anthropic/claude-sonnet-4.5", OpenRouterProvider: "anthropic"}); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := config.LoadSettings(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.OpenRouterProvider != "anthropic" {
+		t.Fatalf("openrouter provider = %q", saved.OpenRouterProvider)
 	}
 }
 

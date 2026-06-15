@@ -19,11 +19,12 @@ import (
 )
 
 type interactiveOptions struct {
-	ProviderOverride string
-	ModelOverride    string
-	ProfileName      string
-	Version          string
-	ResumeID         string
+	ProviderOverride           string
+	ModelOverride              string
+	OpenRouterProviderOverride string
+	ProfileName                string
+	Version                    string
+	ResumeID                   string
 }
 
 func runInteractiveWithOptions(ctx context.Context, opt interactiveOptions) error {
@@ -49,7 +50,7 @@ func runInteractiveWithOptions(ctx context.Context, opt interactiveOptions) erro
 	if modelDefault == "" && opt.ResumeID != "" {
 		modelDefault = sess.Model
 	}
-	selection, err := buildProvider(ctx, providerDefault, modelDefault)
+	selection, err := buildProvider(ctx, providerDefault, modelDefault, opt.OpenRouterProviderOverride)
 	var startupNotice string
 	if err != nil {
 		// Never trap the user at the CLI: drop into the TUI with an unavailable

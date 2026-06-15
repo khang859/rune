@@ -58,6 +58,31 @@ func TestStreamMissingKey(t *testing.T) {
 	}
 }
 
+func TestStreamSendsProviderRoutingWhenConfigured(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		provider := body["provider"].(map[string]any)
+		order := provider["order"].([]any)
+		if len(order) != 1 || order[0] != "anthropic" {
+			t.Fatalf("provider.order = %v", order)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	p := NewWithProviderRouting(srv.URL, "sk-or-test-key", "anthropic")
+	ch, err := p.Stream(context.Background(), ai.Request{Model: "anthropic/claude-sonnet-4.5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range ch {
+	}
+}
+
 func TestStreamRetriesRateLimit(t *testing.T) {
 	var hits int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

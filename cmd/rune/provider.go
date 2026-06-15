@@ -18,15 +18,16 @@ import (
 )
 
 type providerSelection struct {
-	Provider  string
-	ProfileID string
-	Model     string
-	AI        ai.Provider
+	Provider           string
+	ProfileID          string
+	Model              string
+	OpenRouterProvider string
+	AI                 ai.Provider
 }
 
-func buildProvider(ctx context.Context, providerOverride, modelOverride string) (providerSelection, error) {
+func buildProvider(ctx context.Context, providerOverride, modelOverride, openrouterProviderOverride string) (providerSelection, error) {
 	settings, _ := config.LoadSettings(config.SettingsPath())
-	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providerOverride, ModelOverride: modelOverride})
+	resolved := providers.Resolve(settings, providers.ResolveOptions{ProviderOverride: providerOverride, ModelOverride: modelOverride, OpenRouterProviderOverride: openrouterProviderOverride})
 	provider := strings.TrimSpace(resolved.Provider)
 	if provider == "" {
 		return providerSelection{}, fmt.Errorf("no active provider configured (use `rune --provider <id>` or choose one in /providers)")
@@ -35,7 +36,7 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 	// Carry the resolved provider on every failure path so callers can craft an
 	// accurate, provider-aware recovery notice (see startupRecoveryNotice).
 	fail := func(err error) (providerSelection, error) {
-		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model}, err
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, OpenRouterProvider: resolved.OpenRouterProvider}, err
 	}
 
 	switch provider {
@@ -84,7 +85,7 @@ func buildProvider(ctx context.Context, providerOverride, modelOverride string) 
 		if err != nil {
 			return fail(err)
 		}
-		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, AI: openrouter.New(endpoint, key)}, nil
+		return providerSelection{Provider: provider, ProfileID: resolved.ProfileID, Model: model, OpenRouterProvider: resolved.OpenRouterProvider, AI: openrouter.NewWithProviderRouting(endpoint, key, resolved.OpenRouterProvider)}, nil
 	default:
 		endpoint := strings.TrimSpace(resolved.Endpoint)
 		if endpoint == "" {

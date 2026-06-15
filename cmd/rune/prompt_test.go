@@ -63,7 +63,7 @@ func TestRunPrompt_HitsCodexAndStreamsText(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "hello") {
@@ -112,7 +112,7 @@ func TestRunPrompt_UsesCodexProfileEndpoint(t *testing.T) {
 	})
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "profile-codex") {
@@ -134,7 +134,7 @@ func TestRunPrompt_HitsOllamaAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
@@ -158,7 +158,7 @@ func TestRunPrompt_NoAttachSkipsFileResolution(t *testing.T) {
 
 	t.Run("default resolves and warns", func(t *testing.T) {
 		var buf bytes.Buffer
-		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 			t.Fatal(err)
 		}
 		if !strings.Contains(buf.String(), "could not attach missing-xyz.ts") {
@@ -169,7 +169,7 @@ func TestRunPrompt_NoAttachSkipsFileResolution(t *testing.T) {
 	t.Run("RUNE_NO_ATTACH suppresses resolution", func(t *testing.T) {
 		t.Setenv("RUNE_NO_ATTACH", "1")
 		var buf bytes.Buffer
-		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+		if err := runPrompt(context.Background(), prompt, "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 			t.Fatal(err)
 		}
 		if strings.Contains(buf.String(), "could not attach") {
@@ -203,7 +203,7 @@ func TestRunPrompt_CanceledContextCancelsProviderRequest(t *testing.T) {
 	done := make(chan error, 1)
 	var buf bytes.Buffer
 	go func() {
-		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", "", "", &buf)
+		done <- runPrompt(ctx, "say hi", "ollama", "qwen3:4b", "", "", "", "", &buf)
 	}()
 
 	select {
@@ -252,7 +252,7 @@ func TestRunPrompt_UsesSavedRunpodEndpoint(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "runpod") {
@@ -293,7 +293,7 @@ func TestRunPrompt_UsesOllamaProfile(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "profile-ollama") {
@@ -316,7 +316,7 @@ func TestRunPrompt_OllamaSendsAPIKey(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_API_KEY", "ollama-token")
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "ollama-auth") {
@@ -350,11 +350,40 @@ func TestRunPrompt_HitsOpenRouterAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "openrouter") {
 		t.Fatalf("output = %q", buf.String())
+	}
+}
+
+func TestRunPrompt_OpenRouterProviderRoutingFlag(t *testing.T) {
+	var gotProviderOrder []any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if provider, ok := body["provider"].(map[string]any); ok {
+			gotProviderOrder = provider["order"].([]any)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"openrouter\"},\"finish_reason\":\"stop\"}]}\n\n"))
+	}))
+	defer srv.Close()
+
+	runeDir := t.TempDir()
+	t.Setenv("RUNE_DIR", runeDir)
+	t.Setenv("RUNE_OPENROUTER_ENDPOINT", srv.URL)
+	t.Setenv("RUNE_OPENROUTER_API_KEY", strings.Repeat("o", 24))
+
+	var buf bytes.Buffer
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "anthropic", "", "", "", &buf); err != nil {
+		t.Fatal(err)
+	}
+	if len(gotProviderOrder) != 1 || gotProviderOrder[0] != "anthropic" {
+		t.Fatalf("provider.order = %v, want [anthropic]", gotProviderOrder)
 	}
 }
 
@@ -374,7 +403,7 @@ func TestRunPrompt_HitsGroqAndStreamsText(t *testing.T) {
 	t.Setenv("RUNE_GROQ_API_KEY", strings.Repeat("g", 24))
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "groq", "", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "groq", "", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(buf.String(), "groq") {
@@ -409,7 +438,7 @@ func TestRunPrompt_LoadsSkillsIntoSystemPrompt(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "openrouter", "anthropic/claude-sonnet-4.5", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(gotBody, marker) {
@@ -434,7 +463,7 @@ func TestRunPrompt_MCPStartFailureDoesNotAbort(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 		t.Fatalf("runPrompt should tolerate MCP startup failure: %v", err)
 	}
 	if !strings.Contains(buf.String(), "ollama") {
@@ -453,7 +482,7 @@ func TestRunPrompt_ResumeContinuesSavedSession(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
 
 	var buf bytes.Buffer
-	if err := runPrompt(context.Background(), "first turn", "ollama", "qwen3:4b", "", "", "", &buf); err != nil {
+	if err := runPrompt(context.Background(), "first turn", "ollama", "qwen3:4b", "", "", "", "", &buf); err != nil {
 		t.Fatal(err)
 	}
 	sessions, err := os.ReadDir(filepath.Join(runeDir, "sessions"))
@@ -462,7 +491,7 @@ func TestRunPrompt_ResumeContinuesSavedSession(t *testing.T) {
 	}
 	id := strings.TrimSuffix(sessions[0].Name(), ".json")
 
-	if err := runPrompt(context.Background(), "second turn", "ollama", "qwen3:4b", "", "", id, &buf); err != nil {
+	if err := runPrompt(context.Background(), "second turn", "ollama", "qwen3:4b", "", "", "", id, &buf); err != nil {
 		t.Fatal(err)
 	}
 	sessions, _ = os.ReadDir(filepath.Join(runeDir, "sessions"))
@@ -485,7 +514,7 @@ func TestRunPrompt_ResumeUnknownSessionFails(t *testing.T) {
 	t.Setenv("RUNE_DIR", runeDir)
 
 	var buf bytes.Buffer
-	err := runPrompt(context.Background(), "hi", "ollama", "qwen3:4b", "", "", "missing123", &buf)
+	err := runPrompt(context.Background(), "hi", "ollama", "qwen3:4b", "", "", "", "missing123", &buf)
 	if err == nil || !strings.Contains(err.Error(), "resume session") {
 		t.Fatalf("err = %v, want resume session error", err)
 	}
@@ -504,7 +533,7 @@ func TestRunPrompt_TurnErrorReturnsError(t *testing.T) {
 	t.Setenv("RUNE_OLLAMA_ENDPOINT", srv.URL)
 
 	var buf bytes.Buffer
-	err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", &buf)
+	err := runPrompt(context.Background(), "say hi", "ollama", "qwen3:4b", "", "", "", "", &buf)
 	if err == nil {
 		t.Fatalf("want non-nil error; transcript = %q", buf.String())
 	}

@@ -125,6 +125,18 @@ func TestSettings_EndpointRowsAreActions(t *testing.T) {
 	}
 }
 
+func TestSettings_OpenRouterProviderRowIsAction(t *testing.T) {
+	s := NewSettings(Settings{}).(*SettingsModal)
+	for range settingsRowOpenRouterProvider {
+		s.Update(tea.KeyMsg{Type: tea.KeyDown})
+	}
+	_, cmd := s.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	res := cmd().(ResultMsg).Payload.(SettingsAction)
+	if res.Action != "openrouter_provider" {
+		t.Fatalf("action = %q, want openrouter_provider", res.Action)
+	}
+}
+
 func TestSettings_OpenRouterAPIKeyRowIsAction(t *testing.T) {
 	s := NewSettings(Settings{}).(*SettingsModal)
 	for range settingsRowOpenRouterAPIKey {
@@ -174,6 +186,7 @@ func TestSettings_ViewShowsNewRows(t *testing.T) {
 		"runpod endpoint",
 		"openrouter api key",
 		"openrouter endpoint",
+		"openrouter provider",
 		"active provider profile",
 		"add provider profile",
 		"✧ Ollama",

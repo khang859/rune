@@ -29,6 +29,7 @@ func main() {
 	resume := flag.String("resume", "", "resume a saved session by id (interactive, or one headless turn with --prompt)")
 	provider := flag.String("provider", "", "provider id (codex, groq, ollama, runpod, or openrouter; overrides RUNE_PROVIDER and settings)")
 	model := flag.String("model", "", "model id (overrides provider-specific env/settings default)")
+	openrouterProvider := flag.String("openrouter-provider", "", "route OpenRouter requests to a specific provider slug (overrides RUNE_OPENROUTER_PROVIDER and settings)")
 	profileName := flag.String("profile", "", "named worker profile (~/.rune/profiles/<name>.md) applying a model, skills, and persona")
 	requireTool := flag.String("require-tool", "", "headless: comma-separated tools the agent must call before ending its turn; nudges it to continue otherwise, exits 3 if it never does")
 	noAttach := flag.Bool("no-attach", false, "headless: treat --prompt as literal text; skip file-reference auto-attachment (also via RUNE_NO_ATTACH). For programmatic callers feeding bulk text.")
@@ -97,7 +98,7 @@ func main() {
 		return
 	}
 	if *prompt != "" {
-		err := runPrompt(ctx, *prompt, *provider, *model, *profileName, *requireTool, *resume, os.Stdout)
+		err := runPrompt(ctx, *prompt, *provider, *model, *openrouterProvider, *profileName, *requireTool, *resume, os.Stdout)
 		if errors.Is(err, agent.ErrIncompleteRequiredTool) {
 			// Distinct from a generic error (exit 1) or crash (exit 2): the run
 			// finished cleanly but the model never called a required completion
@@ -112,11 +113,12 @@ func main() {
 		return
 	}
 	if err := runInteractiveWithOptions(ctx, interactiveOptions{
-		ProviderOverride: *provider,
-		ModelOverride:    *model,
-		ProfileName:      *profileName,
-		Version:          Version,
-		ResumeID:         *resume,
+		ProviderOverride:           *provider,
+		ModelOverride:              *model,
+		OpenRouterProviderOverride: *openrouterProvider,
+		ProfileName:                *profileName,
+		Version:                    Version,
+		ResumeID:                   *resume,
 	}); err != nil {
 		runelog.Error("interactive", "err", err.Error())
 		fmt.Fprintln(os.Stderr, "error:", err)

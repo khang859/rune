@@ -150,6 +150,7 @@ Common user-facing environment variables:
 | `RUNE_PROVIDER` | Select the active provider. |
 | `RUNE_PROVIDER_PROFILE` | Select a saved provider profile. |
 | `RUNE_CODEX_MODEL`, `RUNE_GROQ_MODEL`, `RUNE_OLLAMA_MODEL`, `RUNE_RUNPOD_MODEL`, `RUNE_OPENROUTER_MODEL` | Override provider model defaults. |
+| `RUNE_OPENROUTER_PROVIDER` | Route OpenRouter requests to a specific provider slug (sets `provider.order`). |
 | `RUNE_CODEX_ENDPOINT`, `RUNE_GROQ_ENDPOINT`, `RUNE_OLLAMA_ENDPOINT`, `RUNE_RUNPOD_ENDPOINT`, `RUNE_OPENROUTER_ENDPOINT` | Override provider endpoints. |
 | `RUNE_OAUTH_AUTHORIZE_URL`, `RUNE_OAUTH_TOKEN_URL` | Override Codex OAuth endpoints. |
 | `RUNE_GROQ_API_KEY`, `GROQ_API_KEY` | Groq API key. |

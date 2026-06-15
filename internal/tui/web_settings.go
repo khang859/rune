@@ -66,6 +66,13 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 	if os.Getenv("RUNE_OPENROUTER_ENDPOINT") != "" {
 		openrouterEndpointStatus = "env override active"
 	}
+	openrouterProviderStatus := "auto — Enter to set"
+	if strings.TrimSpace(s.OpenRouterProvider) != "" {
+		openrouterProviderStatus = s.OpenRouterProvider + " — Enter to edit"
+	}
+	if os.Getenv("RUNE_OPENROUTER_PROVIDER") != "" {
+		openrouterProviderStatus = "env override active"
+	}
 	activeProfileStatus := "none"
 	if p := config.FindProviderProfile(s.Profiles, s.ActiveProfile); p != nil {
 		activeProfileStatus = p.Provider + ": " + config.ProfileDisplayName(*p) + " — Enter to edit"
@@ -97,6 +104,7 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		OllamaThink:              onOff(s.OllamaThink),
 		RunpodEndpointStatus:     runpodEndpointStatus,
 		OpenRouterEndpointStatus: openrouterEndpointStatus,
+		OpenRouterProviderStatus: openrouterProviderStatus,
 	}
 }
 
@@ -119,6 +127,7 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		OllamaModel:        loaded.OllamaModel,
 		RunpodModel:        loaded.RunpodModel,
 		OpenRouterModel:    loaded.OpenRouterModel,
+		OpenRouterProvider: loaded.OpenRouterProvider,
 		OllamaEndpoint:     loaded.OllamaEndpoint,
 		OllamaNumCtx:       loaded.OllamaNumCtx,
 		OllamaThink:        s.OllamaThink == "on",

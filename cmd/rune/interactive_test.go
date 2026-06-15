@@ -52,7 +52,7 @@ func TestBuildProvider_EmptyOverrideUsesConfiguredProvider(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	selection, err := buildProvider(context.Background(), "", "")
+	selection, err := buildProvider(context.Background(), "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

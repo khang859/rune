@@ -21,6 +21,9 @@ type ResolvedProvider struct {
 	ProfileID string
 	Model     string
 	Endpoint  string
+	// OpenRouterProvider is an optional provider slug used to populate the
+	// provider.order field in OpenRouter chat-completion requests.
+	OpenRouterProvider string
 	// OllamaNumCtx / OllamaThink are only meaningful when Provider == Ollama.
 	// They're resolved here so cmd/rune/provider.go and TUI builders don't
 	// each reach back into settings to recompute the per-profile override.
@@ -29,9 +32,10 @@ type ResolvedProvider struct {
 }
 
 type ResolveOptions struct {
-	ProviderOverride string
-	ModelOverride    string
-	ProfileOverride  *string
+	ProviderOverride           string
+	ModelOverride              string
+	OpenRouterProviderOverride string
+	ProfileOverride            *string
 }
 
 func NoProfile() *string        { return stringPtr("") }
@@ -154,7 +158,18 @@ func Resolve(settings config.Settings, opts ResolveOptions) ResolvedProvider {
 		}
 	}
 
-	resolved := ResolvedProvider{Provider: provider, ProfileID: profileID, Model: model, Endpoint: endpoint}
+	openrouterProvider := strings.TrimSpace(opts.OpenRouterProviderOverride)
+	if openrouterProvider == "" {
+		openrouterProvider = strings.TrimSpace(os.Getenv("RUNE_OPENROUTER_PROVIDER"))
+	}
+	if openrouterProvider == "" && profile != nil {
+		openrouterProvider = profile.OpenRouterProvider
+	}
+	if openrouterProvider == "" {
+		openrouterProvider = settings.OpenRouterProvider
+	}
+
+	resolved := ResolvedProvider{Provider: provider, ProfileID: profileID, Model: model, Endpoint: endpoint, OpenRouterProvider: openrouterProvider}
 	if provider == Ollama {
 		resolved.OllamaNumCtx = settings.OllamaNumCtx
 		resolved.OllamaThink = settings.OllamaThink
@@ -185,6 +200,7 @@ func SaveResolvedSelection(path string, s config.Settings, r ResolvedProvider) e
 		for i := range s.Profiles {
 			if s.Profiles[i].ID == r.ProfileID {
 				s.Profiles[i].Model = r.Model
+				s.Profiles[i].OpenRouterProvider = r.OpenRouterProvider
 			}
 		}
 	}
@@ -199,6 +215,7 @@ func SaveResolvedSelection(path string, s config.Settings, r ResolvedProvider) e
 		s.RunpodModel = r.Model
 	case OpenRouter:
 		s.OpenRouterModel = r.Model
+		s.OpenRouterProvider = r.OpenRouterProvider
 	case "":
 		// Save provider reset without changing model defaults.
 	default:
