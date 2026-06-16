@@ -223,7 +223,7 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		}
 		switch c.FinishReason {
 		case "tool_calls", "function_call":
-			if err := state.flushContent(ctx, out); err != nil {
+			if err := state.flushContentAsThinking(ctx, out); err != nil {
 				return false, err
 			}
 			if err := state.flush(ctx, out); err != nil {
@@ -312,6 +312,24 @@ func (s *streamState) flushContent(ctx context.Context, out chan<- ai.Event) err
 	s.cbuf.Reset()
 	s.bodyMode = true
 	return send(ctx, out, ai.TextDelta{Text: txt})
+}
+
+// flushContentAsThinking emits still-unresolved kimi content as reasoning rather
+// than assistant text. Used at a tool-call terminal: kimi-family providers that
+// leak reasoning into content (no reasoning field, no </think>) emit it before a
+// tool call, so the buffered narration is reasoning, not the answer. It is a
+// no-op once content has committed to bodyMode or streamed cleanly (cbuf empty).
+func (s *streamState) flushContentAsThinking(ctx context.Context, out chan<- ai.Event) error {
+	if s.cbuf.Len() == 0 {
+		return nil
+	}
+	txt := strings.TrimSpace(s.cbuf.String())
+	s.cbuf.Reset()
+	s.bodyMode = true
+	if txt == "" {
+		return nil
+	}
+	return send(ctx, out, ai.Thinking{Text: txt})
 }
 
 // indexCloseThink returns the index and matched tag of the earliest closing think

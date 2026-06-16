@@ -108,6 +108,98 @@ func TestParseSSEKimiOrphanCloseThinkInContent(t *testing.T) {
 	}
 }
 
+func TestParseSSEKimiLeakedReasoningBeforeToolCallRoutedToThinking(t *testing.T) {
+	// kimi leaks reasoning into content with NO think tags at all, then makes a
+	// tool call (finish_reason=tool_calls). The buffered narration is reasoning and
+	// must route to the thinking block, trimmed of the stripped-wrapper whitespace.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"                 TUI tests pass. Let me also run a broader suite.  "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"tool_calls"}]}`)+
+			"data: [DONE]\n\n")
+	if got := joinThinking(events); got != "TUI tests pass. Let me also run a broader suite." {
+		t.Fatalf("thinking = %q", got)
+	}
+	if got := joinText(events); got != "" {
+		t.Fatalf("text = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiLeakedReasoningSplitAcrossChunksBeforeToolCall(t *testing.T) {
+	// Tagless leaked reasoning arriving in multiple content deltas, then a tool
+	// call: all buffered chunks join into one trimmed thinking block.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"  Let me check the "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":"file system first.  "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"tool_calls"}]}`))
+	if got := joinThinking(events); got != "Let me check the file system first." {
+		t.Fatalf("thinking = %q", got)
+	}
+	if got := joinText(events); got != "" {
+		t.Fatalf("text = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiContentAndToolCallFinishInSameChunk(t *testing.T) {
+	// content, tool_calls and finish_reason all in one chunk: content is processed
+	// before the terminal, so it still routes to thinking, not text.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"my reasoning","tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`))
+	if got := joinThinking(events); got != "my reasoning" {
+		t.Fatalf("thinking = %q", got)
+	}
+	if got := joinText(events); got != "" {
+		t.Fatalf("text = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiWhitespaceOnlyContentBeforeToolCallDropped(t *testing.T) {
+	// kimi commonly leaks only whitespace residue before a tool call; trimming
+	// yields nothing, so neither a thinking nor an empty assistant block is emitted.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"   \n  "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"tool_calls"}]}`))
+	if got := joinThinking(events); got != "" {
+		t.Fatalf("thinking = %q, want empty", got)
+	}
+	if got := joinText(events); got != "" {
+		t.Fatalf("text = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiFinalAnswerOnStopStaysText(t *testing.T) {
+	// Same no-tag leak path, but the turn ends in stop: this is the real answer and
+	// must stream as assistant text, not be hidden in thinking.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"Done. Summary of changes."}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"stop"}]}`)+
+			"data: [DONE]\n\n")
+	if got := joinText(events); got != "Done. Summary of changes." {
+		t.Fatalf("text = %q", got)
+	}
+	if got := joinThinking(events); got != "" {
+		t.Fatalf("thinking = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiCleanReasoningFieldKeepsPreToolText(t *testing.T) {
+	// Provider separates reasoning correctly: content before the tool call is a
+	// genuine assistant message and must stream as text (gate keeps it untouched).
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"reasoning":"clean reasoning"}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":"Running the tests now."}}]}`)+
+			dataLine(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"bash","arguments":"{}"}}]}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"tool_calls"}]}`))
+	if got := joinThinking(events); got != "clean reasoning" {
+		t.Fatalf("thinking = %q", got)
+	}
+	if got := joinText(events); got != "Running the tests now." {
+		t.Fatalf("text = %q", got)
+	}
+}
+
 func TestParseSSEKimiExplicitThinkPair(t *testing.T) {
 	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
 		dataLine(`{"choices":[{"delta":{"content":"<think>reasoning here</think>real answer"}}]}`)+
