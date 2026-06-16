@@ -229,6 +229,37 @@ func TestParseSSEKimiExplicitThinkPair(t *testing.T) {
 	}
 }
 
+func TestParseSSEKimiThinkTagStreamsReasoningIncrementally(t *testing.T) {
+	// A leaked <think> block arriving across many content deltas must stream as
+	// reasoning live, not buffer until </think> (the freeze-then-burst). Thinking
+	// events should arrive before the chunk carrying the closing tag.
+	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
+		dataLine(`{"choices":[{"delta":{"content":"<think>analyzing the request"}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":" and weighing the options"}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":" carefully now</think>the answer"}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"stop"}]}`))
+	if got := joinThinking(events); got != "analyzing the request and weighing the options carefully now" {
+		t.Fatalf("thinking = %q", got)
+	}
+	if got := joinText(events); got != "the answer" {
+		t.Fatalf("text = %q", got)
+	}
+	// At least one Thinking event must precede the close-tag chunk's events,
+	// proving the reasoning streamed rather than being held until the end.
+	thinkingBeforeText := 0
+	for _, ev := range events {
+		if _, ok := ev.(ai.TextDelta); ok {
+			break
+		}
+		if _, ok := ev.(ai.Thinking); ok {
+			thinkingBeforeText++
+		}
+	}
+	if thinkingBeforeText < 2 {
+		t.Fatalf("expected reasoning to stream incrementally, got %d Thinking events before text", thinkingBeforeText)
+	}
+}
+
 func TestParseSSEKimiCloseTagSplitAcrossChunks(t *testing.T) {
 	events := collectSSEModel(t, "moonshotai/kimi-k2.7-code",
 		dataLine(`{"choices":[{"delta":{"content":"thinking text </thi"}}]}`)+

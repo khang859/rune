@@ -70,6 +70,12 @@ type RootModel struct {
 	eventCh    <-chan agent.Event
 	cancel     context.CancelFunc
 
+	// viewportDirty marks that a streaming delta changed the transcript but the
+	// viewport re-render was coalesced onto the activity tick (instead of running
+	// once per token, which on a fast stream pins the UI). Flushed by the tick and
+	// at turn end.
+	viewportDirty bool
+
 	subagentCtx                 context.Context
 	subagentCancel              context.CancelFunc
 	subagentCh                  <-chan agent.SubagentEvent
@@ -338,13 +344,18 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.activityTicking = false
 		if !m.showActivity() {
+			// Activity stopped (e.g. ActivityMode turned off mid-stream): flush any
+			// coalesced delta so it isn't stranded until the next structural event.
+			if m.viewportDirty {
+				m.refreshViewport()
+			}
 			return m, nil
 		}
 		m.activityFrame++
 		if m.activityFrame%activityPhraseChangeFrames == 0 {
 			m.activityPhrase = nextActivityPhraseIndex(m.activityPhrase, len(m.activityPhrases()))
 		}
-		if (m.indexing && m.msgs.IsEmpty()) || m.activeSubagentCount() > 0 {
+		if m.viewportDirty || (m.indexing && m.msgs.IsEmpty()) || m.activeSubagentCount() > 0 {
 			m.refreshViewport()
 		}
 		return m, m.startActivityTick()
@@ -368,7 +379,14 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.handleEvent(v.Event)
-		m.refreshViewport()
+		// Coalesce high-frequency text/thinking deltas onto the activity tick so
+		// a fast token stream doesn't trigger a full transcript re-render per
+		// token. Structural events (tool calls, turn end, …) still render at once.
+		if m.activityTicking && isStreamDeltaEvent(v.Event) {
+			m.viewportDirty = true
+		} else {
+			m.refreshViewport()
+		}
 		cmds := []tea.Cmd{nextEventCmd(m.eventCh)}
 		if m.pendingTickCmd != nil {
 			cmds = append(cmds, m.pendingTickCmd)
@@ -381,6 +399,10 @@ func (m *RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Stale done from a swapped-out session; ignore so we don't
 			// pop the queue on the wrong session.
 			return m, nil
+		}
+		// Flush any delta coalesced onto the (now-stopping) activity tick.
+		if m.viewportDirty {
+			m.refreshViewport()
 		}
 		m.saveSessionIfStarted()
 		m.streaming = false
@@ -1486,6 +1508,7 @@ func (m *RootModel) layout() {
 }
 
 func (m *RootModel) refreshViewport() {
+	m.viewportDirty = false
 	atBottom := m.viewport.AtBottom()
 	if m.msgs.IsEmpty() {
 		m.viewport.SetContent(renderSplashWithNotice(m.width, m.viewport.Height, m.styles, m.version, m.splashNotice()))
@@ -1534,6 +1557,17 @@ func (m *RootModel) handleSubagentEvent(e agent.SubagentEvent) {
 		}
 		m.pendingTickCmd = tea.Batch(m.pendingTickCmd, m.startSubagentContinuationTurn())
 	}
+}
+
+// isStreamDeltaEvent reports whether an event is a high-frequency streaming
+// delta whose viewport refresh can be coalesced onto the activity tick rather
+// than rendered once per delta.
+func isStreamDeltaEvent(e agent.Event) bool {
+	switch e.(type) {
+	case agent.AssistantText, agent.ThinkingText:
+		return true
+	}
+	return false
 }
 
 func (m *RootModel) handleEvent(e agent.Event) {

@@ -22,6 +22,31 @@ func TestMessages_AppendUser(t *testing.T) {
 	}
 }
 
+func TestMessages_CachesMarkdownRendererAcrossRenders(t *testing.T) {
+	// Render must reuse one width-aware renderer instead of rebuilding it every
+	// call: building one runs a blocking terminal query, and rebuilding it per
+	// streaming delta is what freezes the TUI. The cache is keyed on width.
+	m := NewMessages(80)
+	m.AppendUser("hi")
+	s := DefaultStyles()
+
+	m.Render(s, false, false, time.Time{})
+	first := m.md
+	if first.r == nil {
+		t.Fatal("renderer not cached after first render")
+	}
+	m.Render(s, false, false, time.Time{})
+	if m.md.r != first.r {
+		t.Fatal("renderer rebuilt on second render at same width")
+	}
+
+	m.SetWidth(100)
+	m.Render(s, false, false, time.Time{})
+	if m.md.r == first.r {
+		t.Fatal("renderer not rebuilt after width change")
+	}
+}
+
 func TestMessages_AssistantUsesRuneLabel(t *testing.T) {
 	m := NewMessages(80)
 	m.OnAssistantDelta("hello")

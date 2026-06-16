@@ -109,6 +109,7 @@ type streamState struct {
 	stripThink   bool // model is kimi-family; scan content for leaked think tags
 	sawReasoning bool // a reasoning-field delta arrived this turn
 	bodyMode     bool // committed to streaming content as assistant text (vs. buffering)
+	inThink      bool // inside a confirmed leaked <think> block; stream content as reasoning
 	cbuf         strings.Builder
 }
 
@@ -277,17 +278,34 @@ func (s *streamState) handleContent(ctx context.Context, out chan<- ai.Event, tx
 	return s.scanContent(ctx, out)
 }
 
-// scanContent looks for a closing think tag in the buffered content. Everything
-// before it (minus an optional leading <think>) is reasoning; everything after is
-// the assistant's answer. This handles both well-formed <think>…</think> and the
-// common kimi case where the opening tag never arrives (orphan </think>).
+// scanContent splits leaked reasoning from the assistant's answer. A leading
+// <think>/<thinking> tag confirms the content is reasoning: the opening tag is
+// stripped and the reasoning streams incrementally as Thinking (so the UI updates
+// live instead of freezing until the closing tag). Everything after the closing
+// tag is the answer. The orphan case (kimi omits the opening tag) can't be
+// confirmed mid-stream, so it stays buffered until a closing tag, a terminal, or
+// the cap proves it's a plain answer.
 func (s *streamState) scanContent(ctx context.Context, out chan<- ai.Event) error {
+	if !s.inThink {
+		trimmed := strings.TrimLeft(s.cbuf.String(), " \t\r\n")
+		for _, t := range []string{"<think>", "<thinking>"} {
+			if strings.HasPrefix(trimmed, t) {
+				s.cbuf.Reset()
+				s.cbuf.WriteString(trimmed[len(t):])
+				s.inThink = true
+				break
+			}
+		}
+	}
 	buf := s.cbuf.String()
 	if idx, tag := indexCloseThink(buf); idx >= 0 {
-		reasoning := stripOpenThink(buf[:idx])
+		// Any leading <think> opening tag was already stripped when inThink was
+		// confirmed above, so the reasoning is everything before the closing tag.
+		reasoning := buf[:idx]
 		rest := strings.TrimLeft(buf[idx+len(tag):], " \t\r\n")
 		s.cbuf.Reset()
 		s.bodyMode = true
+		s.inThink = false
 		if strings.TrimSpace(reasoning) != "" {
 			if err := send(ctx, out, ai.Thinking{Text: reasoning}); err != nil {
 				return err
@@ -298,8 +316,21 @@ func (s *streamState) scanContent(ctx context.Context, out chan<- ai.Event) erro
 		}
 		return nil
 	}
-	// No closing tag yet. If we have buffered a lot without one, this is most
-	// likely a genuine answer with no thinking — commit to streaming it as text.
+	// Confirmed think block, closing tag not here yet: stream what we have as
+	// reasoning, holding back a short tail that might be a split closing tag.
+	if s.inThink {
+		const hold = len("</thinking>") - 1
+		if len(buf) > hold {
+			safe := buf[:len(buf)-hold]
+			s.cbuf.Reset()
+			s.cbuf.WriteString(buf[len(buf)-hold:])
+			return send(ctx, out, ai.Thinking{Text: safe})
+		}
+		return nil
+	}
+	// No closing tag yet and no opening tag to confirm reasoning. If we have
+	// buffered a lot without one, this is most likely a genuine answer with no
+	// thinking — commit to streaming it as text.
 	if s.cbuf.Len() > thinkBufCap {
 		return s.flushContent(ctx, out)
 	}
@@ -316,6 +347,14 @@ func (s *streamState) flushContent(ctx context.Context, out chan<- ai.Event) err
 	txt := s.cbuf.String()
 	s.cbuf.Reset()
 	s.bodyMode = true
+	// A tail left inside a confirmed <think> block is reasoning, not the answer.
+	if s.inThink {
+		s.inThink = false
+		if strings.TrimSpace(txt) == "" {
+			return nil
+		}
+		return send(ctx, out, ai.Thinking{Text: txt})
+	}
 	return send(ctx, out, ai.TextDelta{Text: txt})
 }
 
@@ -348,18 +387,6 @@ func indexCloseThink(s string) (int, string) {
 		}
 	}
 	return best, tag
-}
-
-// stripOpenThink removes a leading <think>/<thinking> tag (and the whitespace
-// before it) if present, leaving the reasoning text.
-func stripOpenThink(s string) string {
-	trimmed := strings.TrimLeft(s, " \t\r\n")
-	for _, t := range []string{"<think>", "<thinking>"} {
-		if strings.HasPrefix(trimmed, t) {
-			return trimmed[len(t):]
-		}
-	}
-	return s
 }
 
 func firstNonEmpty(vals ...string) string {
