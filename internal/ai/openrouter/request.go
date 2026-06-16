@@ -13,17 +13,25 @@ type payload struct {
 	Messages      []messageWire        `json:"messages"`
 	Stream        bool                 `json:"stream"`
 	StreamOptions streamOptions        `json:"stream_options"`
-	Reasoning     reasoningWire        `json:"reasoning"`
+	Reasoning     *reasoningWire       `json:"reasoning,omitempty"`
 	Tools         []toolWire           `json:"tools,omitempty"`
 	ToolChoice    string               `json:"tool_choice,omitempty"`
 }
 
-// reasoningWire is sent as an empty object ({}), which OpenRouter treats as
-// "include reasoning with provider defaults" (equivalent to include_reasoning:
-// true). Asking for reasoning explicitly pushes upstreams to deliver it in the
-// dedicated reasoning field rather than leaking it into content — the durable
-// counterpart to the kimi think-tag stripper in sse.go.
-type reasoningWire struct{}
+// reasoningWire carries the requested reasoning effort. It is sent only when the
+// caller opts into reasoning (effort other than ""/"none"); a non-empty effort
+// pushes upstreams to deliver reasoning in the dedicated reasoning field rather
+// than leaking it into content. When reasoning is off the field is omitted
+// entirely, so the model runs without a reasoning preamble.
+type reasoningWire struct {
+	Effort string `json:"effort,omitempty"`
+}
+
+// reasoningRequested reports whether the request opts into reasoning. Empty and
+// "none" mean reasoning is off (no field sent, content streamed verbatim).
+func reasoningRequested(req ai.Request) bool {
+	return req.Reasoning.Effort != "" && req.Reasoning.Effort != "none"
+}
 
 type providerRoutingWire struct {
 	Order []string `json:"order"`
@@ -80,6 +88,9 @@ func buildPayload(req ai.Request) ([]byte, error) {
 	}
 	if req.ProviderRouting != "" {
 		p.Provider = &providerRoutingWire{Order: []string{req.ProviderRouting}}
+	}
+	if reasoningRequested(req) {
+		p.Reasoning = &reasoningWire{Effort: req.Reasoning.Effort}
 	}
 	if req.System != "" {
 		p.Messages = append(p.Messages, messageWire{Role: "system", Content: req.System})

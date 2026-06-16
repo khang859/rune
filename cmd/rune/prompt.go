@@ -18,6 +18,7 @@ import (
 	"github.com/khang859/rune/internal/session"
 	"github.com/khang859/rune/internal/skill"
 	"github.com/khang859/rune/internal/tools"
+	"github.com/khang859/rune/internal/tui"
 )
 
 func runPrompt(ctx context.Context, text, providerOverride, modelOverride, openrouterProviderOverride, profileName, requireTools, resumeID string, w io.Writer) error {
@@ -110,6 +111,10 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, openr
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
+	// Resolve the reasoning effort for the model so kimi defaults to none (off)
+	// here too — the agent default is "medium", which would otherwise force a
+	// reasoning preamble and re-engage the content buffering on every turn.
+	a.SetReasoningEffort(tui.ResolveModelEffort(sess.Model, a.ReasoningEffort()))
 	a.SetRequireTools(agent.ParseRequireTools(requireTools))
 	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())

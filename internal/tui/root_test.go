@@ -1447,6 +1447,9 @@ func TestThinkingLevelsForKnownModels(t *testing.T) {
 		"gpt-5.2":       {"none", "low", "medium", "high", "xhigh"},
 		"gpt-5.2-codex": {"low", "medium", "high", "xhigh"},
 		"gpt-5.1":       {"none", "low", "medium", "high"},
+		// kimi omits "medium" so the global default resolves to none, not an
+		// indistinguishable explicit choice.
+		"moonshotai/kimi-k2.7-code": {"none", "low", "high"},
 	}
 	for model, want := range cases {
 		got := thinkingLevelsForModel(model)
@@ -1456,6 +1459,27 @@ func TestThinkingLevelsForKnownModels(t *testing.T) {
 	}
 	if got := thinkingLevelsForModel("gpt-5.4-mini"); len(got) != 0 {
 		t.Fatalf("thinkingLevelsForModel unknown = %v, want none", got)
+	}
+}
+
+func TestResolveModelEffort(t *testing.T) {
+	cases := []struct {
+		name   string
+		model  string
+		effort string
+		want   string
+	}{
+		{"kimi default medium -> none", "moonshotai/kimi-k2.7-code", "medium", "none"},
+		{"kimi explicit high kept", "moonshotai/kimi-k2.7-code", "high", "high"},
+		{"kimi explicit low kept", "moonshotai/kimi-k2.7-code", "low", "low"},
+		{"kimi none kept", "moonshotai/kimi-k2.7-code", "none", "none"},
+		{"gpt medium supported kept", "gpt-5.5", "medium", "medium"},
+		{"unconstrained model passes through", "some/other-model", "medium", "medium"},
+	}
+	for _, tc := range cases {
+		if got := ResolveModelEffort(tc.model, tc.effort); got != tc.want {
+			t.Fatalf("%s: ResolveModelEffort(%q,%q) = %q, want %q", tc.name, tc.model, tc.effort, got, tc.want)
+		}
 	}
 }
 

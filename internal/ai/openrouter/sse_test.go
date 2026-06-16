@@ -15,8 +15,15 @@ func collectSSE(t *testing.T, input string) []ai.Event {
 
 func collectSSEModel(t *testing.T, model, input string) []ai.Event {
 	t.Helper()
+	// Reasoning on: the kimi think-tag stripper is engaged (the case the
+	// separation logic is built for).
+	return collectSSEModelReasoning(t, model, true, input)
+}
+
+func collectSSEModelReasoning(t *testing.T, model string, reasoningOn bool, input string) []ai.Event {
+	t.Helper()
 	out := make(chan ai.Event, 64)
-	if err := parseSSE(context.Background(), strings.NewReader(input), out, model); err != nil {
+	if err := parseSSE(context.Background(), strings.NewReader(input), out, model, reasoningOn); err != nil {
 		t.Fatal(err)
 	}
 	close(out)
@@ -25,6 +32,16 @@ func collectSSEModel(t *testing.T, model, input string) []ai.Event {
 		events = append(events, ev)
 	}
 	return events
+}
+
+func countTextDeltas(events []ai.Event) int {
+	n := 0
+	for _, ev := range events {
+		if _, ok := ev.(ai.TextDelta); ok {
+			n++
+		}
+	}
+	return n
 }
 
 // joinText concatenates all TextDelta payloads; joinThinking does the same for Thinking.
@@ -273,6 +290,38 @@ func TestParseSSEKimiBufferedContentFlushedOnDoneSentinel(t *testing.T) {
 		dataLine(`{"choices":[{"delta":{"content":"buffered answer with no think tag"}}]}`)+
 			"data: [DONE]\n\n")
 	if got := joinText(events); got != "buffered answer with no think tag" {
+		t.Fatalf("text = %q", got)
+	}
+}
+
+func TestParseSSEKimiReasoningOffStreamsContentLivePerChunk(t *testing.T) {
+	// With reasoning off, the kimi stripper is disengaged: each content delta is
+	// emitted immediately as its own TextDelta (no buffering), so there is no
+	// freeze-then-burst stutter. Three content chunks => three TextDelta events.
+	events := collectSSEModelReasoning(t, "moonshotai/kimi-k2.7-code", false,
+		dataLine(`{"choices":[{"delta":{"content":"part one "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":"part two "}}]}`)+
+			dataLine(`{"choices":[{"delta":{"content":"part three"}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"stop"}]}`)+
+			"data: [DONE]\n\n")
+	if got := joinText(events); got != "part one part two part three" {
+		t.Fatalf("text = %q", got)
+	}
+	if n := countTextDeltas(events); n != 3 {
+		t.Fatalf("TextDelta count = %d, want 3 (streamed live, not coalesced)", n)
+	}
+	if got := joinThinking(events); got != "" {
+		t.Fatalf("thinking = %q, want empty", got)
+	}
+}
+
+func TestParseSSEKimiReasoningOffLeavesThinkTagsInContent(t *testing.T) {
+	// With reasoning off there is no reasoning to separate, so content is passed
+	// through verbatim even if it happens to contain a </think> literal.
+	events := collectSSEModelReasoning(t, "moonshotai/kimi-k2.7-code", false,
+		dataLine(`{"choices":[{"delta":{"content":"the answer with a </think> literal"}}]}`)+
+			dataLine(`{"choices":[{"finish_reason":"stop"}]}`))
+	if got := joinText(events); got != "the answer with a </think> literal" {
 		t.Fatalf("text = %q", got)
 	}
 }

@@ -144,6 +144,9 @@ func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
 	if settings.Effort != "" {
 		a.SetReasoningEffort(settings.Effort)
 	}
+	if sess != nil {
+		a.SetReasoningEffort(ResolveModelEffort(sess.Model, a.ReasoningEffort()))
+	}
 	settings.Effort = a.ReasoningEffort()
 	if settings.IconMode == "" {
 		settings.IconMode = iconMode
@@ -1611,10 +1614,34 @@ func thinkingLevelsForModel(model string) []string {
 	case "gpt-5.1":
 		return []string{"none", "low", "medium", "high"}
 	}
+	if isKimiModel(model) {
+		// "medium" is intentionally omitted: it is the generic global default, so
+		// allowing it as a kimi level would make an explicit choice indistinguishable
+		// from the default that ResolveModelEffort maps to "none".
+		return []string{"none", "low", "high"}
+	}
 	if levels := providers.GroqThinkingLevels(strings.ToLower(model)); levels != nil {
 		return levels
 	}
 	return nil
+}
+
+func isKimiModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "kimi")
+}
+
+// ResolveModelEffort returns the effort to use for model, falling back to the
+// model's default when the requested effort isn't one the model supports. This
+// is how kimi ends up "off" (none) by default: the global "medium" default isn't
+// a kimi level, so it resolves to kimi's default of none. Models that don't
+// constrain effort get the requested value unchanged. Shared by the TUI startup
+// path and the headless runners so kimi behaves consistently everywhere.
+func ResolveModelEffort(model, effort string) string {
+	levels := thinkingLevelsForModel(model)
+	if len(levels) == 0 || supportedThinkingEffort(model, effort) {
+		return effort
+	}
+	return defaultThinkingEffort(model, levels)
 }
 
 func formatUsageStats(st session.UsageStats) []string {
@@ -1670,7 +1697,10 @@ func (m *RootModel) refreshFooterThinkingEffort() {
 	m.footer.ThinkingEffort = footerThinkingEffort(m.sess.Model, m.agent.ReasoningEffort())
 }
 
-func defaultThinkingEffort(levels []string) string {
+func defaultThinkingEffort(model string, levels []string) string {
+	if isKimiModel(model) {
+		return "none"
+	}
 	for _, level := range levels {
 		if level == "medium" {
 			return level
@@ -1687,7 +1717,7 @@ func (m *RootModel) clampThinkingForCurrentModel() {
 	if len(levels) == 0 || supportedThinkingEffort(m.sess.Model, m.agent.ReasoningEffort()) {
 		return
 	}
-	m.applyThinkingEffort(defaultThinkingEffort(levels))
+	m.applyThinkingEffort(defaultThinkingEffort(m.sess.Model, levels))
 }
 
 func (m *RootModel) applyThinkingEffort(effort string) {

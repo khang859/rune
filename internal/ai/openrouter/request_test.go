@@ -40,13 +40,31 @@ func TestBuildPayloadIncludesMessagesToolsAndNoReasoningEffort(t *testing.T) {
 	}
 }
 
-func TestBuildPayloadRequestsReasoning(t *testing.T) {
-	body, err := buildPayload(ai.Request{Model: "moonshotai/kimi-k2.7-code"})
+func TestBuildPayloadOmitsReasoningWhenEffortNoneOrEmpty(t *testing.T) {
+	for _, effort := range []string{"", "none"} {
+		body, err := buildPayload(ai.Request{
+			Model:     "moonshotai/kimi-k2.7-code",
+			Reasoning: ai.ReasoningConfig{Effort: effort},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(body), `"reasoning"`) {
+			t.Fatalf("effort %q should omit reasoning: %s", effort, body)
+		}
+	}
+}
+
+func TestBuildPayloadHonorsReasoningEffort(t *testing.T) {
+	body, err := buildPayload(ai.Request{
+		Model:     "moonshotai/kimi-k2.7-code",
+		Reasoning: ai.ReasoningConfig{Effort: "high"},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"reasoning":{}`) {
-		t.Fatalf("payload should request reasoning: %s", body)
+	if !strings.Contains(string(body), `"reasoning":{"effort":"high"}`) {
+		t.Fatalf("payload should carry reasoning effort: %s", body)
 	}
 }
 

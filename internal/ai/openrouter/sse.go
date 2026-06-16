@@ -11,10 +11,10 @@ import (
 	"github.com/khang859/rune/internal/ai"
 )
 
-func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event, model string) error {
+func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event, model string, reasoningOn bool) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	state := newStreamState(model)
+	state := newStreamState(model, reasoningOn)
 	var data strings.Builder
 	for scanner.Scan() {
 		select {
@@ -122,8 +122,13 @@ type pendingCall struct {
 	args strings.Builder
 }
 
-func newStreamState(model string) *streamState {
-	return &streamState{calls: map[int]*pendingCall{}, stripThink: isKimiModel(model)}
+// newStreamState enables the kimi think-tag stripper only when reasoning was
+// actually requested. With reasoning off the model emits no reasoning preamble,
+// so content is the answer and is streamed verbatim (no buffering, no stutter);
+// the stripper exists solely to separate leaked reasoning from the answer, which
+// can only happen when reasoning is on.
+func newStreamState(model string, reasoningOn bool) *streamState {
+	return &streamState{calls: map[int]*pendingCall{}, stripThink: isKimiModel(model) && reasoningOn}
 }
 
 func isKimiModel(model string) bool {
