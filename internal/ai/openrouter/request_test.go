@@ -40,6 +40,16 @@ func TestBuildPayloadIncludesMessagesToolsAndNoReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestBuildPayloadRequestsReasoning(t *testing.T) {
+	body, err := buildPayload(ai.Request{Model: "moonshotai/kimi-k2.7-code"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"reasoning":{}`) {
+		t.Fatalf("payload should request reasoning: %s", body)
+	}
+}
+
 func TestBuildPayloadIncludesProviderRouting(t *testing.T) {
 	body, err := buildPayload(ai.Request{
 		Model:           "anthropic/claude-sonnet-4.5",

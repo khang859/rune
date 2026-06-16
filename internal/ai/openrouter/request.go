@@ -13,9 +13,17 @@ type payload struct {
 	Messages      []messageWire        `json:"messages"`
 	Stream        bool                 `json:"stream"`
 	StreamOptions streamOptions        `json:"stream_options"`
+	Reasoning     reasoningWire        `json:"reasoning"`
 	Tools         []toolWire           `json:"tools,omitempty"`
 	ToolChoice    string               `json:"tool_choice,omitempty"`
 }
+
+// reasoningWire is sent as an empty object ({}), which OpenRouter treats as
+// "include reasoning with provider defaults" (equivalent to include_reasoning:
+// true). Asking for reasoning explicitly pushes upstreams to deliver it in the
+// dedicated reasoning field rather than leaking it into content — the durable
+// counterpart to the kimi think-tag stripper in sse.go.
+type reasoningWire struct{}
 
 type providerRoutingWire struct {
 	Order []string `json:"order"`
