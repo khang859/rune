@@ -11,10 +11,10 @@ import (
 	"github.com/khang859/rune/internal/ai"
 )
 
-func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
+func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event, model string) error {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
-	state := newStreamState()
+	state := newStreamState(model)
 	var data strings.Builder
 	for scanner.Scan() {
 		select {
@@ -43,10 +43,14 @@ func parseSSE(ctx context.Context, r io.Reader, out chan<- ai.Event) error {
 		}
 	}
 	if data.Len() > 0 {
-		_, err := dispatchData(ctx, data.String(), out, state)
-		if err != nil {
+		if _, err := dispatchData(ctx, data.String(), out, state); err != nil {
 			return err
 		}
+	}
+	// Stream ended without an explicit terminator: flush any content still buffered
+	// for think-tag detection so it isn't dropped.
+	if err := state.flushContent(ctx, out); err != nil {
+		return err
 	}
 	return scanner.Err()
 }
@@ -99,7 +103,18 @@ type apiError struct {
 type streamState struct {
 	calls map[int]*pendingCall
 	order []int
+
+	// Think-tag handling for models (kimi-family) that sometimes leak their
+	// reasoning into the content field instead of the dedicated reasoning field.
+	stripThink   bool // model is kimi-family; scan content for leaked think tags
+	sawReasoning bool // a reasoning-field delta arrived this turn
+	bodyMode     bool // committed to streaming content as assistant text (vs. buffering)
+	cbuf         strings.Builder
 }
+
+// thinkBufCap bounds how much content we buffer while waiting for a closing think
+// tag, so a kimi response that genuinely emits no thinking still streams.
+const thinkBufCap = 8192
 
 type pendingCall struct {
 	id   string
@@ -107,7 +122,13 @@ type pendingCall struct {
 	args strings.Builder
 }
 
-func newStreamState() *streamState { return &streamState{calls: map[int]*pendingCall{}} }
+func newStreamState(model string) *streamState {
+	return &streamState{calls: map[int]*pendingCall{}, stripThink: isKimiModel(model)}
+}
+
+func isKimiModel(model string) bool {
+	return strings.Contains(strings.ToLower(model), "kimi")
+}
 
 func (s *streamState) update(tc deltaToolCall) {
 	idx := tc.Index
@@ -158,6 +179,9 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		return false, nil
 	}
 	if data == "[DONE]" {
+		if err := state.flushContent(ctx, out); err != nil {
+			return true, err
+		}
 		if err := state.flush(ctx, out); err != nil {
 			return true, err
 		}
@@ -180,14 +204,17 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		}
 	}
 	for _, c := range ch.Choices {
-		if c.Delta.Content != "" {
-			if err := send(ctx, out, ai.TextDelta{Text: c.Delta.Content}); err != nil {
+		// Process reasoning before content so sawReasoning is set when a chunk
+		// carries both, and so the content gate sees the correct state.
+		thinking := firstNonEmpty(c.Delta.ReasoningContent, c.Delta.Reasoning, c.Delta.ReasoningText)
+		if thinking != "" {
+			state.sawReasoning = true
+			if err := send(ctx, out, ai.Thinking{Text: thinking}); err != nil {
 				return false, err
 			}
 		}
-		thinking := firstNonEmpty(c.Delta.ReasoningContent, c.Delta.Reasoning, c.Delta.ReasoningText)
-		if thinking != "" {
-			if err := send(ctx, out, ai.Thinking{Text: thinking}); err != nil {
+		if c.Delta.Content != "" {
+			if err := state.handleContent(ctx, out, c.Delta.Content); err != nil {
 				return false, err
 			}
 		}
@@ -196,16 +223,25 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		}
 		switch c.FinishReason {
 		case "tool_calls", "function_call":
+			if err := state.flushContent(ctx, out); err != nil {
+				return false, err
+			}
 			if err := state.flush(ctx, out); err != nil {
 				return false, err
 			}
 			return false, send(ctx, out, ai.Done{Reason: "tool_use"})
 		case "stop", "end":
+			if err := state.flushContent(ctx, out); err != nil {
+				return false, err
+			}
 			if err := state.flush(ctx, out); err != nil {
 				return false, err
 			}
 			return false, send(ctx, out, ai.Done{Reason: "stop"})
 		case "length":
+			if err := state.flushContent(ctx, out); err != nil {
+				return false, err
+			}
 			if err := state.flush(ctx, out); err != nil {
 				return false, err
 			}
@@ -215,6 +251,92 @@ func dispatchData(ctx context.Context, data string, out chan<- ai.Event, state *
 		}
 	}
 	return false, nil
+}
+
+// handleContent routes a content delta either straight to assistant text or, for
+// kimi-family models that have leaked reasoning into content, through think-tag
+// detection. The gate is two-fold: only kimi models are scanned, and only until a
+// reasoning-field delta proves the provider is separating reasoning correctly.
+func (s *streamState) handleContent(ctx context.Context, out chan<- ai.Event, txt string) error {
+	if !s.stripThink || s.bodyMode {
+		return send(ctx, out, ai.TextDelta{Text: txt})
+	}
+	// Reasoning already arrived in its own field this turn, so content is the
+	// clean answer — stream it directly and stop scanning.
+	if s.sawReasoning {
+		s.bodyMode = true
+		return send(ctx, out, ai.TextDelta{Text: txt})
+	}
+	// Possible leak path: buffer until we can split reasoning from the answer.
+	s.cbuf.WriteString(txt)
+	return s.scanContent(ctx, out)
+}
+
+// scanContent looks for a closing think tag in the buffered content. Everything
+// before it (minus an optional leading <think>) is reasoning; everything after is
+// the assistant's answer. This handles both well-formed <think>…</think> and the
+// common kimi case where the opening tag never arrives (orphan </think>).
+func (s *streamState) scanContent(ctx context.Context, out chan<- ai.Event) error {
+	buf := s.cbuf.String()
+	if idx, tag := indexCloseThink(buf); idx >= 0 {
+		reasoning := stripOpenThink(buf[:idx])
+		rest := strings.TrimLeft(buf[idx+len(tag):], " \t\r\n")
+		s.cbuf.Reset()
+		s.bodyMode = true
+		if strings.TrimSpace(reasoning) != "" {
+			if err := send(ctx, out, ai.Thinking{Text: reasoning}); err != nil {
+				return err
+			}
+		}
+		if rest != "" {
+			return send(ctx, out, ai.TextDelta{Text: rest})
+		}
+		return nil
+	}
+	// No closing tag yet. If we have buffered a lot without one, this is most
+	// likely a genuine answer with no thinking — commit to streaming it as text.
+	if s.cbuf.Len() > thinkBufCap {
+		return s.flushContent(ctx, out)
+	}
+	return nil
+}
+
+// flushContent emits any buffered content as assistant text. Used at terminal
+// points and when the buffer cap is hit. Buffered-but-unconfirmed content is
+// treated as a normal answer rather than hidden in a thinking block.
+func (s *streamState) flushContent(ctx context.Context, out chan<- ai.Event) error {
+	if s.cbuf.Len() == 0 {
+		return nil
+	}
+	txt := s.cbuf.String()
+	s.cbuf.Reset()
+	s.bodyMode = true
+	return send(ctx, out, ai.TextDelta{Text: txt})
+}
+
+// indexCloseThink returns the index and matched tag of the earliest closing think
+// tag in s, or (-1, "") if none. </think> and </thinking> are distinct (they
+// diverge at the 8th byte), so the earliest match wins cleanly.
+func indexCloseThink(s string) (int, string) {
+	best, tag := -1, ""
+	for _, t := range []string{"</think>", "</thinking>"} {
+		if i := strings.Index(s, t); i >= 0 && (best < 0 || i < best) {
+			best, tag = i, t
+		}
+	}
+	return best, tag
+}
+
+// stripOpenThink removes a leading <think>/<thinking> tag (and the whitespace
+// before it) if present, leaving the reasoning text.
+func stripOpenThink(s string) string {
+	trimmed := strings.TrimLeft(s, " \t\r\n")
+	for _, t := range []string{"<think>", "<thinking>"} {
+		if strings.HasPrefix(trimmed, t) {
+			return trimmed[len(t):]
+		}
+	}
+	return s
 }
 
 func firstNonEmpty(vals ...string) string {

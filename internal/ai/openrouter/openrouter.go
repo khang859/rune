@@ -71,9 +71,10 @@ func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event,
 		return nil, err
 	}
 	out := make(chan ai.Event, 64)
+	model := req.Model
 	go func() {
 		defer close(out)
-		if err := p.streamWithRetry(ctx, body, out); err != nil {
+		if err := p.streamWithRetry(ctx, body, model, out); err != nil {
 			select {
 			case out <- ai.StreamError{Err: err, Class: classify(err)}:
 			case <-ctx.Done():
@@ -83,13 +84,13 @@ func (p *Provider) Stream(ctx context.Context, req ai.Request) (<-chan ai.Event,
 	return out, nil
 }
 
-func (p *Provider) streamWithRetry(ctx context.Context, body []byte, out chan<- ai.Event) error {
+func (p *Provider) streamWithRetry(ctx context.Context, body []byte, model string, out chan<- ai.Event) error {
 	var lastErr error
 	for attempt := 0; attempt <= p.maxRetries; attempt++ {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		err := p.streamOnce(ctx, body, out)
+		err := p.streamOnce(ctx, body, model, out)
 		if err == nil {
 			return nil
 		}
@@ -136,7 +137,7 @@ func classify(err error) ai.ErrorClass {
 	return ai.ErrFatal
 }
 
-func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Event) error {
+func (p *Provider) streamOnce(ctx context.Context, body []byte, model string, out chan<- ai.Event) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -172,7 +173,7 @@ func (p *Provider) streamOnce(ctx context.Context, body []byte, out chan<- ai.Ev
 			return classifiedErr{err: err, class: ai.ErrFatal}
 		}
 	}
-	if err := parseSSE(ctx, respBody, out); err != nil {
+	if err := parseSSE(ctx, respBody, out, model); err != nil {
 		if errors.Is(err, ai.ErrStreamIdleTimeout) {
 			return classifiedErr{err: err, class: ai.ErrTransient}
 		}
