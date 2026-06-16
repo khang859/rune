@@ -6,6 +6,8 @@ import (
 	"github.com/charmbracelet/glamour"
 )
 
+// Markdown renders markdown to an ANSI string suitable for terminal display.
+// The zero value renders without styling.
 type Markdown struct {
 	r *glamour.TermRenderer
 }
@@ -16,6 +18,24 @@ func NewMarkdown() Markdown {
 	r, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
 		glamour.WithWordWrap(0),
+	)
+	if err != nil {
+		return Markdown{}
+	}
+	return Markdown{r: r}
+}
+
+// NewMarkdownWidth returns a renderer configured for the given terminal width.
+// Tables and prose are soft-wrapped within the width instead of being hard-wrapped
+// later, which preserves table borders.
+func NewMarkdownWidth(width int) Markdown {
+	if width <= 0 {
+		return NewMarkdown()
+	}
+	r, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(width),
+		glamour.WithTableWrap(true),
 	)
 	if err != nil {
 		return Markdown{}

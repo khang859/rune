@@ -174,9 +174,14 @@ func (m *Messages) OnSubagentEvent(ev agent.SubagentEvent) {
 func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time.Time) string {
 	var sb strings.Builder
 	renderedBlocks := 0
+	md := s.Markdown
+	if m.width > 0 {
+		md = NewMarkdownWidth(m.width)
+	}
 	for i := 0; i < len(m.blocks); {
 		b := m.blocks[i]
 		rendered := ""
+		usesMarkdown := false
 		next := i + 1
 		if b.kind == bkToolCall {
 			interactions, consumed := collectToolRun(m.blocks, i)
@@ -187,9 +192,10 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 				rendered = renderToolCall(s, b, m.spawnProgressSuffix(b.meta, json.RawMessage(b.text), now))
 			}
 		} else {
-			rendered = renderBlock(s, b, showThinking, showToolResults, now, i == m.streamingAsstIdx)
+			rendered = renderBlock(s, md, b, showThinking, showToolResults, now, i == m.streamingAsstIdx)
+			usesMarkdown = isMarkdownBlock(b.kind)
 		}
-		if m.width > 0 {
+		if m.width > 0 && !usesMarkdown {
 			rendered = ansi.Wrap(rendered, m.width, " \t")
 		}
 		if renderedBlocks > 0 {
@@ -202,17 +208,25 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 	return sb.String()
 }
 
-func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time.Time, streamingAssistant bool) string {
+func isMarkdownBlock(kind blockKind) bool {
+	switch kind {
+	case bkUser, bkAssistant, bkSummary:
+		return true
+	}
+	return false
+}
+
+func renderBlock(s Styles, md Markdown, b block, showThinking, showToolResults bool, now time.Time, streamingAssistant bool) string {
 	switch b.kind {
 	case bkUser:
 		label := s.User.Render(iconLabel(s.Icons.User, "you>"))
-		return label + "\n" + s.Markdown.Render(b.text)
+		return label + "\n" + md.Render(b.text)
 	case bkAssistant:
 		label := s.Assistant.Render(iconLabel(s.Icons.Assistant, "rune"))
 		if streamingAssistant {
 			return label + "\n" + s.Assistant.Render(b.text)
 		}
-		return label + "\n" + s.Markdown.Render(b.text)
+		return label + "\n" + md.Render(b.text)
 	case bkThinking:
 		return renderThinking(s, b, showThinking, now)
 	case bkToolCall:
@@ -225,7 +239,7 @@ func renderBlock(s Styles, b block, showThinking, showToolResults bool, now time
 		return s.Info.Render(b.text)
 	case bkSummary:
 		header := fmt.Sprintf("── %s (%d messages) ──", iconLabel(s.Icons.Summary, "compacted memory"), b.count)
-		return s.SummaryHeader.Render(header) + "\n" + s.Markdown.Render(b.text)
+		return s.SummaryHeader.Render(header) + "\n" + md.Render(b.text)
 	case bkSubagent:
 		text := b.text
 		if b.meta == string(agent.SubagentRunning) {
