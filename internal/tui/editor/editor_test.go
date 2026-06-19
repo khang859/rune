@@ -208,7 +208,7 @@ func TestEditor_TabCompletesFeatureDevWithoutCommitting(t *testing.T) {
 }
 
 func TestEditor_SlashCommandWithArgsCommitsRawCommand(t *testing.T) {
-	e := New(t.TempDir(), []string{"/feature-dev", "/new"})
+	e := New(t.TempDir(), []string{"/feature-dev", "/remember", "/new"})
 	for _, r := range "/feature-dev add previews" {
 		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
 	}
@@ -221,6 +221,20 @@ func TestEditor_SlashCommandWithArgsCommitsRawCommand(t *testing.T) {
 	}
 	if res.Send {
 		t.Fatalf("slash command with args must not submit as normal text: %#v", res)
+	}
+}
+
+func TestEditor_RememberSlashCommandAllowsArgs(t *testing.T) {
+	e := New(t.TempDir(), []string{"/remember", "/new"})
+	for _, r := range "/remember prefer table-driven tests" {
+		e.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	}
+	if e.Mode() != ModeNormal {
+		t.Fatalf("slash menu should close once /remember has args, got mode %v", e.Mode())
+	}
+	res, _ := e.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if res.SlashCommand != "/remember prefer table-driven tests" {
+		t.Fatalf("SlashCommand = %q, want /remember with args", res.SlashCommand)
 	}
 }
 

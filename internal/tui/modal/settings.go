@@ -15,6 +15,8 @@ type Settings struct {
 	ActivityMode             string
 	AutoCompact              string
 	AutoCompactThreshold     string
+	RepoMap                  string
+	RepoMapBudget            string
 	WebFetch                 string
 	FetchPrivateURLs         string
 	WebSearch                string
@@ -85,6 +87,8 @@ const (
 	settingsRowActivityMode
 	settingsRowAutoCompact
 	settingsRowAutoCompactThreshold
+	settingsRowRepoMap
+	settingsRowRepoMapBudget
 	settingsRowWebFetch
 	settingsRowFetchPrivateURLs
 	settingsRowWebSearch
@@ -120,8 +124,10 @@ func NewSettings(cur Settings) Modal {
 		newSettingsRow("Mind", "thinking effort", []string{"none", "low", "medium", "high", "xhigh"}, cur.Effort),
 		newSettingsRow("Interface", "icon mode", []string{"auto", "nerd", "unicode", "ascii"}, cur.IconMode),
 		newSettingsRow("Interface", "activity indicator", []string{"off", "simple", "arcane"}, cur.ActivityMode),
-		newSettingsRow("Memory", "auto compact", []string{"off", "on"}, cur.AutoCompact),
-		newSettingsRow("Memory", "compact threshold", []string{"70%", "80%", "90%"}, cur.AutoCompactThreshold),
+		newSettingsRow("Context", "auto compact", []string{"off", "on"}, cur.AutoCompact),
+		newSettingsRow("Context", "compact threshold", []string{"70%", "80%", "90%"}, cur.AutoCompactThreshold),
+		newSettingsRow("Context", "repo map", []string{"off", "on"}, cur.RepoMap),
+		newSettingsRow("Context", "repo-map budget", []string{"1000", "2000", "4000", "8000"}, cur.RepoMapBudget),
 		newSettingsRow("Web Scrying", "web fetch", []string{"off", "on"}, cur.WebFetch),
 		newSettingsRow("Web Scrying", "fetch private urls", []string{"off", "on"}, cur.FetchPrivateURLs),
 		newSettingsRow("Web Scrying", "web search", []string{"auto", "off", "on"}, cur.WebSearch),
@@ -150,6 +156,12 @@ func normalizeSettings(s Settings) Settings {
 	}
 	if s.AutoCompactThreshold == "" {
 		s.AutoCompactThreshold = "80%"
+	}
+	if s.RepoMap == "" {
+		s.RepoMap = "on"
+	}
+	if s.RepoMapBudget == "" {
+		s.RepoMapBudget = "2000"
 	}
 	if s.WebFetch == "" {
 		s.WebFetch = "on"
@@ -281,6 +293,8 @@ func (s *SettingsModal) selectedSettings() Settings {
 		ActivityMode:             s.rows[settingsRowActivityMode].options[s.rows[settingsRowActivityMode].value],
 		AutoCompact:              s.rows[settingsRowAutoCompact].options[s.rows[settingsRowAutoCompact].value],
 		AutoCompactThreshold:     s.rows[settingsRowAutoCompactThreshold].options[s.rows[settingsRowAutoCompactThreshold].value],
+		RepoMap:                  s.rows[settingsRowRepoMap].options[s.rows[settingsRowRepoMap].value],
+		RepoMapBudget:            s.rows[settingsRowRepoMapBudget].options[s.rows[settingsRowRepoMapBudget].value],
 		WebFetch:                 s.rows[settingsRowWebFetch].options[s.rows[settingsRowWebFetch].value],
 		FetchPrivateURLs:         s.rows[settingsRowFetchPrivateURLs].options[s.rows[settingsRowFetchPrivateURLs].value],
 		WebSearch:                s.rows[settingsRowWebSearch].options[s.rows[settingsRowWebSearch].value],

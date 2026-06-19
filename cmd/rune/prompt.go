@@ -111,6 +111,7 @@ func runPrompt(ctx context.Context, text, providerOverride, modelOverride, openr
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
+	a.SetMemoryPath(config.MemoryPath())
 	// Resolve the reasoning effort for the model so kimi defaults to none (off)
 	// here too — the agent default is "medium", which would otherwise force a
 	// reasoning preamble and re-engage the content buffering on every turn.

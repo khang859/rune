@@ -1,221 +1,514 @@
 # Rune Improvement Research
 
-Date: 2026-05-23
+Research accessed: 2026-06-18  
+Last updated: 2026-06-18
 
-This note summarizes online research into current terminal coding-agent features and how Rune could improve. It compares Rune with Claude Code, Codex CLI, Aider, OpenCode, Gemini CLI, and Amp.
+This document summarizes current leading coding-agent harness patterns and what Rune should change or improve to stay competitive. It focuses on agent harness/product capabilities rather than model benchmarks.
 
 ## Current Rune baseline
 
-Rune already covers many modern coding-agent basics:
+Rune already covers more than a minimal terminal coding agent. From the current docs and README, Rune includes:
 
-- Interactive and one-shot CLI usage.
-- Plan Mode with enforced read-only tooling.
-- Branching/resumable sessions and compaction.
-- Built-in read/write/edit/bash, web, git-inspection, and code-index tools.
-- MCP plugin support.
-- Skills and custom subagents.
-- Guided feature-development workflow.
-- Multiple providers, including Codex, Groq, and Ollama.
+- Local read/write/edit/bash tools.
+- Local file search/listing.
+- Tree-sitter code indexing and repo maps.
+- Read-only git/GitHub inspection tools.
+- Branching sessions and `/compact`.
+- Safe `/plan` mode with mutating tools and arbitrary bash disabled.
+- MCP support with Plan Mode/read-only allowlists.
+- Built-in and custom subagents.
+- Markdown skills.
+- Optional web search/fetch tools.
+- Image/PDF attachments.
+- Multiple providers, including Codex/OAuth, Groq, Ollama, Runpod, and OpenRouter.
 
-The strongest opportunities are therefore not just “add more tools,” but improving **safe autonomy**: checkpoints, verification loops, permissions, hooks, richer skills, review workflows, and better automation/IDE integration.
+The biggest gaps versus leading harnesses are therefore not basic coding-agent capabilities. The main opportunities are in **trust, safety, reversibility, workflow automation, observability, context/memory UX, and ecosystem polish**.
 
-## Research sources
+## Leading harnesses reviewed
 
-- Claude Code docs — agent loop, tools, memories, MCP, skills, subagents, checkpoints, permissions: https://code.claude.com/docs/en/how-claude-code-works
-- Codex CLI docs — MCP, approvals, sandboxing, subagents, web search, cloud tasks: https://developers.openai.com/codex/cli
-- Codex hooks docs — lifecycle hooks such as `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `PreCompact`, and `Stop`: https://developers.openai.com/codex/hooks
-- Codex skills docs — packaged task-specific capabilities: https://developers.openai.com/codex/skills
-- Aider homepage — repo maps, git integration, image/web page context, voice, auto lint/test: https://aider.chat/
-- OpenCode agents docs — primary agents, subagents, per-tool permissions, LSP/MCP/skill permissions: https://opencode.ai/docs/agents/
-- Gemini CLI docs — ReAct loop, built-in tools, local/remote MCP servers, web search/fetch, IDE agent mode: https://developers.google.com/gemini-code-assist/docs/gemini-cli
-- Amp manual — modes, AGENTS.md, subagents, oracle/librarian, skills, MCP, plugins, code review, thread sharing, JSON streaming: https://ampcode.com/manual
+### Claude Code / Anthropic Agent SDK
 
-## Highest-leverage improvements
+Sources:
 
-| Priority | Idea | Why it matters | Rune-fit MVP |
-|---|---|---|---|
-| 1 | Filesystem checkpoints and `/undo` | Users trust autonomous edits more when they can quickly revert agent changes. Claude Code emphasizes checkpoints and permissions as safety primitives. | Before every mutating turn, snapshot `git diff --binary` plus created-file metadata. Add `/checkpoint`, `/undo`, and `/checkpoints`. |
-| 2 | Configurable auto-verify loop | Aider strongly markets automatic lint/test after edits and self-fixing failures. | Add project/user config for verify commands such as `make test`, `go test ./...`, or `npm test`. Add `/verify`, and optionally “run after edits” with approval. |
-| 3 | Fine-grained permissions | OpenCode supports per-tool `allow` / `ask` / `deny`, glob-scoped permissions, and agent-specific permissions. | Extend Rune’s Plan/Act split into profiles: `readonly`, `ask`, `workspace-write`, and `full-auto`. Add per-tool and path-glob policy in settings. |
-| 4 | Hooks / lightweight plugin system | Codex, Claude Code, and Amp expose hooks/plugins for policy, automation, and custom workflows. | Start with command hooks: `pre_tool`, `post_tool`, `user_prompt_submit`, `turn_done`, `pre_compact`. Let hooks block, allow, or append context. |
-| 5 | LSP/code intelligence tools | Claude Code and OpenCode both expose code-intelligence/LSP capabilities. | Add tools for diagnostics, definitions, references, and symbols using installed language servers. Rune already has Tree-sitter; LSP would improve correctness after edits. |
+- https://code.claude.com/docs/en/agent-sdk/overview
+- https://code.claude.com/docs/en/agent-sdk/subagents
+- https://code.claude.com/docs/en/agent-sdk/permissions
+- https://code.claude.com/docs/en/agent-sdk/file-checkpointing
+- https://code.claude.com/docs/en/agent-sdk/tool-search
 
-## Strong next-tier ideas
+Observed patterns:
 
-### 6. Persistent memory
+- Agent SDK exposes the same core loop, tools, and context-management concepts as Claude Code.
+- Subagents are built around context isolation, specialized instructions, parallelization, and tool restrictions.
+- Permissions are multi-layered: hooks, deny rules, ask rules, permission modes, allow rules, and runtime callbacks.
+- Permission modes include variants such as accepting edits, not asking, bypassing permissions, and planning.
+- Docs surface checkpointing/rewind, tool search, cost tracking, OpenTelemetry, sessions, skills, plugins, and todo lists.
 
-Claude Code loads project/user memory automatically. Rune has `AGENTS.md`, but not auto-learned memory.
+Implication for Rune:
 
-MVP:
+Rune already has Plan Mode and subagents. The major gaps are **permission layering, file checkpointing, tool search, hooks, and observability**.
 
-- Add opt-in `~/.rune/MEMORY.md` and `.rune/MEMORY.md`.
-- Add `/remember` and `/forget`.
-- Require explicit user approval before writing memory.
-- Load only a bounded prefix, similar to Claude Code’s documented memory limits.
+### OpenAI Codex / Agents SDK / Responses tools
 
-### 7. Skills v2
+Sources:
 
-Rune skills are intentionally simple markdown files. Competitors are moving toward richer skill packages with frontmatter, bundled resources, scripts, and sometimes MCP servers.
+- https://developers.openai.com/codex/cli
+- https://developers.openai.com/codex/agent-approvals-security
+- https://developers.openai.com/api/docs/guides/agents
+- https://developers.openai.com/api/docs/guides/tools
 
-MVP:
+Observed patterns:
 
-```text
-.rune/skills/deploy/
-  SKILL.md
-  scripts/check-staging.sh
-  mcp.json
-```
+- Codex product docs expose sandboxing, approvals/security, `AGENTS.md`, memories, subagents, hooks, MCP, plugins, skills, automations, GitHub/Slack/Linear integrations, worktrees, in-app browser, computer use, and auto-review.
+- Approval/security docs describe OS-enforced sandboxing and policies such as `read-only`, `workspace-write`, and `danger-full-access`.
+- `workspace-write` commonly disables network by default unless explicitly configured.
+- OpenAI Agents/Responses docs emphasize orchestration, guardrails, approvals, evals, MCP/connectors, web search, shell, computer use, file search, tool search, code interpreter, background mode, compaction, and prompt caching.
 
-Features to consider:
+Implication for Rune:
 
-- Skill frontmatter: name, description, tools, model, trigger hints.
-- On-demand loading of full skill content to reduce context bloat.
-- Bundled resource files and scripts.
-- Optional skill-local MCP config.
+OpenAI is productizing **sandbox profiles, approval policies, managed configuration, hooks, memory, automations, integrations, and eval loops** as first-class harness concerns.
 
-### 8. MCP polish
+### Cursor
 
-Rune already supports MCP and Plan Mode allowlists. Amp recommends bundling MCP servers inside skills, filtering exposed tools, and requiring explicit trust for workspace MCP servers.
+Sources:
 
-MVP improvements:
+- https://cursor.com/docs
+- https://cursor.com/changelog/1-0
 
-- Remote MCP OAuth flow.
-- Per-tool include/exclude filters.
+Observed patterns:
+
+- Cursor docs cover Agent, Rules, MCP, Skills, and CLI.
+- Cursor 1.0 introduced or highlighted Bugbot PR review, Background Agent, Memories beta, one-click MCP plus OAuth, Jupyter notebook agent editing, Mermaid/table rendering, usage analytics, and parallel tool calls.
+
+Implication for Rune:
+
+Cursor's product edge is **developer workflow integration**: PR review, background agents, memory, one-click MCP, notebook support, analytics, and richer UI rendering.
+
+### Aider
+
+Sources:
+
+- https://aider.chat/docs/repomap.html
+- https://aider.chat/docs/config/options.html
+
+Observed patterns:
+
+- Aider's repo map is a concise whole-repo map with important classes/functions/signatures.
+- It selects relevant repo-map sections using graph ranking and token-budget controls.
+- Options include architect mode, prompt caching, map token controls, auto-commits, dirty commits, diff display, lint/test commands, auto-lint, auto-test, voice, browser/web, watch files, and model metadata.
+
+Implication for Rune:
+
+Rune already has code indexing/repo maps. Aider suggests useful additions around **git commit/undo workflows, lint/test automation, prompt-cache/model metadata controls, and explicit repo-map budgeting UX**.
+
+### Cline / Roo Code
+
+Sources:
+
+- https://docs.cline.bot/cline-overview
+- https://roocodeinc.github.io/Roo-Code/features/auto-approving-actions/
+
+Observed patterns:
+
+- Cline can read/write files, run terminal commands, use a browser, and require explicit action approval.
+- Cline includes SDK, CLI, Kanban, VS Code/JetBrains apps, and multi-agent parallel workflows with per-card worktrees, auto-commit, and dependency chains.
+- Enterprise positioning includes SSO/RBAC and OpenTelemetry integrations.
+- Roo Code exposes granular permission tiles: read files, edit files, execute approved commands, browser use, MCP servers, mode switching, subtasks, and follow-up questions.
+- Roo also documents workspace-boundary protection, outside-workspace flags, protected-file controls, MCP per-tool “always allow,” command allow/deny prefixes, diagnostics delays after writes, codebase indexing, checkpoints, context condensing, modes, worktrees, diagnostics integration, skills, slash commands, `.rooignore`, and task todo lists.
+
+Implication for Rune:
+
+These tools highlight **granular user control and UX affordances**: approval categories, command allowlists/denylists, workspace boundaries, checkpoints, worktrees, diagnostics, and multi-agent task boards.
+
+### Goose
+
+Source:
+
+- https://goose-docs.ai
+
+Observed patterns:
+
+- Goose positions itself as Desktop + CLI + API.
+- It advertises 70+ MCP extensions, 15+ providers, ACP support, recipes as portable YAML workflows, MCP Apps with interactive UIs, subagents, prompt-injection detection, tool permission controls, sandbox mode, and an adversary reviewer.
+
+Implication for Rune:
+
+Goose's edge is an **open plugin/workflow ecosystem**: MCP extension catalog, recipes, ACP interoperability, security review, and interactive extension UIs.
+
+### OpenHands / SWE-agent
+
+Sources:
+
+- https://docs.openhands.dev/openhands/usage/run-openhands/github-action
+- https://docs.openhands.dev/openhands/usage/use-cases/code-review
+- https://openreview.net/forum?id=OJd3ayDDoF
+- https://swe-agent.com/latest/installation/changelog/
+
+Observed patterns:
+
+- OpenHands GitHub Actions can run issue/PR automation triggered by labels or comments.
+- OpenHands code-review workflows can post inline PR comments.
+- OpenHands agents write code, use a command line, browse the web, interact with sandboxed execution environments, and support evaluation benchmarks.
+- SWE-agent v1.0 added SWE-ReX for fast parallel code execution, local/cloud execution, retry mechanisms, flexible tool bundles, LiteLLM model support, and trajectory inspection.
+- SWE-agent v1.1.0 added trajectory-format changes and SWE-smith/multimodal/multilingual compatibility.
+
+Implication for Rune:
+
+Academic/open harnesses emphasize **sandbox runtimes, reproducible trajectories, batch/eval execution, GitHub issue/PR automation, and trajectory inspection**.
+
+### Other relevant harnesses from earlier research
+
+Sources:
+
+- OpenCode agents docs: https://opencode.ai/docs/agents/
+- Gemini CLI docs: https://developers.google.com/gemini-code-assist/docs/gemini-cli
+- Amp manual: https://ampcode.com/manual
+
+Observed patterns:
+
+- OpenCode highlights primary agents, subagents, per-tool permissions, and LSP/MCP/skill permissions.
+- Gemini CLI emphasizes a ReAct loop, built-in tools, local/remote MCP servers, web search/fetch, and IDE agent mode.
+- Amp emphasizes modes, `AGENTS.md`, subagents, oracle/librarian agents, skills, MCP, plugins, code review, thread sharing, and JSON streaming.
+
+Implication for Rune:
+
+These reinforce the same direction: **agent modes, LSP/code intelligence, review workflows, JSON automation output, IDE integration, and shareable sessions**.
+
+## Highest-priority recommendations
+
+### 1. Add file checkpoints, rewind, and undo
+
+This is the highest-trust improvement.
+
+Rune has branching sessions, but no documented first-class file-level checkpoint/rewind system. Leading tools increasingly treat checkpointing, undo, or git-backed recovery as table stakes.
+
+Recommended shape:
+
+- Create a checkpoint before each mutating turn or mutating tool batch.
+- Add commands:
+  - `/checkpoint`
+  - `/checkpoints`
+  - `/undo`
+  - `/rewind`
+  - `/rewind-files`
+- Show changed files and diff before rewind.
+- Use git when available.
+- Fall back to content snapshots for untracked or non-git repos.
+- Preserve user work by separating pre-existing dirty state from agent edits.
+- Track created/deleted files as well as modified files.
+
+Why it matters:
+
+Users will let the agent do more if they can easily recover from bad edits.
+
+### 2. Replace binary Plan/Act safety with named permission profiles
+
+Rune's Plan Mode is strong, but leading tools expose more granular policy than Plan vs Act.
+
+Recommended profiles:
+
+- `read-only`: no writes or mutating bash.
+- `ask`: ask before edits, bash, and mutating MCP tools.
+- `accept-edits`: auto-apply file edits, ask for bash/network.
+- `workspace-write`: allow edits only inside the workspace; no network by default.
+- `full` or `danger-full-access`: explicit risky mode.
+
+Recommended policy controls:
+
+- Per-tool allow/ask/deny.
+- Bash command prefix allow/deny.
+- Outside-workspace read/write controls.
+- Network controls for bash separately from `web_fetch`.
+- Per-MCP tool “always allow” with read/write side-effect hints.
+- Separate policies for main agents, subagents, background agents, and headless/CI mode.
+
+Why it matters:
+
+This enables safer autonomy without forcing users into either fully manual Plan Mode or fully permissive Act Mode.
+
+### 3. Add OS/container sandboxing for bash and autonomous runs
+
+Tool-registry enforcement is useful, but mature autonomous agents need OS-level or container-level boundaries.
+
+Recommended implementation:
+
+- macOS: explore `sandbox-exec`, with clear documentation if limitations apply.
+- Linux: support bubblewrap, namespaces, or Docker fallback.
+- Default sandbox profile:
+  - workspace read/write
+  - no outside-workspace writes
+  - network disabled unless explicitly approved
+- Separate sandbox profiles for:
+  - Plan Mode
+  - Act Mode
+  - subagents
+  - background tasks
+  - CI/headless mode
+- Use sandboxed worktrees for background/headless tasks where possible.
+
+Why it matters:
+
+Sandboxing is required for higher-confidence autonomous execution, especially if Rune runs tests, package managers, scripts, or third-party MCP tools.
+
+### 4. Add git-native implementation workflows
+
+Rune currently has read-only git/GitHub inspection. Leading harnesses go further with commits, PRs, PR reviews, and issue automation.
+
+Recommended commands/workflows:
+
+- `/commit`: generate commit message, show diff, ask approval.
+- `/pr`: create or update a pull request after approval.
+- `/review`: review local `git diff` or staged changes.
+- `/review-pr`: inspect a PR diff and produce review comments.
+- `rune fix-issue <url>`: headless issue resolver.
+- GitHub Action mode triggered by labels or comments.
+- Optional agent-authored commit trailers.
+
+Recommended safeguards:
+
+- Do not commit, push, or post comments without approval by default.
+- Allow autonomous CI behavior only with explicit config.
+- Keep mutation/posting policy separate from read-only GitHub inspection.
+
+Why it matters:
+
+This turns Rune from a terminal assistant into a development workflow agent.
+
+### 5. Build structured traces, replay, evals, and observability
+
+Leading harnesses increasingly rely on trajectories, evals, and telemetry to improve systematically.
+
+Recommended additions:
+
+- JSONL trace export for every turn/tool call/model response.
+- Include structured events for:
+  - assistant text
+  - model request/response metadata
+  - tool start/end
+  - tool errors
+  - approvals
+  - denials
+  - retries
+  - sandbox denials
+  - file changes
+  - token/cost/time stats
+- Add commands:
+  - `rune trace inspect`
+  - `rune trace replay`
+  - `rune eval`
+- Optional OpenTelemetry export.
+- TUI-visible token/cost/time stats.
+- Replay/inspect UI for trajectories.
+
+Why it matters:
+
+This lets Rune improve by measurement rather than anecdote and makes failed agent runs debuggable.
+
+## Strong next-tier recommendations
+
+### 6. Improve context management and memory UX
+
+Rune's repo map/code index is a strength. The next improvement is making context visible, controllable, and reusable.
+
+Recommended additions:
+
+- Context budget/status display in the TUI.
+- Show which files/symbols are currently in context.
+- Repo-map token budget controls, similar in spirit to Aider's map-token settings.
+- Relevance explanations for selected files/symbols.
+- Cached repo maps and symbol graphs across sessions.
+- Opt-in memory commands:
+  - `/memory`
+  - `/memories`
+  - `/remember`
+  - `/forget`
+- User-editable and auditable memory files.
+- Never silently store secrets.
+- Dynamic tool exposure or “tool search” when MCP/tool count grows.
+
+### 7. Expand subagents into orchestration
+
+Rune already supports built-in and custom subagents. The next step is managed orchestration.
+
+Recommended additions:
+
+- Parallel subagent execution UI with progress and cancellation.
+- Parent/child provenance IDs in session traces.
+- Optional per-subagent worktrees.
+- Background subagent sessions that can be resumed.
+- Automatic subagent selection based on descriptions.
+- A task board or queue for multiple independent tasks.
+- Dependency chains between subagent tasks.
+
+### 8. Add hooks and managed policy extension points
+
+Hooks are now common across leading harnesses because they provide deterministic policy and automation outside the model prompt.
+
+Suggested hook events:
+
+- `turn_start`
+- `turn_end`
+- `before_tool_call`
+- `after_tool_call`
+- `before_edit`
+- `after_edit`
+- `before_bash`
+- `after_bash`
+- `plan_approved`
+- `session_compact`
+- `checkpoint_created`
+
+Use cases:
+
+- Run formatters/tests after edits.
+- Block risky commands.
+- Enforce project or enterprise policy.
+- Emit telemetry.
+- Auto-create checkpoints.
+- Append project-specific context.
+
+### 9. Improve MCP and plugin ecosystem polish
+
+Rune has MCP support, but leading tools make MCP discoverable, installable, and governable.
+
+Recommended additions:
+
+- `rune mcp marketplace` or curated registry.
+- One-command or deeplink MCP install.
+- OAuth credential lifecycle for MCP servers.
+- Per-tool permission UI.
+- MCP health diagnostics.
 - Workspace MCP trust prompts.
-- MCP bundled in skills.
-- Better `/mcp` visibility for tool descriptions and side-effect hints.
+- Tool include/exclude filters.
+- Side-effect hints in MCP tool listings.
+- Portable recipes combining:
+  - prompt
+  - tools
+  - model
+  - permissions
+  - env requirements
+  - validation commands
+- Optional ACP/editor integration mode.
 
-### 9. Diff review mode
+### 10. Add optional browser/computer-use tools later
 
-Amp has `amp review` and configurable path-scoped checks. Rune already has `code-reviewer` subagents.
+This is useful but lower priority than safety, permissions, sandboxing, evals, and git workflows.
+
+Potential additions:
+
+- Playwright browser automation tool.
+- Screenshot capture.
+- DOM inspection.
+- Local app preview capture.
+- Approval-gated browser actions.
+- Browser/network controls integrated with permission profiles.
+- Optional Jupyter notebook editing if a clear use case emerges.
+
+## Additional ideas from earlier research
+
+### Auto-verify loop
+
+Aider strongly emphasizes auto-lint/auto-test. Rune should support explicit verification commands.
 
 MVP:
 
-- Add `/review` to review `git diff` or staged changes.
-- Support configurable checks, for example:
+- Project/user config for verify commands such as `go test ./...`, `npm test`, or `make test`.
+- `/verify` command.
+- Optional “run after edits” behavior gated by approval/profile.
+- Agent self-fix loop when verification fails.
 
-```text
-.rune/checks/security.md
-.rune/checks/performance.md
-.rune/checks/go-style.md
-```
+### LSP/code intelligence tools
 
-This would make Rune useful even when the user wrote the code manually.
+Tree-sitter code indexing is useful, but LSP can improve correctness after edits.
 
-### 10. Better non-interactive/automation output
+MVP tools:
 
-Amp supports streaming JSON for execute mode. Rune has `--prompt` and `--script`, but JSONL event streaming would make it easier to integrate with CI, editors, and dashboards.
+- diagnostics
+- definitions
+- references
+- rename support
+- workspace symbols
 
-MVP:
+### JSONL automation mode
+
+For CI, editors, and dashboards, Rune should expose structured non-interactive output.
+
+Example:
 
 ```sh
 rune --prompt "fix failing tests" --json
 ```
 
-Emit events for:
+Events should include assistant text, tool start/end, file changed, approval needed, errors, and final summary.
 
-- assistant text
-- tool start/end
-- file changed
-- approval needed
-- error
-- final summary
+### IDE bridge
 
-## Bigger bets
+An IDE bridge could provide:
 
-### 11. Worktree/background task runner
+- active file
+- selected text
+- open tabs
+- diagnostics
+- apply-edit through IDE undo APIs
+- reveal file/line
 
-Codex CLI advertises launching cloud tasks and applying resulting diffs from the terminal. Rune could do a local-first version using git worktrees.
+### Session export/sharing
 
-Possible commands:
-
-```sh
-rune task start "upgrade dependency x" --worktree
-rune task list
-rune task apply <id>
-```
-
-Benefits:
-
-- Parallel isolated tasks.
-- Safer experimentation.
-- Easier diff review before applying changes.
-
-### 12. IDE bridge
-
-Aider and Amp integrate with editors/IDEs. Rune could start with a small local socket bridge or VS Code extension.
-
-Useful context to send Rune:
-
-- Active file.
-- Selected text.
-- Diagnostics.
-- Open tabs.
-
-Useful actions Rune could request:
-
-- Apply edit through IDE APIs for undo support.
-- Reveal file/line.
-- Read diagnostics after edits.
-
-### 13. Multimodal/UI workflow
-
-Aider supports images/web pages and voice. Amp supports image attachment and browser/UI-oriented workflows.
-
-Potential Rune features:
-
-- Image attachment to prompts.
-- Screenshot paste support.
-- Browser/devtools MCP skill.
-- `/ui-review localhost:3000`.
-
-This would be especially useful for frontend tasks.
-
-### 14. Thread/session sharing
-
-Amp makes thread sharing a first-class team workflow. Rune has local session persistence and branching, so export/share would be a natural next step.
-
-MVP:
+Rune already has local sessions and branching. Add:
 
 ```sh
 rune session export --html
 rune session export --json
 ```
 
-Later:
+Later, consider encrypted sync, share links, and redaction controls.
 
-- Optional encrypted sync.
-- Share links.
-- Redaction before export.
+### Agent modes
 
-### 15. Agent modes
+Add provider/model-independent mode presets:
 
-Amp exposes mode presets such as smart/deep/rush. Rune could add mode presets independent of provider/model.
-
-Possible modes:
-
-- `rush`: cheap/fast, limited tools, low max steps.
-- `smart`: default balanced mode.
+- `rush`: fast/cheap, limited tools, low max steps.
+- `smart`: balanced default.
 - `deep`: stronger model, more planning, validator subagent.
-- `review`: read-only, diff-focused.
+- `review`: read-only and diff-focused.
 
 ## Recommended roadmap
 
-Recommended order by effort-to-impact ratio:
+### Top five investments
 
-1. Checkpoints + `/undo`.
-2. Auto-verify commands + `/verify`.
-3. Fine-grained permissions / approval profiles.
-4. Hooks.
-5. LSP diagnostics/references.
-6. Skills v2 + MCP-in-skills.
-7. `/review` with configurable checks.
-8. JSONL automation mode.
-9. Local worktree background tasks.
-10. IDE bridge.
+If Rune only does five things next, prioritize:
+
+1. **Checkpoints/rewind** — immediate trust and safety win.
+2. **Permission profiles and approval UI** — moves beyond binary Plan/Act.
+3. **Sandboxed bash/workspace-write mode** — required for safer autonomy.
+4. **Structured traces and eval runner** — lets Rune improve measurably.
+5. **Git/PR workflows** — turns Rune into a development workflow agent.
+
+### Suggested implementation sequence
+
+1. **Checkpoints + `/undo`**
+   - Verify with tests that modified, created, deleted, and untracked files restore correctly.
+2. **Permission profiles**
+   - Extend the existing tool registry permission system before adding OS sandboxing.
+3. **Sandboxed bash**
+   - Start with workspace-write/no-network on the most supportable platform, then expand.
+4. **Trace JSONL**
+   - Save events first; build replay/eval tooling after the event schema is stable.
+5. **Git workflows**
+   - Add `/review`, then `/commit`, then `/pr`/GitHub Action automation.
+6. **Context/memory UX**
+   - Make repo-map selection visible and add opt-in memory.
+7. **Hooks**
+   - Add stable hook events around tool calls, edits, bash, checkpoints, and compaction.
+8. **MCP ecosystem polish**
+   - Add registry/install/OAuth/permission improvements.
+9. **Subagent orchestration**
+   - Add worktrees, provenance, task queues, and background resumability.
+10. **Browser/computer-use**
+   - Add after the safety and permission model is mature.
 
 ## Key takeaway
 
-The strongest tools are converging on the same pattern: **safer autonomy**. They combine powerful models with guardrails and feedback loops: checkpoints, approvals, hooks, tests, review, memory, isolated/background execution, and focused subagents.
+The strongest agent harnesses are converging on **safer autonomy**. They combine powerful models with guardrails and feedback loops: checkpoints, permissions, sandboxing, hooks, verification, review, memory, isolated/background execution, structured traces, and focused subagents.
 
-Rune already has a solid agent core. The next improvements should make longer autonomous work easier to trust, inspect, and recover from.
+Rune already has a solid agent core. The next improvements should make longer autonomous work easier to **trust, inspect, recover from, and measure**.

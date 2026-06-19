@@ -85,6 +85,17 @@ func PlanModePrompt() string {
 // BuildRepoMapBlock assembles the per-turn <repo_map> system-prompt block.
 // Returns "" silently on any failure path — never fails a turn over the map.
 func BuildRepoMapBlock(s *session.Session, idx *codeindex.Index, enabled bool, maxTokens int) string {
+	out := BuildRepoMapText(s, idx, enabled, maxTokens)
+	if out == "" {
+		return ""
+	}
+	return "<repo_map>\n" + out + "</repo_map>"
+}
+
+// BuildRepoMapText renders the current repo map without XML wrapper tags.
+// It is shared by prompt injection and read-only context UX commands so users
+// can preview the same selection logic used for turns.
+func BuildRepoMapText(s *session.Session, idx *codeindex.Index, enabled bool, maxTokens int) string {
 	if !enabled || s == nil || idx == nil {
 		return ""
 	}
@@ -100,7 +111,7 @@ func BuildRepoMapBlock(s *session.Session, idx *codeindex.Index, enabled bool, m
 	if err != nil || out == "" {
 		return ""
 	}
-	return "<repo_map>\n" + out + "</repo_map>"
+	return out
 }
 
 // RuntimeContext returns a <system-context> block describing the runtime:

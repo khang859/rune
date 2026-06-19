@@ -22,6 +22,7 @@ func AuthPath() string     { return filepath.Join(RuneDir(), "auth.json") }
 func SettingsPath() string { return filepath.Join(RuneDir(), "settings.json") }
 func SecretsPath() string  { return filepath.Join(RuneDir(), "secrets.json") }
 func SkillsDir() string    { return filepath.Join(RuneDir(), "skills") }
+func MemoryPath() string   { return filepath.Join(RuneDir(), "memory.md") }
 func MCPConfig() string    { return filepath.Join(RuneDir(), "mcp.json") }
 
 // MCPConfigEnvOverride returns the path set in $RUNE_MCP_CONFIG, or "" if unset.

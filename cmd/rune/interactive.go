@@ -102,6 +102,7 @@ func runInteractiveWithOptions(ctx context.Context, opt interactiveOptions) erro
 	subagentCfg := agent.SubagentConfigFromSettings(settings.Subagents)
 	subagentCfg.Definitions = agent.SubagentDefinitionsFromAgentDefs(customAgents)
 	a := agent.NewWithSubagentConfig(selection.AI, reg, sess, system, subagentCfg)
+	a.SetMemoryPath(config.MemoryPath())
 	a.SetModelCapabilities(settings.ModelCapabilities)
 	a.RegisterSubagentToolsEnabled(settings.Subagents.EnabledValue())
 	a.SetRepoMapEnabled(settings.RepoMap.Enabled || settings.RepoMap.MaxTokens == 0)
