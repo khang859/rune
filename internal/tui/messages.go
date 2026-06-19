@@ -17,6 +17,13 @@ type Messages struct {
 	width            int
 	blocks           []block
 	streamingAsstIdx int // -1 when no assistant block is currently streaming
+
+	// md caches the width-aware markdown renderer. Building one runs a blocking
+	// terminal background-color query (glamour.WithAutoStyle), so it must not be
+	// reconstructed per render — only when the width changes. mdWidth is the width
+	// md was built for, or -1 before the first build.
+	md      Markdown
+	mdWidth int
 }
 
 type blockKind int
@@ -44,7 +51,9 @@ type block struct {
 	task      tools.SubagentTask
 }
 
-func NewMessages(width int) *Messages { return &Messages{width: width, streamingAsstIdx: -1} }
+func NewMessages(width int) *Messages {
+	return &Messages{width: width, streamingAsstIdx: -1, mdWidth: -1}
+}
 
 func (m *Messages) SetWidth(w int) { m.width = w }
 
@@ -176,7 +185,11 @@ func (m *Messages) Render(s Styles, showThinking, showToolResults bool, now time
 	renderedBlocks := 0
 	md := s.Markdown
 	if m.width > 0 {
-		md = NewMarkdownWidth(m.width)
+		if m.mdWidth != m.width {
+			m.md = NewMarkdownWidth(m.width)
+			m.mdWidth = m.width
+		}
+		md = m.md
 	}
 	for i := 0; i < len(m.blocks); {
 		b := m.blocks[i]
