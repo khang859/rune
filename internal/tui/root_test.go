@@ -222,7 +222,7 @@ func TestRoot_ExpandsFileReferenceWhenSendingButDisplaysOriginal(t *testing.T) {
 	if !strings.Contains(text.Text, "<file name=\"") || !strings.Contains(text.Text, filepath.Join(dir, "README.md")) || !strings.Contains(text.Text, ">\n# Project\n</file>") {
 		t.Fatalf("sent text did not include expanded file:\n%s", text.Text)
 	}
-	out := m.msgs.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{})
+	out := stripANSI(m.msgs.Render(DefaultStylesWithIconMode("nerd"), false, false, time.Time{}))
 	if !strings.Contains(out, "review @README.md") {
 		t.Fatalf("display should keep original reference, got:\n%s", out)
 	}
@@ -934,7 +934,7 @@ func TestRoot_QueuedMessageAppendsAndDrainsAfterTurn(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected cmd from drain (startTurn)")
 	}
-	out := m.msgs.Render(m.styles, false, false, time.Time{})
+	out := stripANSI(m.msgs.Render(m.styles, false, false, time.Time{}))
 	if !strings.Contains(out, "queued one") {
 		t.Fatalf("expected queued message in chat log; got: %q", out)
 	}
@@ -991,7 +991,7 @@ func TestRoot_RebuildMessagesFromLoadedSession(t *testing.T) {
 	m.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	m.rebuildMessagesFromSession()
 
-	view := m.msgs.Render(m.styles, false, false, time.Time{})
+	view := stripANSI(m.msgs.Render(m.styles, false, false, time.Time{}))
 	if !strings.Contains(view, "saved prompt") || !strings.Contains(view, "saved answer") {
 		t.Fatalf("expected saved transcript in messages:\n%s", view)
 	}
@@ -1337,7 +1337,7 @@ func TestRoot_CompactDoneRendersSummaryAndInfo(t *testing.T) {
 	if !strings.Contains(out, "compacted memory (4 messages)") {
 		t.Fatalf("missing summary header: %q", out)
 	}
-	if !strings.Contains(out, "the summary") {
+	if !strings.Contains(stripANSI(out), "the summary") {
 		t.Fatalf("missing summary body: %q", out)
 	}
 	if !strings.Contains(out, "(compacted 4 messages)") {
@@ -1395,7 +1395,7 @@ func TestRoot_CompactQueuesUserInputAndDrainsOnDone(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected drain cmd after compactDoneMsg with queued item")
 	}
-	if !strings.Contains(m.msgs.Render(m.styles, false, false, time.Time{}), "queued during compact") {
+	if !strings.Contains(stripANSI(m.msgs.Render(m.styles, false, false, time.Time{})), "queued during compact") {
 		t.Fatal("queued message did not appear in chat after compact done")
 	}
 }

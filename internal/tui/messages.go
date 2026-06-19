@@ -18,10 +18,9 @@ type Messages struct {
 	blocks           []block
 	streamingAsstIdx int // -1 when no assistant block is currently streaming
 
-	// md caches the width-aware markdown renderer. Building one runs a blocking
-	// terminal background-color query (glamour.WithAutoStyle), so it must not be
-	// reconstructed per render — only when the width changes. mdWidth is the width
-	// md was built for, or -1 before the first build.
+	// md caches the width-aware markdown renderer. It is constructed once per
+	// distinct width (mdWidth tracks the width md was built for, or -1 before
+	// the first build). We avoid per-render reconstruction for performance.
 	md      Markdown
 	mdWidth int
 }

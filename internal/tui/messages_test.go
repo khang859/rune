@@ -17,7 +17,7 @@ func TestMessages_AppendUser(t *testing.T) {
 	if !strings.Contains(out, "you>") {
 		t.Fatalf("user label missing:\n%s", out)
 	}
-	if !strings.Contains(out, "hi there") {
+	if !strings.Contains(stripANSI(out), "hi there") {
 		t.Fatalf("user text missing:\n%s", out)
 	}
 }
@@ -412,7 +412,7 @@ func TestMessages_AppendSummaryRendersHeader(t *testing.T) {
 	if !strings.Contains(out, "5 messages") {
 		t.Fatalf("missing count: %q", out)
 	}
-	if !strings.Contains(out, "the gist") {
+	if !strings.Contains(stripANSI(out), "the gist") {
 		t.Fatalf("missing body: %q", out)
 	}
 }
@@ -484,6 +484,27 @@ func visibleWidth(s string) int {
 		n++
 	}
 	return n
+}
+
+// stripANSI removes ANSI escape sequences so tests can assert against
+// markdown-rendered text regardless of which glamour style is active.
+func stripANSI(s string) string {
+	var b strings.Builder
+	skip := false
+	for _, r := range s {
+		if skip {
+			if r == 'm' || r == 0x07 {
+				skip = false
+			}
+			continue
+		}
+		if r == 0x1b {
+			skip = true
+			continue
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 type errString string
