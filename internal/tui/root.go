@@ -31,6 +31,7 @@ import (
 	"github.com/khang859/rune/internal/codeindex"
 	"github.com/khang859/rune/internal/config"
 	"github.com/khang859/rune/internal/mcp"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/profile"
 	"github.com/khang859/rune/internal/providers"
 	"github.com/khang859/rune/internal/session"
@@ -84,6 +85,9 @@ type RootModel struct {
 	pendingSubagentContinuation bool
 
 	currentTokens   int
+	currentInput    int
+	currentOutput   int
+	currentCache    int
 	warnedNearLimit bool
 
 	modal           modal.Modal
@@ -130,7 +134,7 @@ var baseSlashCmds = []string{
 	"/quit", "/login", "/providers", "/model", "/thinking", "/tree", "/resume", "/settings", "/mcp", "/mcp-status",
 	"/git-status", "/new", "/clear", "/name", "/session", "/usage", "/fork", "/clone", "/copy", "/copy-mode",
 	"/plan", "/approve", "/cancel-plan",
-	"/compact", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
+	"/compact", "/context", "/memory", "/memories", "/remember", "/reload", "/hotkeys", "/files", "/skill-creator", "/feature-dev", "/repomap",
 }
 
 func NewRootModel(a *agent.Agent, sess *session.Session) *RootModel {
@@ -950,6 +954,8 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 			m.msgs.OnInfo(line)
 		}
 		m.refreshViewport()
+	case "/context":
+		m.showContextStatus()
 	case "/fork":
 		if m.streaming {
 			m.msgs.OnInfo("(busy — wait for current turn to finish)")
@@ -1008,31 +1014,16 @@ func (m *RootModel) handleSlashCommand(cmd string) tea.Cmd {
 		m.layout()
 		return tea.Batch(m.startCompact(), m.startActivityTick())
 	case "/repomap":
-		switch {
-		case arg == "" || arg == "status":
-			state := "off"
-			if m.agent.RepoMapEnabled() {
-				state = "on"
-			}
-			m.msgs.OnInfo(fmt.Sprintf("(repomap: %s, budget=%d tokens)", state, m.agent.RepoMapBudget()))
-		case arg == "on":
-			m.agent.SetRepoMapEnabled(true)
-			m.msgs.OnInfo("(repomap enabled)")
-		case arg == "off":
-			m.agent.SetRepoMapEnabled(false)
-			m.msgs.OnInfo("(repomap disabled)")
-		case strings.HasPrefix(arg, "budget "):
-			raw := strings.TrimSpace(strings.TrimPrefix(arg, "budget "))
-			n, err := strconv.Atoi(raw)
-			if err != nil || n < 0 {
-				m.msgs.OnInfo(fmt.Sprintf("(usage: /repomap budget N — N is non-negative integer, got %q)", raw))
-				break
-			}
-			m.agent.SetRepoMapBudget(n)
-			m.msgs.OnInfo(fmt.Sprintf("(repomap budget = %d tokens)", n))
-		default:
-			m.msgs.OnInfo("(usage: /repomap [status|on|off|budget N])")
+		m.handleRepoMapCommand(arg)
+	case "/memory", "/memories":
+		m.showMemory()
+	case "/remember":
+		if m.agent.Mode() == agent.ModePlan {
+			m.msgs.OnInfo("(/remember disabled in plan mode — exit plan mode with Shift+Tab)")
+			m.refreshViewport()
+			break
 		}
+		m.remember(arg)
 	case "/subagents":
 		m.showSubagentsInfo()
 	case "/reload":
@@ -1586,6 +1577,9 @@ func (m *RootModel) handleEvent(e agent.Event) {
 		m.msgs.OnToolFinished(v)
 		m.refreshGitBranch()
 	case agent.TurnUsage:
+		m.currentInput = v.Usage.Input
+		m.currentOutput = v.Usage.Output
+		m.currentCache = v.Usage.CacheRead
 		m.currentTokens = v.Usage.Input + v.Usage.Output
 		m.footer.Tokens = m.currentTokens
 		m.footer.ContextPct = ctxPctForModel(m.sess.Model, m.currentTokens)
@@ -1676,6 +1670,113 @@ func ResolveModelEffort(model, effort string) string {
 		return effort
 	}
 	return defaultThinkingEffort(model, levels)
+}
+
+func (m *RootModel) showContextStatus() {
+	window := contextWindowForModel(m.sess.Model)
+	pct := ctxPctForModel(m.sess.Model, m.currentTokens)
+	m.msgs.OnInfo(fmt.Sprintf("context — model=%s window≈%d tokens latest=%d (%d%%)", m.sess.Model, window, m.currentTokens, pct))
+	m.msgs.OnInfo(fmt.Sprintf("latest usage: in=%d out=%d cache=%d", m.currentInput, m.currentOutput, m.currentCache))
+	m.msgs.OnInfo(fmt.Sprintf("auto-compact: %s at %d%%", m.settings.AutoCompact, m.settingsAutoCompactThreshold()))
+	state := "off"
+	if m.agent.RepoMapEnabled() {
+		state = "on"
+	}
+	m.msgs.OnInfo(fmt.Sprintf("repo map: %s budget=%d focus-files=%d", state, m.agent.RepoMapBudget(), len(m.sess.FilesRead)))
+	m.refreshViewport()
+}
+
+func (m *RootModel) handleRepoMapCommand(arg string) {
+	switch {
+	case arg == "" || arg == "status":
+		state := "off"
+		if m.agent.RepoMapEnabled() {
+			state = "on"
+		}
+		indexState := "not ready"
+		if m.agent.CodeIndex() != nil {
+			indexState = "ready"
+		} else if m.indexingErr != nil {
+			indexState = "error: " + m.indexingErr.Error()
+		} else if m.indexing {
+			indexState = "indexing"
+		}
+		m.msgs.OnInfo(fmt.Sprintf("(repomap: %s, budget=%d tokens, index=%s, focus-files=%d)", state, m.agent.RepoMapBudget(), indexState, len(m.sess.FilesRead)))
+	case arg == "files":
+		if len(m.sess.FilesRead) == 0 {
+			m.msgs.OnInfo("(repomap focus files: none — use read to bring files into focus)")
+			break
+		}
+		m.msgs.OnInfo("repomap focus files:")
+		for i, p := range m.sess.FilesRead {
+			m.msgs.OnInfo(fmt.Sprintf("%d. %s", i+1, p))
+		}
+	case arg == "show":
+		text := agent.BuildRepoMapText(m.sess, m.agent.CodeIndex(), m.agent.RepoMapEnabled(), m.agent.RepoMapBudget())
+		if strings.TrimSpace(text) == "" {
+			m.msgs.OnInfo("(repo map unavailable: disabled, index not ready, or empty)")
+			break
+		}
+		m.msgs.OnInfo("current repo map:\n" + text)
+	case arg == "on":
+		m.agent.SetRepoMapEnabled(true)
+		m.msgs.OnInfo("(repomap enabled)")
+	case arg == "off":
+		m.agent.SetRepoMapEnabled(false)
+		m.msgs.OnInfo("(repomap disabled)")
+	case strings.HasPrefix(arg, "budget "):
+		raw := strings.TrimSpace(strings.TrimPrefix(arg, "budget "))
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 0 {
+			m.msgs.OnInfo(fmt.Sprintf("(usage: /repomap budget N — N is non-negative integer, got %q)", raw))
+			break
+		}
+		m.agent.SetRepoMapBudget(n)
+		m.msgs.OnInfo(fmt.Sprintf("(repomap budget = %d tokens)", n))
+	default:
+		m.msgs.OnInfo("(usage: /repomap [status|files|show|on|off|budget N])")
+	}
+	m.refreshViewport()
+}
+
+func (m *RootModel) showMemory() {
+	path := config.MemoryPath()
+	preview, truncated, err := memory.Preview(path, 40)
+	if err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("memory: %v", err))
+		m.refreshViewport()
+		return
+	}
+	m.msgs.OnInfo("memory file: " + path)
+	if strings.TrimSpace(preview) == "" {
+		m.msgs.OnInfo("(no saved memories; use /remember <preference or fact> to append one)")
+	} else if truncated {
+		m.msgs.OnInfo(preview + "\n…")
+	} else {
+		m.msgs.OnInfo(preview)
+	}
+	m.refreshViewport()
+}
+
+func (m *RootModel) remember(text string) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		m.msgs.OnInfo("(usage: /remember <explicit preference or fact>; do not store secrets)")
+		m.refreshViewport()
+		return
+	}
+	path := config.MemoryPath()
+	if err := memory.Append(path, text, time.Now()); err != nil {
+		m.msgs.OnTurnError(fmt.Errorf("memory: %v", err))
+		m.refreshViewport()
+		return
+	}
+	if m.agent.MemoryPath() == "" {
+		m.agent.SetMemoryPath(path)
+	}
+	m.agent.InvalidateMemoryCache()
+	m.msgs.OnInfo("(remembered in " + path + "; do not store secrets here)")
+	m.refreshViewport()
 }
 
 func formatUsageStats(st session.UsageStats) []string {

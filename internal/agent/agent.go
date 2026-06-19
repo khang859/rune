@@ -27,6 +27,9 @@ type Agent struct {
 	mode              Mode
 	modelCapabilities map[string]config.ModelCapabilities
 	subagents         *SubagentSupervisor
+	memoryPath        string
+	memoryBlock       string
+	memoryChecked     bool
 	repomapEnabled    bool
 	repomapBudget     int
 	codeIndex         *codeindex.Index
@@ -90,6 +93,13 @@ func (a *Agent) SetRepoMapBudget(tokens int)       { a.repomapBudget = tokens }
 func (a *Agent) RepoMapEnabled() bool              { return a.repomapEnabled }
 func (a *Agent) RepoMapBudget() int                { return a.repomapBudget }
 func (a *Agent) SetCodeIndex(idx *codeindex.Index) { a.codeIndex = idx }
+func (a *Agent) CodeIndex() *codeindex.Index       { return a.codeIndex }
+func (a *Agent) SetMemoryPath(path string)         { a.memoryPath = path }
+func (a *Agent) MemoryPath() string                { return a.memoryPath }
+func (a *Agent) InvalidateMemoryCache()            { a.memoryChecked = false }
+func (a *Agent) MemoryBlock() string               { return a.memoryBlock }
+func (a *Agent) MemoryChecked() bool               { return a.memoryChecked }
+func (a *Agent) CacheMemoryBlock(block string)     { a.memoryBlock = block; a.memoryChecked = true }
 
 func (a *Agent) SetSubagentDefinitions(defs map[string]SubagentDefinition) {
 	if a == nil || a.subagents == nil {

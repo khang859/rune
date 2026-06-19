@@ -7,6 +7,27 @@ import (
 	"github.com/khang859/rune/internal/tui/modal"
 )
 
+func TestModalSettingsFromConfigIncludesRepoMap(t *testing.T) {
+	s := modalSettingsFromConfig(config.Settings{RepoMap: config.RepoMapSettings{Enabled: true, MaxTokens: 4000}}, false, false)
+	if s.RepoMap != "on" {
+		t.Fatalf("RepoMap = %q, want on", s.RepoMap)
+	}
+	if s.RepoMapBudget != "4000" {
+		t.Fatalf("RepoMapBudget = %q, want 4000", s.RepoMapBudget)
+	}
+}
+
+func TestConfigFromModalSettingsIncludesRepoMap(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := configFromModalSettings(modal.Settings{RepoMap: "off", RepoMapBudget: "8000"})
+	if s.RepoMap.Enabled {
+		t.Fatal("repo map should be disabled")
+	}
+	if s.RepoMap.MaxTokens != 8000 {
+		t.Fatalf("RepoMap.MaxTokens = %d, want 8000", s.RepoMap.MaxTokens)
+	}
+}
+
 func TestModalSettingsFromConfigIncludesSubagents(t *testing.T) {
 	s := modalSettingsFromConfig(config.Settings{Subagents: config.SubagentSettings{Enabled: boolPtr(false), MaxConcurrent: 2, DefaultTimeoutSecs: 120, MaxCompletedRetain: 50}}, false, false)
 	if s.Subagents != "off" {

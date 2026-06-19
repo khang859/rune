@@ -395,6 +395,65 @@ func TestNormalizeShiftEnterCSIU(t *testing.T) {
 	}
 }
 
+func TestSlashRepomapFilesAndContext(t *testing.T) {
+	dir := t.TempDir()
+	s := session.New("gpt-5")
+	s.SetPath(filepath.Join(dir, s.ID+".json"))
+	s.RecordFileRead(filepath.Join(dir, "a.go"))
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+	a.SetRepoMapEnabled(true)
+	a.SetRepoMapBudget(2000)
+	m.currentInput = 10
+	m.currentOutput = 5
+	m.currentCache = 3
+	m.currentTokens = 15
+
+	m.handleSlashCommand("/repomap files")
+	m.handleSlashCommand("/context")
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "repomap focus files") || !strings.Contains(out, "a.go") {
+		t.Fatalf("missing repomap files output: %q", out)
+	}
+	if !strings.Contains(out, "context —") || !strings.Contains(out, "latest usage: in=10 out=5 cache=3") {
+		t.Fatalf("missing context output: %q", out)
+	}
+}
+
+func TestSlashRememberAndMemory(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/remember prefer table-driven tests")
+	m.handleSlashCommand("/memory")
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "remembered") || !strings.Contains(out, "prefer table-driven tests") {
+		t.Fatalf("missing memory output: %q", out)
+	}
+	if a.MemoryPath() != config.MemoryPath() {
+		t.Fatalf("MemoryPath = %q, want %q", a.MemoryPath(), config.MemoryPath())
+	}
+}
+
+func TestSlashRememberRejectedInPlanMode(t *testing.T) {
+	t.Setenv("RUNE_DIR", t.TempDir())
+	s := session.New("gpt-5")
+	a := agent.New(faux.New().Done(), tools.NewRegistry(), s, "")
+	a.SetMode(agent.ModePlan)
+	m := NewRootModel(a, s)
+
+	m.handleSlashCommand("/remember prefer table-driven tests")
+	out := m.msgs.Render(m.styles, false, false, time.Now())
+	if !strings.Contains(out, "disabled in plan mode") {
+		t.Fatalf("expected plan-mode rejection: %q", out)
+	}
+	if _, err := os.Stat(config.MemoryPath()); err == nil {
+		t.Fatal("memory file should not be created in plan mode")
+	}
+}
+
 func TestSlashRepomapToggle(t *testing.T) {
 	dir := t.TempDir()
 	s := session.New("gpt-5")
@@ -450,7 +509,7 @@ func TestRoot_CtrlCFirstPressDoesNotQuitAndCancelsStream(t *testing.T) {
 }
 
 func TestRoot_BaseSlashCommandsIncludeGitStatus(t *testing.T) {
-	for _, want := range []string{"/git-status", "/feature-dev", "/plan", "/approve", "/cancel-plan"} {
+	for _, want := range []string{"/git-status", "/feature-dev", "/plan", "/approve", "/cancel-plan", "/context", "/memory", "/remember"} {
 		found := false
 		for _, cmd := range baseSlashCmds {
 			if cmd == want {

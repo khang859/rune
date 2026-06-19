@@ -200,6 +200,9 @@ func NormalizeSettings(s Settings) Settings {
 	if s.AutoCompact.ThresholdPct <= 0 || s.AutoCompact.ThresholdPct >= 100 {
 		s.AutoCompact.ThresholdPct = d.AutoCompact.ThresholdPct
 	}
+	if s.RepoMap.MaxTokens < 0 {
+		s.RepoMap.MaxTokens = 0
+	}
 	if s.Web.SearchEnabled == "" {
 		s.Web.SearchEnabled = d.Web.SearchEnabled
 	}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/khang859/rune/internal/ai"
 	"github.com/khang859/rune/internal/config"
+	"github.com/khang859/rune/internal/memory"
 	"github.com/khang859/rune/internal/providers"
 )
 
@@ -47,6 +48,21 @@ func (a *Agent) runTurn(ctx context.Context, out chan<- Event) {
 		}
 		if sys != "" {
 			sys += "\n\n" + RuntimeContext()
+		}
+		if a.memoryPath != "" {
+			if !a.memoryChecked {
+				if block, err := memory.SystemBlock(a.memoryPath); err == nil {
+					a.CacheMemoryBlock(block)
+				} else {
+					a.memoryChecked = true
+				}
+			}
+			if block := a.MemoryBlock(); block != "" {
+				if sys != "" {
+					sys += "\n\n"
+				}
+				sys += block
+			}
 		}
 		if block := BuildRepoMapBlock(a.session, a.codeIndex, a.repomapEnabled, a.repomapBudget); block != "" {
 			if sys != "" {

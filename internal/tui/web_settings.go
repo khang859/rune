@@ -84,6 +84,8 @@ func modalSettingsFromConfig(s config.Settings, braveConfigured bool, tavilyConf
 		ActivityMode:             s.ActivityMode,
 		AutoCompact:              onOff(s.AutoCompact.EnabledValue()),
 		AutoCompactThreshold:     fmt.Sprintf("%d%%", s.AutoCompact.ThresholdPct),
+		RepoMap:                  onOff(s.RepoMap.Enabled || s.RepoMap.MaxTokens == 0),
+		RepoMapBudget:            strconv.Itoa(repoMapBudgetDefault(s.RepoMap.MaxTokens)),
 		WebFetch:                 onOff(s.Web.FetchEnabled),
 		FetchPrivateURLs:         onOff(s.Web.FetchAllowPrivate),
 		WebSearch:                s.Web.SearchEnabled,
@@ -141,6 +143,10 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 			Enabled:      boolPtr(s.AutoCompact != "off"),
 			ThresholdPct: parsePercentDefault(s.AutoCompactThreshold, 80),
 		},
+		RepoMap: config.RepoMapSettings{
+			Enabled:   s.RepoMap != "off",
+			MaxTokens: atoiDefault(s.RepoMapBudget, 2000),
+		},
 		Web: config.WebSettings{
 			FetchEnabled:      s.WebFetch != "off",
 			FetchAllowPrivate: s.FetchPrivateURLs == "on",
@@ -155,6 +161,13 @@ func configFromModalSettings(s modal.Settings) config.Settings {
 		},
 	})
 	return settings
+}
+
+func repoMapBudgetDefault(n int) int {
+	if n <= 0 {
+		return 2000
+	}
+	return n
 }
 
 func onOff(v bool) string {
@@ -217,6 +230,8 @@ func openrouterKeyConfigured() bool {
 func (m *RootModel) applySettings(s modal.Settings) {
 	m.settings = s
 	m.styles.Icons = IconSetForMode(s.IconMode)
+	m.agent.SetRepoMapEnabled(s.RepoMap != "off")
+	m.agent.SetRepoMapBudget(atoiDefault(s.RepoMapBudget, 2000))
 	if s.Effort != "" {
 		if len(thinkingLevelsForModel(m.sess.Model)) == 0 || supportedThinkingEffort(m.sess.Model, s.Effort) {
 			m.agent.SetReasoningEffort(s.Effort)
